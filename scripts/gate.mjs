@@ -38,7 +38,8 @@ const CORE_SCRIPTS = [
   "verify-client.mjs",
   "verify-feedback.mjs",
   "verify-i18n.mjs",
-  "verify-pipeline.mjs"
+  "verify-pipeline.mjs",
+  "verify-arch.mjs"
 ];
 
 const results = [];

@@ -2022,5 +2022,7 @@ export const EN: Record<string, string> = {
   "默认模型": "Default model",
   "默认输出格式": "Default output format",
   "默认采样率": "Default sample rate",
+  "模块渲染出错": "This module failed to render",
+  "重试": "Retry",
 };
 /*! i18n-ignore-end */
