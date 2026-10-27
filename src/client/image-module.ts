@@ -7,6 +7,7 @@
  */
 export interface ImageRuntime {
   React: any;
+  scheduler: any;
   h: any;
   T: any;
   useLocaleTick: any;
@@ -40,7 +41,7 @@ export interface ImageRuntime {
 }
 
 export function createImageModule(rt: ImageRuntime) {
-  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, usePendingTasks, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, JobLogPanel } = rt;
+  const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, usePendingTasks, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, JobLogPanel } = rt;
 
 function ImageModule(props) {
   useLocaleTick();
@@ -118,9 +119,14 @@ function ImageModule(props) {
 
   React.useEffect(() => {
     if (!busy || jobId === null) return undefined;
-    const timer = setInterval(() => void load(jobId), 2500);
-    return () => clearInterval(timer);
-  }, [busy, jobId, load]);
+    const handle = scheduler.watch({
+      key: "image:" + String(jobId),
+      intervalMs: 2500,
+      immediate: false,
+      run: () => load(jobId)
+    });
+    return () => handle.cancel();
+  }, [busy, jobId, load, scheduler]);
 
   /**
    * 跑一次远程调用。`feedback`（可选）给出 pending 的 key 与文案，

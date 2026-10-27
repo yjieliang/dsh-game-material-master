@@ -7,6 +7,7 @@
  */
 export interface SequenceRuntime {
   React: any;
+  scheduler: any;
   h: any;
   T: any;
   useLocaleTick: any;
@@ -46,7 +47,7 @@ export interface SequenceRuntime {
 }
 
 export function createSequenceModule(rt: SequenceRuntime) {
-  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel } = rt;
+  const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel } = rt;
 
 function SequenceModule(props) {
   useLocaleTick();
@@ -145,9 +146,14 @@ function SequenceModule(props) {
 
   React.useEffect(() => {
     if (!running || jobId === null) return undefined;
-    const timer = setInterval(() => void load(jobId), 5000);
-    return () => clearInterval(timer);
-  }, [running, jobId, load]);
+    const handle = scheduler.watch({
+      key: "sequence:" + String(jobId),
+      intervalMs: 5000,
+      immediate: false,
+      run: () => load(jobId)
+    });
+    return () => handle.cancel();
+  }, [running, jobId, load, scheduler]);
 
   /**
    * 跑一次远程调用。`feedback`（可选）给出 pending 的 key 与文案，

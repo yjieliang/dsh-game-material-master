@@ -27,6 +27,8 @@ export interface StudioRuntime {
   api?: any;
   /** 基础组件表（platform/ui）；P2 阶段接入 */
   ui?: any;
+  /** 集中轮询调度器（platform/scheduler）；P3b 起所有轮询都走它 */
+  scheduler?: any;
   /** 性能与错误计数（platform/perf） */
   perf?: any;
   /** 宿主 ctx（保留给确实需要的场景，勿滥用） */

@@ -24,7 +24,7 @@ const BUNDLE = ROOT + "lib/client.js";
 /** 迁移期棘轮：历史遗留允许存在，但不得增长（每迁一个模块就把数字往下调）。 */
 const BASELINE = {
   /** 非 platform 客户端源码里的 setInterval/setTimeout 计数 */
-  legacyTimers: 23,
+  legacyTimers: 20,
   /** 非 platform 客户端源码里的裸 fetch( 计数 */
   legacyFetch: 3,
   /** 非 platform 客户端源码里的 addEventListener 计数（走 lifecycle 之前允许存在） */

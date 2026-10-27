@@ -7,6 +7,7 @@
  */
 export interface StudioPanelRuntime {
   React: any;
+  scheduler: any;
   h: any;
   T: any;
   useLocaleTick: any;
@@ -46,7 +47,7 @@ export interface StudioPanelRuntime {
 }
 
 export function createStudioPanel(rt: StudioPanelRuntime) {
-  const { React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon } = rt;
+  const { React, h, T, scheduler, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon } = rt;
 
 function StudioPanel(props) {
   const localeTick = useLocaleTick();
@@ -175,20 +176,27 @@ function StudioPanel(props) {
   // 有任务在跑时轮询；跑完自动停。
   React.useEffect(() => {
     if (!polling || projectId === null) return undefined;
-    const timer = setInterval(() => {
-      void loadProject(projectId);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [polling, projectId, loadProject]);
+    // 走集中调度器：同 key 去重、失败退避、页面隐藏暂停（原来是裸 setInterval）。
+    const handle = scheduler.watch({
+      key: "project:" + String(projectId) + ":busy",
+      intervalMs: 2500,
+      immediate: false,
+      run: () => loadProject(projectId)
+    });
+    return () => handle.cancel();
+  }, [polling, projectId, loadProject, scheduler]);
 
   // 视频阶段即便宿主侧在轮询，界面也要定期刷新任务状态。
   React.useEffect(() => {
     if (stage !== "videos" || projectId === null) return undefined;
-    const timer = setInterval(() => {
-      void loadProject(projectId);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [stage, projectId, loadProject]);
+    const handle = scheduler.watch({
+      key: "project:" + String(projectId) + ":videos",
+      intervalMs: 5000,
+      immediate: false,
+      run: () => loadProject(projectId)
+    });
+    return () => handle.cancel();
+  }, [stage, projectId, loadProject, scheduler]);
 
   const withApi = React.useCallback(
     async (fn, options: any = {}) => {

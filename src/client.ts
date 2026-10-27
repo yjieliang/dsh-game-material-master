@@ -20,6 +20,7 @@ import { installRuntime } from "./client/platform/runtime.js";
 import { perf } from "./client/platform/perf.js";
 import { provideRuntime } from "./client/platform/runtime.js";
 import { createFeatureBoundary } from "./client/platform/errors.js";
+import { createPollScheduler } from "./client/platform/scheduler.js";
 import { createSprite } from "./client/features/sprite/index.js";
 import { EN } from "./client/i18n-en.js";
 
@@ -55,7 +56,13 @@ import { createModuleIcon } from "./client/module-icon.js";
     // 现在只装 React / h / T；api 与 ui 在后续阶段接入（P2 起）。
     // T 是函数声明（会提升），这里引用它没问题。
     installRuntime({ React, h, T });
+
+    // 集中轮询：所有模块共用这一个调度器（去重 / 退避 / 页面隐藏暂停）
+    const gmmScheduler = createPollScheduler();
     perf.installGlobal();
+
+    // 真机调试：控制台可看轮询统计（注册数 / 运行数 / 过期跳过 / 退避次数）
+    if (typeof window !== "undefined") (window as any).__GMM_SCHEDULER__ = gmmScheduler;
 
     const PACKAGE = "dsh-game-material-master";
     const SERVICE = "gameStudio";
@@ -1559,7 +1566,7 @@ import { createModuleIcon } from "./client/module-icon.js";
     // 实现已移到 src/client/ui.ts；这里取回同一份引用继续用。
     const { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } = createUiKit({ React, h, T, useLocaleTick });
     // ui 组件表挂到运行时：后续模块可直接 studio().ui.Btn 取用（P3 起）
-    provideRuntime({ ui: { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } });
+    provideRuntime({ scheduler: gmmScheduler, ui: { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } });
 
     /**
      * 数字参数输入框。
@@ -2520,7 +2527,7 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     const IsoModule = createIsoModule({ React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat });
 
-    const ImageModule = createImageModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, usePendingTasks, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, JobLogPanel });
+    const ImageModule = createImageModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, usePendingTasks, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, JobLogPanel , scheduler: gmmScheduler });
 
     // ── 模块③：序列帧生成 ───────────────────────────────────────────────
     /** 模块③的 pending key：视频、抽帧、抠像、合成、上传、新建任务。 */
@@ -2532,7 +2539,7 @@ import { createModuleIcon } from "./client/module-icon.js";
     const K_SEQ_CREATE = "seq:create";
     const K_SEQ_POLL = "seq:poll";
 
-    const SequenceModule = createSequenceModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel });
+    const SequenceModule = createSequenceModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel , scheduler: gmmScheduler });
 
     /** 单张参考图/首尾帧的展示行。 */
     function RefRow(props) {
@@ -5467,7 +5474,7 @@ import { createModuleIcon } from "./client/module-icon.js";
     });
     let IMAGE_MODES = sprite.IMAGE_MODES();
     const { renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage } = sprite;
-    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule: MapModuleBound, MusicModule: MusicModuleBound, SfxModule: SfxModuleBound, IsoModule: IsoModuleBound, ImageModule: ImageModuleBound, SequenceModule: SequenceModuleBound, renderLog, RigModule: RigModuleBound, ModuleIcon, StudioGlyphIcon });
+    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule: MapModuleBound, MusicModule: MusicModuleBound, SfxModule: SfxModuleBound, IsoModule: IsoModuleBound, ImageModule: ImageModuleBound, SequenceModule: SequenceModuleBound, renderLog, RigModule: RigModuleBound, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
 
     function apply(ctx) {
       // 界面文案跟随 DSH 的语言设置；服务不可用时安静地退回中文原文。
