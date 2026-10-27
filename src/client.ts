@@ -20,6 +20,9 @@ import { installRuntime } from "./client/platform/runtime.js";
 import { perf } from "./client/platform/perf.js";
 import { provideRuntime } from "./client/platform/runtime.js";
 import { createRemote } from "./client/platform/remote.js";
+import { createMeta } from "./client/platform/meta.js";
+import { createHiddenModules } from "./client/platform/hidden.js";
+import { createIntents } from "./client/platform/intents.js";
 import { createFeatureBoundary } from "./client/platform/errors.js";
 import { createPollScheduler } from "./client/platform/scheduler.js";
 import { createSprite } from "./client/features/sprite/index.js";
@@ -102,19 +105,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      */
     const staticTextRebuilders: Array<() => void> = [
       () => {
-        DIRECTIONS = make_DIRECTIONS();
-      },
-      () => {
-        MODULES = make_MODULES();
-      },
-      () => {
-        STAGES = make_STAGES();
-      },
-      () => {
-        MUSIC_ENGINES = make_MUSIC_ENGINES();
-      },
-      () => {
-        MUSIC_PHASES = make_MUSIC_PHASES();
+        meta.rebuildStaticText();
       },
       () => {
         IMAGE_MODES = sprite.rebuildStaticText();
@@ -122,9 +113,6 @@ import { createModuleIcon } from "./client/module-icon.js";
       () => {
         rig.rebuildStaticText();
       },
-      () => {
-        LABEL_OF = make_LABEL_OF();
-      }
     ];
 
     /** 重算全部模块级文案表（幂等；语言切换与首次挂载都会走一次）。 */
@@ -369,49 +357,12 @@ import { createModuleIcon } from "./client/module-icon.js";
     const remoteSpec = createRemote({ PACKAGE, SERVICE });
     const { codec, REMOTE_METHODS, CONTRIBUTION } = remoteSpec;
 
-    // ── 方向元数据（与宿主 src/directions.ts 保持一致）────────────────────
-    // 「看不看得见脸」由南北决定——朝北走就是背对镜头，不是抬头。
-    function make_DIRECTIONS() {
-      return [
-      { key: "front", compass: "S", label: T("南 · 正对镜头"), refs: [T("源图")] },
-      { key: "back", compass: "N", label: T("北 · 背对镜头"), refs: [T("南")] },
-      { key: "downLeft", compass: "SW", label: T("西南 · 四分之三正面"), refs: [T("南")] },
-      { key: "downRight", compass: "SE", label: T("东南 · 四分之三正面"), refs: [T("南")] },
-      { key: "upLeft", compass: "NW", label: T("西北 · 四分之三背面"), refs: [T("北")] },
-      { key: "upRight", compass: "NE", label: T("东北 · 四分之三背面"), refs: [T("北")] },
-      { key: "left", compass: "W", label: T("西 · 左侧脸"), refs: [T("南"), T("北")] },
-      { key: "right", compass: "E", label: T("东 · 右侧脸"), refs: [T("南"), T("北")] }
-    ];
-    }
-    let DIRECTIONS = make_DIRECTIONS();
+    // ── 模块表 / 方向元数据 / 文案表（platform/meta）─────────────────────────
+    const meta = createMeta({
 
-    const DIRECTION_KEYS = DIRECTIONS.map((d) => d.key);
-    function make_LABEL_OF() {
-      return Object.fromEntries(DIRECTIONS.map((d) => [d.key, d.label]));
-    }
-    let LABEL_OF = make_LABEL_OF();
-
-    const COMPASS_OF = Object.fromEntries(DIRECTIONS.map((d) => [d.key, d.compass]));
-
-    /** 屏幕位移向量 → 方向 key。dy > 0 是往画面下方走（向南）。 */
-    function directionKeyFor(dx, dy) {
-      if (dx === 0 && dy === 0) return null;
-      if (dy > 0) return dx > 0 ? "downRight" : dx < 0 ? "downLeft" : "front";
-      if (dy < 0) return dx > 0 ? "upRight" : dx < 0 ? "upLeft" : "back";
-      return dx > 0 ? "right" : "left";
-    }
-
-    /** WASD 与方向键统一成四个布尔轴。 */
-    const KEY_AXIS = {
-      w: "up",
-      arrowup: "up",
-      s: "down",
-      arrowdown: "down",
-      a: "left",
-      arrowleft: "left",
-      d: "right",
-      arrowright: "right"
-    };
+          T,
+    });
+    const { DIRECTIONS, DIRECTION_KEYS, LABEL_OF, COMPASS_OF, directionKeyFor, KEY_AXIS, hostJob, jobCovers, MODULES, STAGES, MUSIC_ENGINES, MUSIC_PHASES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, musicEngineOf } = meta;
 
     // ── 宿主侧后台任务的覆盖面（与宿主 src/pipeline.ts 的 JobInfo.targets 对应）──
     /**
@@ -421,11 +372,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 的唯一真相：本地那张 pending 表只活到远程调用返回（批量提交是 kick 型调用，
      * 一提交就返回 `{started:true}`，真正的活还在后台），撑不住整段任务。
      */
-    function hostJob(project, taskKey) {
-      const list = Array.isArray(project?.jobs) ? project.jobs : [];
-      return list.find((job) => job !== null && typeof job === "object" && job.key === taskKey);
-    }
-
     /**
      * 这个方向是不是还在某个后台任务的覆盖面里（还没轮到，或者产物还没出来）。
      *
@@ -436,10 +382,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      *
      * 覆盖面由宿主维护并在产物真的可见时逐个摘掉，所以这里不需要再猜。
      */
-    function jobCovers(job, key) {
-      return job !== undefined && Array.isArray(job.targets) && job.targets.includes(key);
-    }
-
     /**
      * 实验性模块的呈现材料。
      *
@@ -451,268 +393,33 @@ import { createModuleIcon } from "./client/module-icon.js";
     // 所以它没有实验性角标、没有进入弹窗、模块内也没有常驻提示条
     // —— 留下任何一条都会让「正式」这个说法名不副实。
 
-    /** 六个功能模块。插件是「大师」，每个模块管一类素材。 */
-    function make_MODULES() {
-      return [
-      { key: "sprite", title: T("八方向图生成"), hint: T("一张设定图 → 8 方向 × 8 帧精灵图") },
-      { key: "image", title: T("图片生成"), hint: T("按提示词出图，可带参考图，支持抠绿幕导出 PNG") },
-      { key: "sequence", title: T("序列帧生成"), hint: T("图/视频参考生成视频 → 抽帧 → 抠像 → 合成与播放预览") },
-      { key: "rig", title: T("骨骼动画生成"), hint: T("拆件 → 装配定位 → 推骨骼与动画 → 打包 Spine 图集"), experimental: true },
-      { key: "iso", title: T("45°地图编辑器"), hint: T("导入菱形地块 → 自动连接 → 画 45° 等距地图 → 导出 PNG") },
-      { key: "map", title: T("俯视地图编辑器"), hint: T("导入自己的素材图 → 自动连接 → 俯视画布上直接画 → 导出 PNG") },
-      { key: "music", title: T("音乐生成编辑"), hint: T("灵感/歌词 → 对话里生成 → 回界面裁剪、调音量、淡入淡出与导出") },
-      { key: "sfx", title: T("音效生成"), hint: T("一句话描述 → 音效 / 环境音 / 角色配音（火山引擎 Seed-Audio）") }
-    ];
-    }
-    let MODULES = make_MODULES();
-
-
-    function make_STAGES() {
-      return [
-      { key: "images", title: T("① 八方向绿幕图"), hint: T("以源图为基准，按依赖顺序生成八个方位的纯绿幕全身图") },
-      { key: "videos", title: T("② 行走动作视频"), hint: T("固定镜头、固定背景，让角色朝原方位原地走三步") },
-      { key: "frames", title: T("③ 提取序列帧"), hint: T("可整批等分抽帧，也可对每一段视频手动选帧") },
-      { key: "sheet", title: T("④ 抠绿幕合成整图"), hint: T("剔除绿幕并按行序拼成一张精灵图") },
-      { key: "preview", title: T("⑤ 行走预览"), hint: T("用 WASD 或方向键操控角色，看看八方向接起来顺不顺") }
-    ];
-    }
-    let STAGES = make_STAGES();
-
-    // ── 音乐生成编辑（模块七）────────────────────────────────────────────
-    //
-    // 引擎/模型表在这里也有一份：浏览器半区是经典脚本，不能 import 宿主模块。
-    // 真源是宿主 `src/musicmodels.ts`；自检按 id 比对，防止两边漂移。
-    function make_MUSIC_ENGINES() {
-      return [
-        {
-          id: "suno",
-          label: T("Suno"),
-          hint: T("v6 系列：可只给灵感，也可给完整歌词与风格标签；每次提交返回 2 首"),
-          models: [
-            { id: "chirp-v6", label: T("chirp-v6（默认 · 完成度最好）") },
-            { id: "chirp-v6-wild", label: T("chirp-v6-wild（探索 · 更有个性、更不可控）") },
-            { id: "chirp-v6-mini", label: T("chirp-v6-mini（更快更省 · 草稿）") }
-          ]
-        },
-        {
-          id: "mureka",
-          label: T("Mureka"),
-          hint: T("另一个音乐模型家族；纯音乐可直接用 instrumental 端点，每次可出 1–3 首"),
-          models: [
-            { id: "mureka-9.5", label: "mureka-9.5" },
-            { id: "mureka-9", label: "mureka-9" },
-            { id: "mureka-8", label: "mureka-8" },
-            { id: "mureka-7.6", label: "mureka-7.6" },
-            { id: "mureka-o2", label: "mureka-o2" },
-            { id: "auto", label: "auto" }
-          ]
-        },
-        {
-          id: "minimax",
-          label: T("MiniMax"),
-          hint: T("音乐 3.0：需要提示词与歌词（纯音乐可只给提示词），可指定采样率/码率"),
-          models: [
-            { id: "music-3.0", label: "music-3.0" },
-            { id: "music-2.6", label: "music-2.6" }
-          ]
-        },
-        {
-          id: "aceStep",
-          label: T("ACE-Step"),
-          hint: T("可明确指定 BPM / 调式 / 拍号与演唱语言；适合游戏循环与纯音乐"),
-          models: [{ id: "v15-turbo", label: "v15-turbo" }]
-        }
-      ];
-    }
-    let MUSIC_ENGINES = make_MUSIC_ENGINES();
-
-    function make_MUSIC_PHASES() {
-      return [
-        { key: "generate", title: T("① 生成歌曲"), hint: T("在对话里扩写提示词、选引擎/模式并提交；按谱乐 AI 积分计费") },
-        { key: "edit", title: T("② 编辑"), hint: T("裁剪 / 音量 / 淡入淡出 / 标准化；全部本机 ffmpeg，免费") },
-        { key: "export", title: T("③ 导出"), hint: T("保存版本并导出 MP3 / WAV / M4A，多产物自动打 zip") }
-      ];
-    }
-    let MUSIC_PHASES = make_MUSIC_PHASES();
-
     // ── 提示词构建器（infra/prompts）──────────────────────────────────────
     const prompts = createPrompts({ T, MUSIC_ENGINES });
     const { buildAssetRequestPrompt, buildIsoAssetRequestPrompt, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, ASSET_SHAPES, assetShapeLabel, stampLimits, clampStampSpan } = prompts;
 
-    const MUSIC_FORMATS = ["mp3", "wav", "m4a"];
-    const MUSIC_EDIT_LIMITS = { gainDb: 24, fade: 30 };
+    // ── 功能管理：隐藏模块状态（platform/hidden）───────────────────────────
+    const hiddenModules = createHiddenModules({
 
-    function musicEngineOf(key) {
-      return MUSIC_ENGINES.find((entry) => entry.id === key) ?? MUSIC_ENGINES[0];
-    }
-
-    // ── 功能管理（被隐藏的模块）──────────────────────────────────────────
-    //
-    // 设置页「功能管理」写、工作台页签与侧栏菜单读，所以状态放在工厂闭包里共享
-    // 一份，而不是各自去 `getConfig()`。
-    //
-    // 「隐藏」是**双向**的：这里只管界面，对话工具面由宿主 `src/tools.ts` 再拦
-    // 一次（`hiddenModules` 存在宿主配置里，两侧读的是同一份）。只藏界面不拦
-    // 工具等于没藏——模型照样能调生成类方法，真实计费。
-    const hiddenModulesState = { keys: [] as string[], listeners: new Set<(keys: string[]) => void>() };
-
-    /** 收敛成合法且顺序固定的 key 数组（与宿主 `normalizeHiddenModules` 同口径）。 */
-    function normalizeHiddenKeys(value) {
-      if (!Array.isArray(value)) return [];
-      return MODULES.map((entry) => entry.key).filter((key) => value.includes(key));
-    }
-
-    /** 写入并通知订阅者；内容没变就不通知（避免无谓重渲染）。 */
-    function publishHiddenModules(value) {
-      const next = normalizeHiddenKeys(value);
-      if (next.length === hiddenModulesState.keys.length && next.every((key, index) => key === hiddenModulesState.keys[index])) return;
-      hiddenModulesState.keys = next;
-      for (const listener of [...hiddenModulesState.listeners]) {
-        try {
-          listener(next);
-        } catch {
-          // 单个订阅者出错不该拖垮别的。
-        }
-      }
-    }
-
-    /** 从宿主读一次当前可见性。读失败就当作「全部可见」，不要因此白屏。 */
-    async function refreshHiddenModules(api) {
-      if (api === undefined) return;
-      try {
-        const config = await api.getConfig();
-        publishHiddenModules(config?.hiddenModules);
-      } catch {
-        // 配置读不到不是致命错误：界面照常，工具面仍然会拦。
-      }
-    }
+          MODULES,
+      React,
+          T,
+    });
+    const { normalizeHiddenKeys, publishHiddenModules, refreshHiddenModules, useHiddenModules, visibleModulesOf } = hiddenModules;
 
     /**
      * 组件里用：当前被隐藏的模块 key 数组。
      *
      * `api` 可省略（那时只订阅、不主动拉取）——设置页自己会 `load()` 并 publish。
      */
-    function useHiddenModules(api) {
-      const [hidden, setHidden] = React.useState(hiddenModulesState.keys);
-      React.useEffect(() => {
-        hiddenModulesState.listeners.add(setHidden);
-        // 订阅之前可能已经有值了（设置页先加载完），补一次对齐。
-        setHidden(hiddenModulesState.keys);
-        return () => {
-          hiddenModulesState.listeners.delete(setHidden);
-        };
-      }, []);
-      React.useEffect(() => {
-        void refreshHiddenModules(api);
-      }, [api]);
-      return hidden;
-    }
 
-    /** 可见的模块（页签、侧栏菜单都按它渲染）。 */
-    function visibleModulesOf(hidden) {
-      return MODULES.filter((entry) => !hidden.includes(entry.key));
-    }
+    // ── 意图 / 深链接（platform/intents）─────────────────────────────────
+    const intents = createIntents({
 
-
-    // ── 深链接：从会话里点一下链接就切到插件对应页面 ─────────────────────
-    //
-    // 宿主 src/links.ts 是这套约定的唯一真源；这里只能复制常量（浏览器半区是
-    // 经典脚本，不能 import），两边的一致性由 scripts/verify-tools.mjs 的
-    // 文本契约钉住：参数名、模块名、面板 id 任一处改动都会让本地测试失败。
-    //
-    // 拦截方式刻意选在**捕获阶段**：会话正文的 Markdown 渲染器会给所有
-    // http(s) 链接加 target="_blank"，不拦就会真的新开一个标签页。
-    // 只按 `dsh-gmm` 参数识别自己的链接，其它链接（含站外的）一律放行。
-    const OPEN_QUERY_KEY = "dsh-gmm";
-    const OPEN_MODULES = new Set(["sprite", "image", "sequence", "rig", "iso", "map", "music", "sfx"]);
-    /** `dialog` 允许的取值（宿主 `links.ts` 的 `OPEN_DIALOGS`，改一处要同步）。 */
-    const OPEN_DIALOGS = new Set(["add"]);
-    /** `shape` 允许的取值（宿主 `links.ts` 的 `OPEN_SHAPES`，改一处要同步）。 */
-    const OPEN_SHAPES = new Set(["plain", "corner16", "a2quad", "stamp"]);
-    /** 45° 编辑器的 AI 回链用同一个 `shape` 参数，取值是 ground / object。 */
-    const OPEN_ISO_SHAPES = new Set(["ground", "object"]);
-    /** 深链接里所有属于本插件的参数名：清理地址栏时一起摘掉。 */
-    const OPEN_PARAM_KEYS = [OPEN_QUERY_KEY, "module", "project", "job", "stage", "score", "direction", "dialog", "asset", "frames", "shape", "scale", "cols", "rows", "keyed"];
-    /** 意图订阅者：各模块组件都挂着，谁在挂载谁就被通知。 */
-    const intentListeners = new Set<any>();
-    /** 最近一次意图。晚挂载的组件（切模块后才渲染）订阅时立刻拿到它。 */
-    let pendingIntent = null;
-
-    /** 消费掉待处理意图（apply 里消费 URL 意图后调用）。 */
-    function clearPendingIntent() {
-      pendingIntent = null;
-    }
-
-    function subscribeIntent(listener) {
-      intentListeners.add(listener);
-      if (pendingIntent !== null) listener(pendingIntent);
-      return () => {
-        intentListeners.delete(listener);
-      };
-    }
-
-    /** 组件里用：拿到最近一次深链接意图（没有就是 null）。 */
-    function useStudioIntent() {
-      const [intent, setIntent] = React.useState(null);
-      React.useEffect(() => subscribeIntent(setIntent), []);
-      return intent;
-    }
-
-    /** 解析查询串。不是我们的链接就返回 null（宿主侧 links.ts 的同名实现）。 */
-    function parseIntents(search) {
-      let params;
-      try {
-        params = new URLSearchParams(typeof search === "string" ? search : "");
-      } catch {
-        return null;
-      }
-      if (!params.has(OPEN_QUERY_KEY)) return null;
-      const intent: any = {};
-      const module = params.get("module");
-      if (module !== null && OPEN_MODULES.has(module)) intent.module = module;
-      const projectId = params.get("project");
-      if (projectId) intent.projectId = projectId;
-      const jobId = params.get("job");
-      if (jobId) intent.jobId = jobId;
-      const stage = params.get("stage");
-      if (stage) intent.stage = stage;
-      const scoreId = params.get("score");
-      if (scoreId) intent.score = scoreId;
-      const direction = params.get("direction");
-      if (direction) intent.direction = direction;
-      const dialog = params.get("dialog");
-      if (dialog !== null && OPEN_DIALOGS.has(dialog)) intent.dialog = dialog;
-      /**
-       * `asset` 只接受项目资源目录下的相对路径。绝对路径与 `..` 一律丢掉 ——
-       * 宿主资源路由另有拦截，但坏值不该进界面（它会被拼进 fetch 的 URL）。
-       */
-      const asset = params.get("asset");
-      if (asset !== null && asset.trim() !== "" && !asset.startsWith("/") && !asset.startsWith("\\") && !asset.includes("..") && !asset.includes("\\")) {
-        intent.asset = asset.trim();
-      }
-      const frames = Number(params.get("frames"));
-      if (params.get("frames") !== null && Number.isInteger(frames) && frames > 0) intent.frames = frames;
-      /** `shape` = 「这块素材怎么用」的预选值（宿主 `links.ts` 的 `OPEN_SHAPES`，改一处要同步）。 */
-      const shape = params.get("shape");
-      if (shape !== null && (OPEN_SHAPES.has(shape) || OPEN_ISO_SHAPES.has(shape))) intent.shape = shape;
-      /**
-       * `scale` = 这张素材图**每格几倍分辨率**（宿主 `links.ts` 的 1..8）。
-       * 少了它，「新增素材」会以为图就是格子大小，把 4 倍图切成 16 倍碎块。
-       */
-      const scale = Number(params.get("scale"));
-      if (params.get("scale") !== null && Number.isInteger(scale) && scale >= 1 && scale <= 8) intent.scale = scale;
-      /**
-       * `cols` / `rows` = 整图占几格（宿主 `links.ts` 的 1..512）。
-       * 少了它们，「新增素材」会按默认 3×3 预填 —— 图与占格对不上就会被拉伸。
-       */
-      const cols = Number(params.get("cols"));
-      if (params.get("cols") !== null && Number.isInteger(cols) && cols >= 1 && cols <= 512) intent.cols = cols;
-      const rows = Number(params.get("rows"));
-      if (params.get("rows") !== null && Number.isInteger(rows) && rows >= 1 && rows <= 512) intent.rows = rows;
-      /** `keyed=1`：整理时**已经抠过绿幕**，「新增素材」据此取消「抠掉绿幕」勾选（免得抠两遍）。 */
-      if (params.get("keyed") === "1") intent.keyed = 1;
-      return intent;
-    }
+          React,
+      GAME_STUDIO_PANEL_ID,
+          T,
+    });
+    const { subscribeIntent, useStudioIntent, parseIntents, openStudioIntent, installIntentInterceptor, consumeUrlIntent, reportClientOrigin, clearPendingIntent, pendingIntent, OPEN_SHAPES, OPEN_QUERY_KEY, intentListeners } = intents;
 
     /**
      * 切到工作台面板并广播意图。
@@ -720,137 +427,16 @@ import { createModuleIcon } from "./client/module-icon.js";
      * `layout.selectPanel` 在面板还没注册时会抛错（插件 apply 与页面启动有先后），
      * 所以这里带重试；重试期间意图已经广播出去了，组件挂载后会自己接上。
      */
-    function openStudioIntent(ctx, intent, attempt = 0) {
-      if (attempt === 0) {
-        pendingIntent = intent;
-        for (const listener of [...intentListeners]) {
-          try {
-            listener(intent);
-          } catch {
-            // 单个订阅者出错不该拖垮切换本身。
-          }
-        }
-      }
-      const layout = ctx.get("layout");
-      // `layout` 可能在页面刚启动 / 插件刚 apply 时还没挂上。以前这里直接 return，
-      // 结果是「深链接被消费掉、面板却没切过去」——用户点回链只会看到对话页。
-      // 和 selectPanel 抛错同样重试，直到 layout 出现。
-      if (layout === undefined) {
-        if (attempt < 20 && typeof window !== "undefined") {
-          window.setTimeout(() => openStudioIntent(ctx, intent, attempt + 1), 150);
-        }
-        return;
-      }
-      try {
-        layout.selectPanel(GAME_STUDIO_PANEL_ID);
-      } catch {
-        if (attempt < 20 && typeof window !== "undefined") {
-          window.setTimeout(() => openStudioIntent(ctx, intent, attempt + 1), 150);
-        }
-      }
-    }
-
-    function intentOfAnchor(event) {
-      if (event.button !== 0) return null;
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return null; // 让浏览器按用户意图新开标签页
-      const target = event.target;
-      if (target === null || target === undefined || typeof target.closest !== "function") return null;
-      const anchor = target.closest("a[href]");
-      if (anchor === null) return null;
-      let url;
-      try {
-        url = new URL(anchor.getAttribute("href"), window.location.origin);
-      } catch {
-        return null;
-      }
-      return parseIntents(url.search);
-    }
-
-    /** 捕获阶段拦下深链接点击：原地切面板，不跳转、不新开标签。 */
-    function installIntentInterceptor(ctx) {
-      if (typeof document === "undefined" || typeof window === "undefined" || window.location === undefined) return () => {};
-      const onClick = (event) => {
-        if (event.defaultPrevented) return;
-        let intent;
-        try {
-          intent = intentOfAnchor(event);
-        } catch {
-          return;
-        }
-        if (intent === null) return;
-        event.preventDefault();
-        event.stopPropagation();
-        openStudioIntent(ctx, intent);
-      };
-      document.addEventListener("click", onClick, true);
-      return () => document.removeEventListener("click", onClick, true);
-    }
-
     /**
      * 直接以 `/?dsh-gmm=…` 打开时的兜底路径（中键、Ctrl+点击、或用户手动贴链接）：
      * 应用正常启动，这里读一次查询参数、把它从地址栏清掉、再切面板。
      */
-    function consumeUrlIntent(ctx) {
-      if (typeof window === "undefined" || window.location === undefined) return;
-      const intent = parseIntents(window.location.search);
-      if (intent === null) return;
-      try {
-        const url = new URL(window.location.href);
-        // 确认过 dsh-gmm 才走到这里，所以这几个键一定是本插件写的，一起清掉。
-        // ⚠️ 这张表就是 `OPEN_PARAM_KEYS`：新增一个深链接参数忘了加进来，它就会
-        // 一直留在地址栏里（刷新一次又被解析一遍）。
-        for (const key of OPEN_PARAM_KEYS) {
-          url.searchParams.delete(key);
-        }
-        window.history.replaceState(null, "", url.toString());
-      } catch {
-        // 清不掉参数也不影响切换，忽略。
-      }
-      openStudioIntent(ctx, intent);
-    }
-
     /**
      * 把真实 origin 与应用路径前缀报给宿主：宿主不知道对外地址（可能被反代改写），
      * 而模型要在回复里贴出可点的绝对链接。`path` 让 DSH 0.2.1 的
      * `--public-url https://host/prefix/` 部署也能拼对回链与产物地址。
      * 失败不影响任何功能。
      */
-    function reportClientOrigin(api) {
-      if (typeof window === "undefined" || window.location === undefined) return;
-      const origin = window.location.origin;
-      if (typeof origin !== "string" || origin === "" || origin === "null") return;
-      const path = typeof window.location.pathname === "string" ? window.location.pathname : "";
-      // 宿主刚重启时插件可能比远程服务先就绪：失败就退避重试，
-      // 否则 `clientOrigin` 会一直空着，所有绝对产物地址都变成 `http://localhost`。
-      // 重试窗口给到 ~30s，并在窗口重新聚焦 / 回到前台时再补报一次——
-      // 用户重启 DSH 后不刷新页面也能恢复正确 origin。
-      const send = (attempt) => {
-        let pending;
-        try {
-          pending = api.reportClientOrigin({ origin, path });
-        } catch {
-          pending = Promise.reject(new Error("reportClientOrigin failed"));
-        }
-        Promise.resolve(pending)
-          .then((result) => {
-            if (result?.ok === false && attempt < 60) window.setTimeout(() => send(attempt + 1), 500);
-          })
-          .catch(() => {
-            if (attempt < 60) window.setTimeout(() => send(attempt + 1), 500);
-          });
-      };
-      send(0);
-      // 宿主重启后页面通常不会重新 apply；focus / 回到前台是最可靠的补报时机。
-      if (typeof window.addEventListener === "function") {
-        window.addEventListener("focus", () => send(0));
-      }
-      if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
-        document.addEventListener("visibilitychange", () => {
-          if (document.visibilityState === "visible") send(0);
-        });
-      }
-    }
-
     // ── 样式 ─────────────────────────────────────────────────────────────
     // ⚠️ `.SPR_root` 上的 `overflow-y:auto` 不能删。
     // 面板的外层（DSH 的 `.BynINW_centerCol` / `.BynINW_frame`）是 `overflow:hidden`，
