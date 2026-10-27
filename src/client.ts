@@ -20,6 +20,7 @@ import { installRuntime } from "./client/platform/runtime.js";
 import { perf } from "./client/platform/perf.js";
 import { provideRuntime } from "./client/platform/runtime.js";
 import { createRemote } from "./client/platform/remote.js";
+import { createI18n } from "./client/platform/i18n.js";
 import { createMeta } from "./client/platform/meta.js";
 import { createHiddenModules } from "./client/platform/hidden.js";
 import { createIntents } from "./client/platform/intents.js";
@@ -64,6 +65,19 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     const React = require("react");
     const h = React.createElement;
+
+    const PACKAGE = "dsh-game-material-master";
+    const SERVICE = "gameStudio";
+    const GAME_STUDIO_PANEL_ID = "gameStudio";
+
+    // ── 多语言（platform/i18n）────────────────────────────────────────────
+    const i18n = createI18n({
+
+          PACKAGE,
+      rebuildStaticText,
+      React,
+    });
+    const { T, activeLang, installI18n, useLocaleTick, attachI18n , fill } = i18n;
     // ── platform 运行时 ───────────────────────────────────────────────────
     // 组合根一次性装入「创建后不再变化」的依赖；模块/组件从这里取，不再逐层传参。
     // 现在只装 React / h / T；api 与 ui 在后续阶段接入（P2 起）。
@@ -77,13 +91,10 @@ import { createModuleIcon } from "./client/module-icon.js";
     // 真机调试：控制台可看轮询统计（注册数 / 运行数 / 过期跳过 / 退避次数）
     if (typeof window !== "undefined") (window as any).__GMM_SCHEDULER__ = gmmScheduler;
 
-    const PACKAGE = "dsh-game-material-master";
-    const SERVICE = "gameStudio";
     /**
      * 工作台在 `main` 槽里的 key，也是侧栏 `sidebar.panellist` 的 id。
      * 深链接要切到的就是它（宿主 src/links.ts 的 PANEL_KEY 必须与它一致）。
      */
-    const GAME_STUDIO_PANEL_ID = "gameStudio";
 
     // ── 多语言（中 / 英）──────────────────────────────────────────────────
     /**
@@ -96,7 +107,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 插值用 `{n0}` 这类占位符（与 @deepseek-ai/dsh-client-locale 同一套规则），
      * 英文可以自由换语序：`T("第 {n0} 帧", { n0: 3 })`。
      */
-    const I18N_NS = PACKAGE;
+
     /**
      * 语言切换后必须重算的模块级文案表。
      *
@@ -124,14 +135,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 中文表是恒等映射。必须写全：locale 服务的回退链是「当前语言 → en」，
      * 只注册 en 的话中文界面会一路落到英文。
      */
-    const ZH: Record<string, string> = Object.fromEntries(Object.keys(EN).map((key) => [key, key]));
-    /** DSH locale 服务给的绑定翻译函数；服务还没挂载时是 null。 */
-    let boundTranslate: ((key: string, params?: Record<string, unknown>) => string) | null = null;
-    /** locale 服务本身；宿主侧的默认提示词要靠它算出「该用哪国话」。 */
-    let localeService: any = null;
-    /** 语言变化时要重渲染的订阅者（各模块顶层组件挂一个，子树跟着重渲染）。 */
-    const localeListeners: Set<() => void> = new Set();
-
     /**
      * 当前界面语言，规整成宿主认识的两个值。
      *
@@ -139,22 +142,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 宿主没有 locale 服务，所以每次读写提示词都把它带过去。
      * 服务不在时按中文算——那也正是界面当时的语言。
      */
-    function activeLang(): "zh" | "en" {
-      const active = localeService?.getSnapshot?.()?.active;
-      return typeof active === "string" && active.trim().toLowerCase().startsWith("en") ? "en" : "zh";
-    }
-
-    /** `{name}` 插值；与 locale 服务内部用的是同一条规则。 */
-    function fill(text: string, params?: Record<string, unknown>): string {
-      if (params === undefined) return text;
-      return String(text).replace(/\{(\w+)\}/gu, (match, name) => (name in params ? String(params[name]) : match));
-    }
-
-    /** 翻译。没有 locale 服务时退回中文原文——自检脚本直接渲染组件走的就是这条。 */
-    function T(key: string, params?: Record<string, unknown>): string {
-      return boundTranslate === null ? fill(key, params) : boundTranslate(key, params);
-    }
-
     /**
      * 挂上 DSH 的 locale 服务。
      *
@@ -162,66 +149,11 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 插件不会因为缺这一个服务就整块不挂载。
      * @returns 是否挂上了。
      */
-    function installI18n(ctx: any): boolean {
-      const locale = ctx.get("locale");
-      if (locale === undefined || locale === null) return false;
-      try {
-        ctx.effect(() => locale.register(I18N_NS, { zh: ZH, en: EN }), `${PACKAGE}: i18n dictionary`);
-        localeService = locale;
-        boundTranslate = locale.bind(I18N_NS);
-        // 模块级文案表是**模块加载时**求值的（那时还没有 locale 服务，全是中文原文），
-        // 所以挂上服务的第一件事就是把它们按当前语言重算一遍。
-        rebuildStaticText();
-        ctx.effect(
-          () =>
-            locale.subscribe(() => {
-              boundTranslate = locale.bind(I18N_NS);
-              rebuildStaticText();
-              for (const listener of [...localeListeners]) {
-                try {
-                  listener();
-                } catch {
-                  // 单个订阅者出错不该拖垮语言切换本身。
-                }
-              }
-            }),
-          `${PACKAGE}: locale switch re-render`
-        );
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    /** 语言切换时重渲染当前组件。挂在各模块顶层即可，子树跟着一起重渲染。 */
-    function useLocaleTick(): number {
-      const [tick, setTick] = React.useState(0);
-      React.useEffect(() => {
-        const listener = () => setTick((value) => value + 1);
-        localeListeners.add(listener);
-        return () => {
-          localeListeners.delete(listener);
-        };
-      }, []);
-      return tick;
-    }
-
     /**
      * 把 locale 服务接进来。立刻不是它的锅（服务可能比插件后挂载），
      * 所以先试一次，没成就等它可用——用 ctx.inject 而不是把它写进 inject 列表：
      * 写进去会让整个插件卡在这个服务上，缺了它就整个不挂载。
      */
-    function attachI18n(ctx: any): void {
-      if (installI18n(ctx)) return;
-      try {
-        ctx.inject(["locale"], (child: any) => {
-          installI18n(child);
-        });
-      } catch {
-        // 老版本宿主没有 ctx.inject：那就一直用中文原文，界面仍然是完整的。
-      }
-    }
-
     // ── 新对话桥：把「AI 生成素材」的活派给一个不挂靠项目的新对话 ────────────
     //
     // 素材窗口那颗「AI 生成素材」不自己生成图：它开一个**新对话**，把拼好的需求作为
