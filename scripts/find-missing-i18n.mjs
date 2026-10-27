@@ -4,20 +4,18 @@
  * 漏译在界面上只表现为「这一条一直是中文」，不会报错，所以必须靠工具抓。
  * 输出格式直接可以贴进 src/client.ts 的词条表。
  */
-import { readFileSync } from "node:fs";
+import { clientSourceText } from "./lib/client-source.mjs";
 
-const text = readFileSync("src/client.ts", "utf8");
+const text = clientSourceText();
 const found = new Map();
 for (const match of text.matchAll(/\bT\(\s*"((?:[^"\\]|\\.)*)"/g)) {
   found.set(match[1], (found.get(match[1]) ?? 0) + 1);
 }
 
-// 词条表：`const EN: Record<string,string> = { … }`，到 `const ZH` 之前结束
-// （`ZH` 是 EN 的 key 恒等映射，不用管）
-const start = text.indexOf("const EN: Record<string, string> = {");
-if (start < 0) throw new Error("找不到词条表 EN");
-const end = text.indexOf("const ZH: Record<string, string>", start);
-if (end < 0) throw new Error("找不到词条表 EN 的结尾（下一个顶层 const）");
+/** 词条表边界用起止标记，不依赖「下一个顶层 const」（表已搬到 src/client/i18n-en.ts）。 */
+const start = text.indexOf("i18n-ignore-start");
+const end = text.indexOf("i18n-ignore-end", start);
+if (start < 0 || end < 0) throw new Error("找不到词条表 EN 的起止标记");
 const table = text.slice(start, end);
 
 const missing = [...found.keys()].filter((key) => !table.includes(JSON.stringify(key) + ":"));

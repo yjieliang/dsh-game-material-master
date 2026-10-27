@@ -27,6 +27,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
+import { clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 
 const HOME = await mkdtemp(join(tmpdir(), "dsh-gmm-tools-"));
 process.env.DSH_HOME = HOME;
@@ -771,10 +772,10 @@ async function main() {
   })());
 
   // 浏览器半区是经典脚本（不能 import），只能靠文本契约保证两边同源。
-  const clientSource = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+  const clientSource = clientSourceText();
   const clientBundle = readFileSync(fileURLToPath(new URL("../lib/client.js", import.meta.url)), "utf8");
   for (const [label, text] of [
-    ["src/client.ts", clientSource],
+    [clientSourceFiles().join("、"), clientSource],
     ["lib/client.js", clientBundle]
   ]) {
     check(`${label}：含同名查询参数`, text.includes(`"${links.OPEN_QUERY_KEY}"`), links.OPEN_QUERY_KEY);
@@ -784,12 +785,16 @@ async function main() {
     check(`${label}：会上报 origin`, text.includes("reportClientOrigin"), "");
     check(`${label}：读取地址栏里的深链接`, text.includes("consumeUrlIntent"), "");
     // 新参数只按文本契约钉：浏览器半区不能 import（links.ts 的那份是拷贝）。
-    check(`${label}：含 OPEN_DIALOGS（只放行 add）`, text.includes('OPEN_DIALOGS = new Set(["add"])'), "");
-    check(`${label}：含 OPEN_SHAPES（放行 plain / corner16 / a2quad / stamp）`, text.includes('OPEN_SHAPES = new Set(["plain", "corner16", "a2quad", "stamp"])'), "");
+    // 打包器会在 `new Set([...])` 前插 `/* @__PURE__ */`（tree-shaking 提示），断言不能只认源码写法。
+    check(`${label}：含 OPEN_DIALOGS（只放行 add）`, /OPEN_DIALOGS\s*=\s*(?:\/\*[^*]*\*\/\s*)?new Set\(\["add"\]\)/.test(text), "");
+    check(`${label}：含 OPEN_SHAPES（放行 plain / corner16 / a2quad / stamp）`, /OPEN_SHAPES\s*=\s*(?:\/\*[^*]*\*\/\s*)?new Set\(\["plain", "corner16", "a2quad", "stamp"\]\)/.test(text), "");
     check(`${label}：清地址栏时把 dialog / asset / frames / shape / scale / cols / rows 一起摘掉`, text.includes('"dialog", "asset", "frames", "shape", "scale", "cols", "rows"'), "");
     check(`${label}：解析 asset 会挡绝对路径与 ..`, text.includes('!asset.startsWith("/")') && text.includes("!asset.includes(\"..\")"), "");
   }
-  check("client.ts 里没有任何 import（必须是经典脚本）", !/^\s*import\s/m.test(clientSource), "");
+  check("产物里没有任何 import（必须是经典脚本）", !/^\s*import\s/m.test(clientBundle), "");
+  // 源码允许相对 import（模块化），但不许引第三方包：React 必须由宿主 require 提供，
+  // 否则会被打进客户端束，同一份 React 在页面里出现两个实例。
+  check("源码的 import 只有相对路径", !/^\s*import\s[\s\S]*?from\s+["'](?!\.)/m.test(clientSource), "");
 
   // ── 8b. 语义角色的两边一致性 ──────────────────────────────────────────
   // 浏览器半区不能 import，所以 RIG_ROLES / ROLE_LABELS 必然是一份拷贝。

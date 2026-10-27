@@ -79,7 +79,8 @@ parseCase("isoUndo", { projectId: "gabc1234", have: [] }, ["projectId", "have"])
 
 section("3) 源码 / 路由纪律");
 const indexSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
-check("AssetScope 含 iso-assets", /"iso-assets"/.test(indexSource));
+const assetsSource = readFileSync(new URL("../src/assets.ts", import.meta.url), "utf8");
+check("AssetScope 含 iso-assets", /"iso-assets"/.test(assetsSource));
 check("importIsoTileset 网关把 objectScale 传给了宿主实现", /objectScale: input\.objectScale/.test(indexSource));
 check("模块枚举含 iso、不含 tile", /"rig", "iso", "map"/.test(source) && !/"tile"/.test(source));
 check("不再有 Tile 方法 schema", !/const tileIdSchema|runTileItemsSchema/.test(source));

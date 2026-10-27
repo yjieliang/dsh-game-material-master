@@ -24,6 +24,8 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { ROOT, clientSourceText } from "./lib/client-source.mjs";
+import { join } from "node:path";
 
 const failures = [];
 let checks = 0;
@@ -34,9 +36,31 @@ function check(name, ok, detail) {
   if (!ok) failures.push(name);
 }
 
-const DEFAULT_FILES = ["../src/client.ts", "../lib/client.js"].map((rel) =>
-  fileURLToPath(new URL(rel, import.meta.url))
-);
+/**
+ * 检查对象：默认「客户端源码集合 + 产物」，命令行参数可换成任意文件。
+ *
+ * 源码集合是把 `src/client.ts` 与 `src/client/*.ts` 拼起来：样式表、词条表已经拆到
+ * 独立模块，逐文件跑会漏掉只存在于其中一个文件的标记（CSS 关键帧就踩过）。
+ */
+function labelOf(file) {
+  return file.replace(/\\/g, "/").split("/").slice(-2).join("/");
+}
+function targetOf(file) {
+  try {
+    return { label: labelOf(file), text: readFileSync(file, "utf8") };
+  } catch {
+    check(`${labelOf(file)}：可读取`, false, file);
+    return { label: labelOf(file), text: "" };
+  }
+}
+
+const argFiles = process.argv.slice(2);
+const targets = argFiles.length > 0
+  ? argFiles.map(targetOf)
+  : [
+      { label: "src/client（源码集合）", text: clientSourceText() },
+      targetOf(join(ROOT, "lib", "client.js"))
+    ];
 
 /** 从 `open` 处的 `{` 开始，返回与它配对的 `}` 之间的文本。 */
 function bracedBody(text, open) {
@@ -142,7 +166,6 @@ function callSitesIn(text, name) {
   return sites;
 }
 
-const files = process.argv.slice(2).length > 0 ? process.argv.slice(2) : DEFAULT_FILES;
 
 // ── 第二类检查：所有「出素材」的接口调用都要有 loading 反馈 ─────────────
 /**
@@ -297,15 +320,7 @@ function callsWithFeedback(code, wrapperNames) {
   return results.sort((a, b) => a.at - b.at);
 }
 
-for (const file of files) {
-  const label = file.replace(/\\/g, "/").split("/").slice(-2).join("/");
-  let text;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch {
-    check(`${label}：可读取`, false, file);
-    continue;
-  }
+for (const { label, text } of targets) {
   checkRigContracts(text, label);
   checkTurnContracts(text, label);
   checkFramePickContracts(text, label);
@@ -391,25 +406,29 @@ for (const file of files) {
 //
 // 实测踩过：给地图编辑器加撤销栈时把 `useRef` 放在了早退之后。
 {
-  const clientText = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+  const clientText = clientSourceText();
   const lines = clientText.split("\n");
   // 组件边界：`function XxxModule(props) {` 到下一个顶层 `function`
-  const starts = [...clientText.matchAll(/^\s{4}function (\w*Module)\(props\)\s*\{/gm)];
+  // 缩进不写死：组件可能留在入口（4 空格）或已搬到模块文件（2 空格）。
+  const starts = [...clientText.matchAll(/^[ \t]*function (\w*Module)\(props\)\s*\{/gm)];
   check("浏览器半区能定位到模块组件", starts.length >= 4, `${starts.length} 个`);
   for (let i = 0; i < starts.length; i++) {
     const name = starts[i][1];
     const from = clientText.slice(0, starts[i].index).split("\n").length;
+    const declLine = from;
     const to = i + 1 < starts.length
       ? clientText.slice(0, starts[i + 1].index).split("\n").length
       : lines.length;
-    // 只认**组件顶层**（缩进 6 空格）的早退。两种写法都要认：
+    // 只认**组件顶层**的早退。两种写法都要认：
     //   `if (project === null) {`  ← 实际的写法
     //   `return h(...)`
-    // 缩进更深的 `return` 都在 useCallback / 内层函数体里，与 Hook 顺序无关
-    // （它们甚至在 Hook 之前就存在，硬判会假红）。
+    // 缩进按「组件声明缩进 + 2」现算：写死 6 空格的话，组件一旦被搬到模块文件
+    // （工厂函数体内，少一层缩进），这条断言就会被静默跳过 —— 项数会悄悄变少。
+    const declIndent = (/^ */.exec(lines[declLine - 1]) ?? [""])[0].length;
+    const topLevel = new RegExp(`^\\s{${declIndent + 2}}(?:return\\b|if \\()`);
     let earlyReturn = -1;
     for (let n = from; n < to; n++) {
-      if (/^\s{6}(?:return\b|if \()/.test(lines[n - 1])) { earlyReturn = n; break; }
+      if (topLevel.test(lines[n - 1])) { earlyReturn = n; break; }
     }
     if (earlyReturn < 0) continue;
     // 从组件起点按**花括号配平**算出「顶层语句」的行号集合：只有深度回到
@@ -453,7 +472,7 @@ for (const file of files) {
 // 任务 key 写错一个字不会有任何报错，只是这条路静默失效，所以两边一起核对：
 // 浏览器半区点了名的 key，宿主必须真有这个任务，而且必须公布覆盖面。
 {
-  const clientText = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+  const clientText = clientSourceText();
   const hostText = readFileSync(fileURLToPath(new URL("../src/pipeline.ts", import.meta.url)), "utf8");
 
   const clientKeys = [...new Set(
@@ -476,7 +495,7 @@ for (const file of files) {
 // 「隐藏了功能」要同时落在三处：设置页写配置、工作台 / 侧栏菜单按它渲染、
 // 宿主工具面按它拒绝。前两处在这里钉，第三处在 verify-tools 的第 6.7 节。
 {
-  const clientText = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+  const clientText = clientSourceText();
   const linksText = readFileSync(fileURLToPath(new URL("../src/links.ts", import.meta.url)), "utf8");
   const hostToolText = readFileSync(fileURLToPath(new URL("../src/tools.ts", import.meta.url)), "utf8");
 
@@ -501,7 +520,7 @@ for (const file of files) {
     /patch\(\{ hiddenModules: next \}\)/.test(clientText) && /publishHiddenModules\(next\)/.test(clientText)
   );
   check("宿主配置层认识这个字段", /hiddenModules/.test(readFileSync(fileURLToPath(new URL("../src/config.ts", import.meta.url)), "utf8")));
-  check("宿主网关允许保存这个字段", /"hiddenModules"/.test(readFileSync(fileURLToPath(new URL("../src/index.ts", import.meta.url)), "utf8")));
+  check("宿主网关允许保存这个字段", /"hiddenModules"/.test(readFileSync(fileURLToPath(new URL("../src/configpatch.ts", import.meta.url)), "utf8")));
   check("宿主工具面按模块拦调用", /assertModuleVisible/.test(hostToolText) && /METHOD_MODULE/.test(hostToolText));
 
   // 工作台页签与侧栏菜单都必须按可见性过滤，而不是照旧渲染全部模块。
@@ -877,7 +896,8 @@ function checkDraftContracts(text, label) {
   check(
     `${label}：草稿合并只更新用户没动过的字段`,
     /function mergeDrafts\(current, previous, next, force\)/.test(text) &&
-      /drafted === undefined \|\| sameDraft\(drafted, previous\?\.\[key\]\) \? next\[key\] : drafted/.test(text)
+      // 打包器会把 `undefined` 规范成 `void 0`（语义相同），两边都要认。
+    /drafted === (?:undefined|void 0) \|\| sameDraft\(drafted, previous\?\.\[key\]\) \? next\[key\] : drafted/.test(text)
   );
   check(
     `${label}：模块① 的视频提示词不再被轮询覆盖`,

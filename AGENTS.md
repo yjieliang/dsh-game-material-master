@@ -39,7 +39,7 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 
 | 约束 | 原因 |
 |---|---|
-| `src/client.ts` **必须是经典脚本**：不能有 `import` / `export`，React 元素一律 `React.createElement` | 它由宿主以 `/plugins/dsh-game-material-master/client.js` 直接发给浏览器，浏览器半区不参与打包。构建脚本 `scripts/strip-client-export.mjs` 会剥掉结尾的 `export`，但别指望它兜住真正的模块化写法 |
+| **产物** `lib/client.js` 必须是经典脚本（不能有 `import` / `export`）；源码可以按模块拆，React 元素一律 `React.createElement` | 宿主把 `lib/client.js` 当**普通脚本**直接发给浏览器（没有模块加载器）。`tsc` 只会产出 ESM，所以 `scripts/bundle-client.mjs`（esbuild）负责把 `src/client.ts` + `src/client/*.ts` 内联回单文件；`scripts/strip-client-export.mjs` 最后再确认一次。React 由宿主 `require("react")` 提供，**任何客户端源码都不许 import 第三方包**（会打进包、页面里出现两份 React），`verify-tools.mjs` 拦这条 |
 | 改完 `lib/` 里的**宿主半区**必须重启 DSH | 宿主半区是进程启动时冻结的模块图。开发时可另起测试宿主 + `scripts/dev-overlay.yml` 拿 `patchReload` 热重载，见 ENGINEERING.md「开发时的宿主半区热重载」 |
 | 改完 `lib/client.js` 只需刷新浏览器 | 客户端束由宿主按请求从磁盘读，带 `rev` 指纹 |
 | **没有任何运行时依赖** | `zod` / `cordis` / dsh-typert-protocol 等一律从 DSH 自身安装树解析；`node_modules` 与 lock 文件不入库 |
@@ -99,8 +99,18 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 ## 构建与自检
 
 ```bash
-npm run build        # tsc → lib/，并剥掉浏览器束结尾的 export
+npm run build        # tsc → lib/，再把客户端模块图打成单文件 lib/client.js（esbuild）
 npm run typecheck    # 只做类型检查
+```
+
+改完代码先跑一次体检（类型检查 → 构建 → 产物体检 → 核心自检，一条命令）：
+
+```bash
+npm run gate                            # 核心 6 个脚本；FAIL 即退出码 1
+node scripts/gate.mjs --full            # 追加全部 verify-*.mjs
+node scripts/gate.mjs --except=a.mjs    # 本机跑不了的脚本显式豁免（汇总记为 EXCLUDED，不算通过）
+node scripts/gate.mjs --release         # 追加「lib/ 与提交版本一致」，发布前 / CI 用
+node scripts/gate.mjs --record --compare   # 记基线 / 与上次比检查项数（基线在 .verify/，不入库）
 ```
 
 纯本地自检（不联网、不花钱），改完代码**至少跑这几个**：

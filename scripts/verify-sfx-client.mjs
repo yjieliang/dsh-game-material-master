@@ -12,6 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { clientSourceText } from "./lib/client-source.mjs";
 
 const failures = [];
 let checks = 0;
@@ -25,7 +26,7 @@ function section(title) {
 }
 
 const target = process.argv[2] ?? fileURLToPath(new URL("../lib/client.js", import.meta.url));
-const source = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+const source = clientSourceText();
 
 // ── 假 React ────────────────────────────────────────────────────────────
 const HOOK = { slots: [], cursor: 0 };

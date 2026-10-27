@@ -2664,6 +2664,8 @@ export async function mapView(p: MapProject, options: { projectId?: string; orig
   void options;
   const doc = await theDocOrFresh(p.id);
   const flat = flatTiles(p.tilesets);
+  // 归属分组只算一次：调色板取自己那一组，不再每个素材各扫一遍全量图块。
+  const tilesByTileset = groupTilesByTileset(flat);
   const listing = await readExportListingRelative(p);
   const state = historyState(p.id);
   const layers = doc.layers.map((layer) => ({ id: layer.id, name: layer.name, filled: filledCount(doc, layer.id) }));
@@ -2696,7 +2698,7 @@ export async function mapView(p: MapProject, options: { projectId?: string; orig
       rev: revisions.get(tileset.id),
       builtin: tileset.builtin === true ? true : undefined,
       reason: layoutFor(tileset.shape, tileset.cell, tileset.imageWidth, tileset.imageHeight, tileset.stamp).reason,
-      palette: paletteFor(tileset, flat)
+      palette: paletteFor(tileset, tilesByTileset.get(tileset.id) ?? [])
     })),
     legend: flat.map((tile) => ({ index: tile.index, tilesetId: tile.tilesetId, rect: tile.tile.rect })),
     layers,
@@ -2729,6 +2731,23 @@ export async function mapView(p: MapProject, options: { projectId?: string; orig
 }
 
 /**
+ * 按素材归属分组（一次扫描）。
+ *
+ * 归属查询原先落在 `paletteFor` 里，每个素材都要过滤一遍全量图块：K 个素材 ×
+ * T 块就是 K×T 次比较，素材多时随两者乘积增长。分组后是 T 次 push，查询退化成
+ * O(1)。组内顺序与 `flatTiles` 一致（同一素材的图块仍按原顺序），全局 `index` 不变。
+ */
+function groupTilesByTileset(flat: readonly FlatTile[]): Map<string, FlatTile[]> {
+  const byTileset = new Map<string, FlatTile[]>();
+  for (const tile of flat) {
+    const list = byTileset.get(tile.tilesetId);
+    if (list === undefined) byTileset.set(tile.tilesetId, [tile]);
+    else list.push(tile);
+  }
+  return byTileset;
+}
+
+/**
  * 素材 → 可点的笔刷列表。
  *
  * 普通素材每格一个条目；**A2 素材只出一个**：用户点的是「草地」这个自动连接笔刷，
@@ -2736,8 +2755,7 @@ export async function mapView(p: MapProject, options: { projectId?: string; orig
  * 那一行的 32×32 逻辑块正好是一张完整的缩略图。写进图层数据的值取同一块的第一个
  * 小格序号：渲染时从它身上认「哪张素材、哪个变体」，形状由宿主现算。
  */
-function paletteFor(tileset: MapTileset, flat: readonly FlatTile[]): Array<{ index: number; rect: MapRect }> {
-  const mine = flat.filter((tile) => tile.tilesetId === tileset.id);
+function paletteFor(tileset: MapTileset, mine: readonly FlatTile[]): Array<{ index: number; rect: MapRect }> {
   /**
    * 整图：调色板里**只有一条**，缩略图是**整张图**（frame 0 / 旋转 0 的整块）。
    *

@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { ROOT, clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 
 // 整个脚本跑在一个 mkdtemp 出来的临时 DSH_HOME 里，结束连同项目一起删掉。
 const HOME = await mkdtemp(join(tmpdir(), "dsh-map-client-"));
@@ -2115,7 +2116,7 @@ try {
   // ══ 13. 模块⑥不是实验性功能 ══════════════════════════════════════════════
   section("13) 模块⑥已转正：角标 / 弹窗 / 常驻提示条三处一个都不能有");
   {
-    const source = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+    const source = clientSourceText();
     /**
      * 「转正」这件事必须三处同时改，只改一处的结果是：
      *   · 只删弹窗 → 页签上还挂着「实验性」角标（用户在入口就看到矛盾信息）；
@@ -2134,16 +2135,25 @@ try {
 
   // ══ 14. 静态源码约束 ═════════════════════════════════════════════════════
   section("14) 界面只执行宿主计划（静态源码约束）");
-  const clientSource = readFileSync(fileURLToPath(new URL("../src/client.ts", import.meta.url)), "utf8");
+  const clientSource = clientSourceText();
   /**
    * 只看模块六那一段：模块④（Spine 图集）与模块⑤（45° 等距地块）里的
    * 「图集」「等距」是**正确用词**，全文件扫会误伤。
    */
-  const mapStart = clientSource.indexOf("模块六 · 地图编辑器");
-  const mapEnd = clientSource.indexOf("模块②：图片生成", mapStart);
-  const mapSource = mapStart >= 0 && mapEnd > mapStart ? clientSource.slice(mapStart, mapEnd) : "";
-  check("能定位到模块六那一段源码（切片锚点还在，且切出了足量内容）", mapSource.length > 20000, `${mapSource.length} 字节`);
-  check("模块②那个锚点注释还在（自检按它切片）", mapEnd > mapStart && clientSource.includes("模块②：图片生成"));
+  // 模块六的源码可能分成两处：面板本体在 `src/client.ts`（或已搬到 `src/client/map-module.ts`），
+  // 坐标辅助仍留在入口。两处都要扫 —— 只扫一处时，搬迁会让黑名单静默失去覆盖。
+  const mapHome = clientSourceFiles().find((file) => readFileSync(join(ROOT, file), "utf8").includes("模块六 · 地图编辑器"));
+  if (mapHome === undefined) throw new Error("找不到模块六所属的客户端源文件");
+  const mapFileText = readFileSync(join(ROOT, mapHome), "utf8");
+  const start = mapFileText.indexOf("模块六 · 地图编辑器");
+  const rest = start < 0 ? "" : mapFileText.slice(start + 20);
+  // 只认顶层分节注释（入口 4 空格 / 模块文件 2 空格），更深的缩进是模块内部小节，不能当终点。
+  const stop = rest.search(/^ {2,4}\/\/ ──/m);
+  const entrySlice = start < 0 ? "" : mapFileText.slice(start, stop === -1 ? mapFileText.length : start + 20 + stop);
+  // 组件搬走之后，界面部分在另一个文件里，一并拼进来。
+  const mapModuleHome = clientSourceFiles().find((file) => file !== mapHome && readFileSync(join(ROOT, file), "utf8").includes("function MapModule("));
+  const mapSource = mapModuleHome === undefined ? entrySlice : `${entrySlice}\n${readFileSync(join(ROOT, mapModuleHome), "utf8")}`;
+  check("模块六切片覆盖到 MapModule 本身", mapSource.includes("function MapModule("), `长度=${mapSource.length}`);
   check("界面里有 MAP_pointToCell（命中测试必需的那一份复刻）", mapSource.includes("function MAP_pointToCell"));
   check(
     "模块六里没有变体挑选 / 绘制顺序 / chunk 计算（那些全在宿主）",

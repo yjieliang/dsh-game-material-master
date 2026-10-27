@@ -450,7 +450,7 @@ try {
     assert(receipts.every((s) => !s.includes(key) && !s.includes(dataUri))),
   );
   const source = await readFile(
-    new URL("../src/index.ts", import.meta.url),
+    new URL("../src/configpatch.ts", import.meta.url),
     "utf8",
   );
   const whitelist = source.slice(

@@ -17,8 +17,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { deepStrictEqual } from "node:assert";
+import { clientSourceText } from "./lib/client-source.mjs";
 
 const HOME = await mkdtemp(join(tmpdir(), "dsh-music-gw-"));
 process.env.DSH_HOME = HOME;
@@ -118,7 +118,7 @@ async function waitIdle(jobId, timeoutMs = 15000) {
 try {
   section("1) 清单与 schema");
   check("manifest 里有 27 个音乐方法", wire.METHODS.filter((entry) => toolsurface.METHOD_MODULE[entry.method] === "music").length === 25 && wire.METHODS.some((entry) => entry.method === "testMusic") && wire.METHODS.some((entry) => entry.method === "testMusicScore"), String(wire.METHODS.filter((entry) => toolsurface.METHOD_MODULE[entry.method] === "music").length));
-  const clientSource = readFileSync("src/client.ts", "utf8");
+  const clientSource = clientSourceText();
   check("浏览器半区方法清单包含全部音乐方法", wire.METHODS.filter((entry) => toolsurface.METHOD_MODULE[entry.method] === "music").every((entry) => clientSource.includes(`["${entry.method}", ${entry.payload === undefined ? "false" : "true"}]`)));
   check("moduleForId(a…) = music", toolsurface.moduleForId("a1234") === "music");
   check("MUSIC_STAGES 与界面一致", links.MUSIC_STAGES.join(",") === "compose,generate,edit,export", links.MUSIC_STAGES.join(","));

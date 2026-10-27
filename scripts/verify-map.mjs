@@ -16,7 +16,9 @@
  *
  * 用法：node scripts/verify-map.mjs
  */
+import { ROOT, clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const geom = await import("../lib/mapgeom.js");
 const auto = await import("../lib/mapauto.js");
@@ -968,7 +970,7 @@ section("11) AI 素材的帧整理（fitFrameToCell / stackFrames / safeAssetSte
 
 section("12) 客户端静态约束（文本检查）");
 {
-  const clientText = readFileSync(new URL("../src/client.ts", import.meta.url), "utf8");
+  const clientText = clientSourceText();
   check(
     "浏览器半区没有自己实现变体挑选 / 绘制顺序 / chunk 计算",
     !clientText.includes("function MAP_pickVariant") &&
@@ -985,13 +987,24 @@ section("12) 客户端静态约束（文本检查）");
   // 在别的模块里是正确用词，全文件扫会误伤 —— 而模块六的实际代码就在 `模块②：图片生成`
   // **之前**，所以切片终点取「锚点之后的下一条 `// ──` 分节注释」，别再去 indexOf 另一个模块名
   // （那会命中文件更靠前的同名字符串，切出空段 → 黑名单变成假绿）。
-  const start = clientText.indexOf("模块六 · 地图编辑器");
-  const after = start < 0 ? -1 : clientText.indexOf("\n    // ──", start + 20);
-  const sectionText = start < 0 ? "" : clientText.slice(start, after > start ? after : undefined);
+  // 模块六的源码可能分成两处：面板本体在 `src/client.ts`（或已搬到 `src/client/map-module.ts`），
+  // 坐标辅助仍留在入口。两处都要扫 —— 只扫一处时，搬迁会让黑名单静默失去覆盖。
+  const mapHome = clientSourceFiles().find((file) => readFileSync(join(ROOT, file), "utf8").includes("模块六 · 地图编辑器"));
+  if (mapHome === undefined) throw new Error("找不到模块六所属的客户端源文件");
+  const mapFileText = readFileSync(join(ROOT, mapHome), "utf8");
+  const start = mapFileText.indexOf("模块六 · 地图编辑器");
+  const rest = start < 0 ? "" : mapFileText.slice(start + 20);
+  // 只认顶层分节注释（入口 4 空格 / 模块文件 2 空格），更深的缩进是模块内部小节，不能当终点。
+  const stop = rest.search(/^ {2,4}\/\/ ──/m);
+  const entrySlice = start < 0 ? "" : mapFileText.slice(start, stop === -1 ? mapFileText.length : start + 20 + stop);
+  // 组件搬走之后，界面部分在另一个文件里，一并拼进来。
+  const mapModuleHome = clientSourceFiles().find((file) => file !== mapHome && readFileSync(join(ROOT, file), "utf8").includes("function MapModule("));
+  const sectionText = mapModuleHome === undefined ? entrySlice : `${entrySlice}\n${readFileSync(join(ROOT, mapModuleHome), "utf8")}`;
+  check("模块六切片覆盖到 MapModule 本身", sectionText.includes("function MapModule("), `长度=${sectionText.length}`);
   check(
     "模块六段落的切片锚点还在、且切出了足量内容（否则下面的黑名单会假绿）",
     sectionText.length > 20000,
-    `start=${start} end=${after} 长度=${sectionText.length}`
+    `长度=${sectionText.length}`
   );
   for (const word of ["地形族", "掩码", "优先级", "切分", "图集", "变体种子", "高度偏移", "Tiled", "等距"]) {
     const hit = sectionText.includes(word);

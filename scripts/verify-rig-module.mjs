@@ -8,9 +8,11 @@
  *   node scripts/verify-rig-module.mjs
  */
 
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ROOT, clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 
 // 数据目录必须换到临时目录，否则会污染用户真实的 <DSH_HOME>。
 const sandbox = await mkdtemp(join(tmpdir(), "dsh-rig-verify-"));
@@ -840,12 +842,21 @@ check("带运行日志", Array.isArray(view.log));
 // 两处都是**编译期看不出来**的隐式 any。这里把「客户端读了哪些字段」直接扫出来，
 // 逐条对着真实视图核对，字段改名 / 少返回都会立刻失败。
 {
-  const clientSource = await readFile(new URL("../src/client.ts", import.meta.url), "utf8");
+  const clientSource = clientSourceText();
   // ⚠️ 扫描必须从**最早**的 rig 组件开始：曾经只从 `function RigModule(` 切起，
   // 结果定义在它前面的 `RigBoneEditor` 读 `job.rig.boneList` 完全没被扫到，
   // 而宿主恰好没在快照顶层 `rig` 里返回这个字段 —— 界面上骨骼编辑器就永远不渲染。
   const start = clientSource.indexOf("function RigSemanticsPanel(");
-  const body = clientSource.slice(start, clientSource.indexOf("// ── 设置页", start));
+  // 扫描范围 = client.ts 里从最早的 rig 组件到设置页，**再加上**装着 RigModule 的模块文件。
+  // 模块化之后 RigModule 不再位于 client.ts，只切 client.ts 会把它悄悄漏掉（断言更容易过）。
+  const rigHome = clientSourceFiles().find((file) =>
+    file !== "src/client.ts" && readFileSync(join(ROOT, file), "utf8").includes("function RigModule(")
+  );
+  const body = `${clientSource.slice(start, clientSource.indexOf("// ── 设置页", start))}\n${rigHome === undefined ? "" : readFileSync(join(ROOT, rigHome), "utf8")}`;
+  // 起点锚失效（组件被搬到别的文件）时 start 会是 -1：那会让 body 只剩 rig 模块文件，
+  // 扫描范围静默缩小、断言反而更容易过。这里显式钉住。
+  if (start < 0) throw new Error("找不到 RigSemanticsPanel：rig 静态扫描的起点锚已失效");
+  check("rig 静态扫描范围覆盖到 RigModule", body.includes("function RigModule("), `body ${body.length} 字符`);
   const topLevel = new Set(Object.keys(view));
   const containers = { parts: view.parts[0], layout: view.layout, rig: view.rig, atlas: view.atlas, stages: view.stages[0], sheet: view.sheet, review: view.review };
   const missing = [];

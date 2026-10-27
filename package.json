@@ -39,8 +39,10 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/strip-client-export.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/bundle-client.mjs && node scripts/strip-client-export.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gate": "node scripts/gate.mjs",
+    "gate:release": "node scripts/gate.mjs --release",
     "verify:rig:runtime": "node scripts/verify-rig-runtime.mjs"
   },
   "devDependencies": {
@@ -48,6 +50,7 @@
     "@deepseek-ai/dsh-typert-protocol": "^0.2.1-rc.2",
     "@esotericsoftware/spine-core": "4.2.120",
     "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "zod": "^4.6.7"
   },

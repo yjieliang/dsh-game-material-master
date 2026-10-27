@@ -5,19 +5,20 @@
  * properties with the same name`，但报的是**行号**，在一个上千行的表里不好找；
  * 而且新加一条时很容易撞上已有的（「保存」「删除」这种短词尤其容易）。
  */
-import { readFileSync } from "node:fs";
+import { clientSourceText } from "./lib/client-source.mjs";
 
-const text = readFileSync("src/client.ts", "utf8");
-const start = text.indexOf("const EN: Record<string, string> = {");
-const end = text.indexOf("const ZH: Record<string, string>", start);
-if (start < 0 || end < 0) throw new Error("找不到词条表 EN");
+const text = clientSourceText();
+/** 词条表边界用起止标记，不依赖「下一个顶层 const」（表已搬到 src/client/i18n-en.ts）。 */
+const start = text.indexOf("i18n-ignore-start");
+const end = text.indexOf("i18n-ignore-end", start);
+if (start < 0 || end < 0) throw new Error("找不到词条表 EN 的起止标记");
 const table = text.slice(start, end);
 const tableStartLine = text.slice(0, start).split("\n").length;
 
 const seen = new Map();
 const lines = table.split("\n");
 for (let i = 0; i < lines.length; i++) {
-  const match = /^\s{6}"((?:[^"\\]|\\.)*)":/.exec(lines[i]);
+  const match = /^\s*"((?:[^"\\]|\\.)*)":/.exec(lines[i]);
   if (match === null) continue;
   const key = match[1];
   if (!seen.has(key)) seen.set(key, []);

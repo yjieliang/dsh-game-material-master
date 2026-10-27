@@ -13,6 +13,7 @@
  * 用法：node scripts/verify-i18n.mjs
  */
 import { readFileSync, existsSync } from "node:fs";
+import { clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 
 let passed = 0;
 const failures = [];
@@ -29,7 +30,8 @@ function section(title) {
   console.log(`\n${title}`);
 }
 
-const CLIENT = "src/client.ts";
+const CLIENT_FILES = clientSourceFiles();
+const CLIENT = CLIENT_FILES.length === 1 ? CLIENT_FILES[0] : "src/client（多文件）";
 const BUNDLE = "lib/client.js";
 /** 词条表的起止标记（`scripts/i18n-wrap.mjs` 靠它把词条表划出自动包装之外）。 */
 const START = "i18n-ignore-start";
@@ -44,17 +46,41 @@ function readDictionary(source) {
   const to = source.indexOf(END, from === -1 ? 0 : from);
   if (from === -1 || to === -1) return null;
   const block = source.slice(from, to);
-  const pattern = /^\s*("(?:[^"\\]|\\.)*"):\s*("(?:[^"\\]|\\.)*")\s*,?\s*$/gmu;
+  /**
+   * key / value 允许**单引号 / 双引号 / 反引号**：值里含双引号时源码本来就会写成模板字面量，
+   * 打包器也可能把它改写成单引号。两边比的是同一份语义，不该因为引号风格判成不一致。
+   */
+  const pattern = /^\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'):\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)\s*,?\s*$/gmu;
   const keys = [];
   const table = new Map();
   let match;
   while ((match = pattern.exec(block)) !== null) {
-    const key = JSON.parse(match[1]);
-    const value = JSON.parse(match[2]);
+    const key = decodeLiteral(match[1]);
+    const value = decodeLiteral(match[2]);
     keys.push(key);
     table.set(key, value);
   }
   return { keys, table };
+}
+
+/** 去掉引号并统一反转义（单引号 / 双引号两种写法的同一个字符串要归一成同一份文本）。 */
+/** 去掉引号并**还原转义**：单引号 / 双引号 / 反引号写法要归一成同一份文本。 */
+function decodeLiteral(raw) {
+  return raw.slice(1, -1).replace(/\\(u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2}|.)/gu, (whole, esc) => {
+    if (esc[0] === "u" && esc[1] === "{") return String.fromCodePoint(Number.parseInt(esc.slice(2, -1), 16));
+    if (esc[0] === "u" && esc.length === 5) return String.fromCharCode(Number.parseInt(esc.slice(1), 16));
+    if (esc[0] === "x" && esc.length === 3) return String.fromCharCode(Number.parseInt(esc.slice(1), 16));
+    switch (esc) {
+      case "n": return "\n";
+      case "t": return "\t";
+      case "r": return "\r";
+      case "b": return "\b";
+      case "f": return "\f";
+      case "v": return "\v";
+      case "0": return "\0";
+      default: return esc;
+    }
+  });
 }
 
 /** 源码里所有 `T("…")` 的第一个实参（去重）。 */
@@ -77,7 +103,7 @@ function offendingChars(text) {
   return [...new Set(stripped.match(/[^\x20-\x7e]/gu) ?? [])];
 }
 
-const source = readFileSync(CLIENT, "utf8");
+const source = clientSourceText();
 const dictionary = readDictionary(source);
 if (dictionary === null) {
   console.error(`✗ 在 ${CLIENT} 里找不到词条表（${START} / ${END} 标记）`);

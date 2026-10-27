@@ -10,9 +10,26 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { ROOT as REPO_ROOT, clientSourceFiles, clientSourceText } from "./lib/client-source.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const source = readFileSync(new URL("../src/client.ts", import.meta.url), "utf8");
+const source = clientSourceText();
+
+/**
+ * 45° 面板的代码块：在**装着 `function IsoModule` 的那个文件**内部切。
+ *
+ * 不能直接在拼接后的全量源码上切：拼接顺序是「入口 + 各模块文件」，IsoModule 之后
+ * 的下一个模块组件可能落在另一个文件的末尾，切片会把整段别的代码卷进来 —— 断言看着
+ * 还绿、覆盖的已经换了对象（改成「下一个模块组件」时就这么踩过一次）。
+ */
+const isoHome = clientSourceFiles().find((file) => readFileSync(join(REPO_ROOT, file), "utf8").includes("function IsoModule("));
+if (isoHome === undefined) throw new Error("找不到定义 IsoModule 的客户端源文件");
+const isoFileText = readFileSync(join(REPO_ROOT, isoHome), "utf8");
+const isoStart = isoFileText.indexOf("function IsoModule");
+const nextModuleAfterIso = /^[ \t]*function \w+Module\(props\)/m.exec(isoFileText.slice(isoStart + 1));
+const isoEnd = nextModuleAfterIso === null ? isoFileText.length : isoStart + 1 + nextModuleAfterIso.index;
+const isoSource = isoFileText.slice(isoStart, isoEnd);
 const built = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 const GEO = await import("../lib/isogeom.js");
 const DOC = await import("../lib/mapdoc.js");
@@ -34,7 +51,16 @@ function section(title) {
 
 section("1) 客户端坐标函数 vs 宿主真实现");
 const start = source.indexOf("function ISO_pointToCellRaw");
-const end = source.indexOf("function IsoModule", start);
+/**
+ * 终点取「第一个不是 `function ISO_*` 的顶层声明」——也就是 ISO_* 这一段自己。
+ *
+ * 以前用 `function IsoModule` 当终点：IsoModule 搬到 `src/client/iso-module.ts` 之后，
+ * 在拼接源码里它落在别的文件末尾，切片把整段带 TS 注解的代码也卷进来，
+ * 下面 `new Function(...)` 直接报「missing ) after argument list」。
+ */
+const isoHelpers = source.slice(start);
+const stopAt = /\n {4}(?!function ISO_)(?:function |const |let )/.exec(isoHelpers);
+const end = stopAt === null ? source.length : start + stopAt.index + 1;
 check("能从 src/client.ts 抽出 ISO_* 函数", start > 0 && end > start, `${start}..${end}`);
 const scaleConsts = /const ISO_OBJECT_SCALE_MIN = ([\d.]+);\s*\n\s*const ISO_OBJECT_SCALE_MAX = ([\d.]+);/.exec(source);
 check("物件大小的上下限是 0.1~4（与宿主同一口径）", scaleConsts !== null && Number(scaleConsts[1]) === 0.1 && Number(scaleConsts[2]) === 4, scaleConsts === null ? "没找到" : `${scaleConsts[1]}~${scaleConsts[2]}`);
@@ -139,12 +165,9 @@ check("计划查询带 have", /api\.isoPlan\(\{[\s\S]{0,400}?have/.test(source))
 check("计划查询带 pending", /api\.isoPlan\(\{[\s\S]{0,500}?pending/.test(source));
 check("编辑后用 dropKeys 删缓存", /dropKeys/.test(source) && /planRef\.current\.delete/.test(source));
 check("预览查询在 pending 时清空 have（否则拖一路看不见）", /pending\.length > 0 \? \[\] : \[\.\.\.planRef\.current\.keys\(\)\]/.test(source));
-check("没有客户端自己算自动连接 / 变体", !/a2QuadrantShapes|corner16Mask|nearestMask/.test(source.slice(source.indexOf("function IsoModule"), source.indexOf("function ImageModule"))));
+check("没有客户端自己算自动连接 / 变体", !/a2QuadrantShapes|corner16Mask|nearestMask/.test(isoSource));
 
 section("5) 界面结构 / 样式 / 文案");
-const isoStart = source.indexOf("function IsoModule");
-const isoEnd = source.indexOf("function ImageModule", isoStart);
-const isoSource = source.slice(isoStart, isoEnd);
 for (const cls of ["SPR_isoRoot", "SPR_isoSide", "SPR_isoPalette", "SPR_isoTools", "SPR_isoStage", "SPR_isoCanvas", "SPR_isoCard", "SPR_isoDlg", "SPR_isoLayerRow", "SPR_isoMarkerRow"]) {
   check(`样式 ${cls} 有规则`, source.includes(`.${cls}{`) || source.includes(`.${cls}\{`), "");
 }
