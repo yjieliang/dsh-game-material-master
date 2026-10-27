@@ -23,17 +23,17 @@ export interface StudioRuntime {
   h: (type: any, props?: any, ...children: any[]) => any;
   /** 词条翻译：中文原文 → 当前语言 */
   T: (key: string, params?: Record<string, unknown>) => string;
-  /** 远程调用句柄（platform/api 的客户端） */
-  api: any;
-  /** 基础组件表（platform/ui） */
-  ui: any;
+  /** 远程调用句柄（platform/api 的客户端）；P1 阶段先不接 */
+  api?: any;
+  /** 基础组件表（platform/ui）；P2 阶段接入 */
+  ui?: any;
   /** 性能与错误计数（platform/perf） */
   perf?: any;
   /** 宿主 ctx（保留给确实需要的场景，勿滥用） */
   ctx?: any;
 }
 
-let current: StudioRuntime | null = null;
+let gmmRuntime: StudioRuntime | null = null;
 
 /**
  * 装入运行时依赖。组合根（client.ts 的 factory 开头）调用且只调用一次。
@@ -41,13 +41,13 @@ let current: StudioRuntime | null = null;
  * @returns 装入的依赖
  */
 export function installRuntime(next: StudioRuntime): StudioRuntime {
-  current = next;
+  gmmRuntime = next;
   return next;
 }
 
 /** 是否已经装入依赖（自检 / 降级路径用）。 */
 export function hasRuntime(): boolean {
-  return current !== null;
+  return gmmRuntime !== null;
 }
 
 /**
@@ -56,10 +56,10 @@ export function hasRuntime(): boolean {
  * @throws 未装入时抛错——这属于编码错误，不去猜默认值
  */
 export function studio(): StudioRuntime {
-  if (current === null) {
+  if (gmmRuntime === null) {
     throw new Error("platform/runtime: installRuntime() 还没执行，不能取运行时依赖");
   }
-  return current;
+  return gmmRuntime;
 }
 
 /** 组件内取运行时依赖（与 studio() 同源；改名只是为了读代码时一眼看出上下文）。 */
@@ -69,5 +69,5 @@ export function useStudio(): StudioRuntime {
 
 /** 仅测试用：清空运行时，避免用例之间互相污染。 */
 export function resetRuntimeForTest(): void {
-  current = null;
+  gmmRuntime = null;
 }

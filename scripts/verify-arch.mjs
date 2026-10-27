@@ -103,6 +103,22 @@ if (exists(FEATURES)) {
 check("platform 不反向依赖 features / shell", platformReverse.length === 0, platformReverse.join(", ") || undefined);
 check("platform 不在模块顶层 import react（必须由 runtime 注入）", clientFiles.filter(f => rel(f).startsWith("client/platform/") && /^import\s+.*from\s+["']react["']/m.test(source(f))).length === 0);
 
+// 单文件 esbuild 打包会把跨模块重名的顶层标识符改名为 xxx2，而自检里有一批
+// 「按源码文本钉住调用点」的契约（例如 mergeDrafts 的参数名），一旦被改名就变红。
+// 已踩：runtime.ts 的模块级 current 让 mergeDrafts 的参数变成 current2。
+const GENERIC_NAMES = new Set(["current", "next", "value", "state", "props", "data", "item", "items", "list", "listeners", "result", "index", "ref"]);
+const genericHits = [];
+for (const file of clientFiles) {
+  if (!rel(file).startsWith("client/platform/")) continue;
+  const lines = source(file).split("\n");
+  for (const line of lines) {
+    const match = /^(?:export )?(?:const|let|function|class)\s+([A-Za-z0-9_$]+)/.exec(line);
+    if (match === null) continue;
+    if (GENERIC_NAMES.has(match[1])) genericHits.push(rel(file) + " → " + match[1]);
+  }
+}
+check("platform 顶层标识符避开通用名（避免打包重命名破坏文本契约）", genericHits.length === 0, genericHits.slice(0, 4).join("; ") || undefined);
+
 // ── 2. 裸定时器 / 裸 fetch（棘轮）────────────────────────────────────────
 section("资源与请求（棘轮：只许降不许涨）");
 const legacy = clientFiles.filter(file => !rel(file).startsWith("client/platform/"));

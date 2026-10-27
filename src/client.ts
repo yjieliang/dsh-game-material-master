@@ -16,6 +16,8 @@
 
 import { CSS } from "./client/styles.js";
 import { createUiKit } from "./client/ui.js";
+import { installRuntime } from "./client/platform/runtime.js";
+import { perf } from "./client/platform/perf.js";
 import { EN } from "./client/i18n-en.js";
 
 import { createSfxModule } from "./client/sfx-module.js";
@@ -45,6 +47,12 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     const React = require("react");
     const h = React.createElement;
+    // ── platform 运行时 ───────────────────────────────────────────────────
+    // 组合根一次性装入「创建后不再变化」的依赖；模块/组件从这里取，不再逐层传参。
+    // 现在只装 React / h / T；api 与 ui 在后续阶段接入（P2 起）。
+    // T 是函数声明（会提升），这里引用它没问题。
+    installRuntime({ React, h, T });
+    perf.installGlobal();
 
     const PACKAGE = "dsh-game-material-master";
     const SERVICE = "gameStudio";
