@@ -24,6 +24,10 @@ import { createPollScheduler } from "./client/platform/scheduler.js";
 import { createSprite } from "./client/features/sprite/index.js";
 import { createRig } from "./client/features/rig/index.js";
 import { createPrompts } from "./client/infra/prompts.js";
+import { createMusic } from "./client/features/music/index.js";
+import { createSfx } from "./client/features/sfx/index.js";
+import { createSequence } from "./client/features/sequence/index.js";
+import { createImage } from "./client/features/image/index.js";
 import { EN } from "./client/i18n-en.js";
 
 import { createSfxModule } from "./client/sfx-module.js";
@@ -1761,18 +1765,65 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 画布。没有步骤条，也没有长说明 —— 名词解释一律贴着控件写一行小字。
      */
     const MapModule = createMapModule({ React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat });
-    // ── 模块七：音乐生成编辑 ─────────────────────────────────────────────
-    //
-    // 这个模块不自己生成音乐：用户在「新建音乐」里确认后，客户端先 `createMusicJob`
-    // 建任务，再开一个**不挂靠项目**的新对话，把带 jobId 的任务说明发进去。
-    // 对话里的 agent 用 `getMusicGuide` + `runMusicGeneration` 推进；生成完把
-    // openUrl 贴回来，用户点开就落到这里试听 / 裁剪 / 调音量 / 淡入淡出 / 导出。
-    function musicFmtTime(seconds) {
-      const value = Math.max(0, Number(seconds) || 0);
-      const minutes = Math.floor(value / 60);
-      const rest = value - minutes * 60;
-      return `${minutes}:${String(Math.floor(rest)).padStart(2, "0")}`;
-    }
+    // ── 模块③：序列帧生成（feature 切片，见 src/client/features/sequence/）──────────
+    const sequence = createSequence({
+
+          h,
+      T,
+      Btn,
+      msg,
+      React,
+      NumField,
+      useLocaleTick,
+      useStudioIntent,
+      mergeDrafts,
+      askNewName,
+      Chip,
+      StatusChip,
+      useGlobalConfig,
+      GlobalModelField,
+      ZoomableImage,
+      usePendingTasks,
+      LoadingOverlay,
+      MediaBox,
+      BusyBtn,
+      BusyBadge,
+      ReviewModeBar,
+      ApproveBtn,
+      readFileBase64,
+      UploadBox,
+      KeyingFields,
+      CopyIdButton,
+      JobSidebar,
+      gmmScheduler,
+    });
+    const { SequenceModule, RefRow, SequencePlayer, JobLogPanel, renderLog, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, SequenceModuleRaw } = sequence;
+
+    // ── 模块七：音乐生成编辑（feature 切片，见 src/client/features/music/）────────────
+    const music = createMusic({
+          T,
+      h,
+      Chip,
+      React,
+      activeLang,
+      useLocaleTick,
+      buildMusicRequestPrompt,
+      buildComposeRequestPrompt,
+      deriveMusicName,
+      MUSIC_ENGINES,
+      MUSIC_FORMATS,
+      MUSIC_EDIT_LIMITS,
+      useStudioIntent,
+      msg,
+      Btn,
+      NumField,
+      BusyBtn,
+      BusyBadge,
+      ReviewModeBar,
+      CopyIdButton,
+      openMusicChat,
+    });
+    const { MusicModule, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, MusicModuleRaw } = music;
 
     /**
      * 音乐产物的地址。
@@ -1784,83 +1835,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 产物本身都在 `job.assetBase` 下，所以界面**优先用相对路径**，只有拿不到
      * `file`（例如只有平台远程地址）时才退回宿主给的绝对地址。
      */
-    function musicAssetUrl(job, relative, fallback) {
-      const base = job !== null && job !== undefined && typeof job.assetBase === "string" ? job.assetBase : "";
-      if (typeof relative === "string" && relative !== "" && base !== "") {
-        const encoded = relative.replace(/^\/+/, "").split("/").map((part) => encodeURIComponent(part)).join("/");
-        return `${base}${encoded}`;
-      }
-      if (typeof fallback === "string" && fallback !== "") {
-        const basePath = base !== "" ? new URL(base, window.location.origin).pathname : "";
-        try {
-          const parsed = new URL(fallback, window.location.origin);
-          if (basePath !== "" && parsed.pathname.startsWith(basePath)) return `${parsed.pathname}${parsed.search}`;
-        } catch {
-          // 不是合法 URL 就原样交给浏览器。
-        }
-        return fallback;
-      }
-      return "";
-    }
-
-    function musicDownloadUrl(job, relative, fallback) {
-      const url = musicAssetUrl(job, relative, fallback);
-      if (url === "") return "";
-      // 只有本地相对路径能安全地加下载参数；平台远程地址可能已经有自己的查询串。
-      return typeof relative === "string" && relative !== "" ? `${url}${url.includes("?") ? "&" : "?"}download=1` : url;
-    }
-
-    function makeMusicOps(duration) {
-      return {
-        start: 0,
-        end: Math.max(0, Number(duration) || 0),
-        gainDb: 0,
-        fadeIn: 0,
-        fadeOut: 0,
-        normalize: false,
-        lufs: -14,
-        truePeak: -1,
-        format: "mp3",
-        bitrate: 192
-      };
-    }
-
-    function musicOpsText(ops) {
-      const parts = [];
-      if (Number(ops.start) > 0 || Number(ops.end) > 0) parts.push(T("裁剪 {n0}–{n1}", { n0: musicFmtTime(ops.start), n1: musicFmtTime(ops.end) }));
-      if (Number(ops.gainDb) !== 0) parts.push(T("音量 {n0} dB", { n0: ops.gainDb > 0 ? `+${ops.gainDb}` : ops.gainDb }));
-      if (Number(ops.fadeIn) > 0) parts.push(T("淡入 {n0}s", { n0: ops.fadeIn }));
-      if (Number(ops.fadeOut) > 0) parts.push(T("淡出 {n0}s", { n0: ops.fadeOut }));
-      if (ops.normalize === true) parts.push(T("标准化 {n0} LUFS", { n0: ops.lufs }));
-      parts.push(String(ops.format ?? "mp3").toUpperCase());
-      return parts.join(" · ");
-    }
-
-    function musicStatusChip(status) {
-      const text = status === "succeeded" ? T("已完成") : status === "failed" ? T("失败") : status === "processing" ? T("处理中") : T("排队中");
-      const kind = status === "succeeded" ? "ready" : status === "failed" ? "error" : "running";
-      return h(Chip, { kind, text });
-    }
-
-    function MusicWave(props) {
-      const peaks = Array.isArray(props.peaks) ? props.peaks : [];
-      const duration = Math.max(0.001, Number(props.duration) || 0.001);
-      const left = Math.max(0, Math.min(100, (Number(props.start) / duration) * 100));
-      const right = Math.max(left, Math.min(100, (Number(props.end) / duration) * 100));
-      return h(
-        "div",
-        { className: "SPR_musicWave", "data-testid": "music-wave" },
-        h("div", { className: "SPR_musicBars" }, peaks.length === 0
-          ? h("span", { className: "SPR_musicWaveEmpty" }, T("波形还没算出来（可以先直接裁剪/调音量）"))
-          : peaks.map((value, index) =>
-              h("span", { key: index, className: "SPR_musicBar", style: { height: `${Math.max(2, Math.round(Number(value) * 100))}%` } })
-            )),
-        h("div", { className: "SPR_musicSel", style: { left: `${left}%`, width: `${Math.max(1, right - left)}%` } })
-      );
-    }
-
-    const MusicModule = createMusicModule({ React, h, activeLang, T, useLocaleTick, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, MUSIC_ENGINES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, useStudioIntent, msg, Chip, Btn, NumField, BusyBtn, BusyBadge, ReviewModeBar, CopyIdButton, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, openMusicChat });
-
     // ── 模块八：音效生成（火山引擎 Seed-Audio）────────────────────────────
     //
     // 与音乐模块不同：这里不派给对话，界面上直接「生成」→ 后台任务 → 轮询。
@@ -1868,22 +1842,59 @@ import { createModuleIcon } from "./client/module-icon.js";
 
 
 
-    /** 格式名由客户端翻，不用宿主回传的中文 label（切英文会露中文）。 */
-    function sfxFormatLabel(id) {
-      if (id === "mp3") return T("MP3（体积小）");
-      if (id === "ogg_opus") return T("Ogg Opus（体积更小）");
-      return T("WAV（无损，游戏引擎常用）");
-    }
+    // ── 模块八：音效生成（feature 切片，见 src/client/features/sfx/）────────────
+    const sfx = createSfx({
 
-    const SfxModule = createSfxModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, Chip, Btn, NumField, LoadingOverlay, BusyBtn, CopyIdButton, musicAssetUrl, musicDownloadUrl, sfxFormatLabel });
+          T,
+      React,
+      h,
+      useLocaleTick,
+      useStudioIntent,
+      msg,
+      mergeDrafts,
+      Chip,
+      Btn,
+      NumField,
+      LoadingOverlay,
+      BusyBtn,
+      CopyIdButton,
+      musicAssetUrl,
+      musicDownloadUrl,
+    });
+    const { SfxModule, sfxFormatLabel, SfxModuleRaw } = sfx;
 
-    // ── 模块②：图片生成 ─────────────────────────────────────────────────
-    /** 模块②的 pending key：整批生成、单张重生成、抠像、上传、新建任务。 */
-    const K_IMG_JOB = "img:job";
-    const K_IMG_ITEM = (index) => `img:item:${index}`;
-    const K_IMG_KEY = "img:key";
-    const K_IMG_UPLOAD = "img:upload";
-    const K_IMG_CREATE = "img:create";
+    // ── 模块②：图片生成（feature 切片，见 src/client/features/image/）──────────────
+    const image = createImage({
+
+          React,
+      h,
+      T,
+      useLocaleTick,
+      useStudioIntent,
+      msg,
+      mergeDrafts,
+      askNewName,
+      Chip,
+      StatusChip,
+      Btn,
+      NumField,
+      useGlobalConfig,
+      GlobalModelField,
+      usePendingTasks,
+      MediaBox,
+      BusyBtn,
+      BusyBadge,
+      ReviewModeBar,
+      ApproveBtn,
+      readFileBase64,
+      UploadBox,
+      KeyingFields,
+      CopyIdButton,
+      JobSidebar,
+      JobLogPanel,
+      gmmScheduler,
+    });
+    const { ImageModule, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, ImageModuleRaw } = image;
 
     // ── 模块五 · 45° 地图编辑器（iso）──────────────────────────────────────
     //
@@ -2031,147 +2042,6 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     const IsoModule = createIsoModule({ React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat });
 
-    const ImageModule = createImageModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, usePendingTasks, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, JobLogPanel , scheduler: gmmScheduler });
-
-    // ── 模块③：序列帧生成 ───────────────────────────────────────────────
-    /** 模块③的 pending key：视频、抽帧、抠像、合成、上传、新建任务。 */
-    const K_SEQ_VIDEO = "seq:video";
-    const K_SEQ_FRAMES = "seq:frames";
-    const K_SEQ_KEY = "seq:key";
-    const K_SEQ_COMPOSE = "seq:compose";
-    const K_SEQ_UPLOAD = "seq:upload";
-    const K_SEQ_CREATE = "seq:create";
-    const K_SEQ_POLL = "seq:poll";
-
-    const SequenceModule = createSequenceModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel , scheduler: gmmScheduler });
-
-    /** 单张参考图/首尾帧的展示行。 */
-    function RefRow(props) {
-      // ⚠️ 这里的 prop 不能叫 `ref`：React 会把名为 ref 的 prop 特殊处理（不进 props），
-      // 函数组件里 `props.ref` 恒为 undefined，界面就会永远显示「未上传」——
-      // 看起来像「选了图没反应」，实测踩过。
-      const { job, frame, kind, api, reload, setNotice } = props;
-      if (frame === undefined) return h("span", { className: "SPR_refRow" }, T("未上传"));
-      return h(
-        "div",
-        { className: "SPR_toolbar" },
-        h("img", { className: "SPR_thumbMd", src: `${job.assetBase}${frame.file}?v=${job.updatedAt}`, alt: frame.name }),
-        h("span", { className: "SPR_refRow" }, frame.name),
-        h(
-          Btn,
-          {
-            danger: true,
-            onClick: async () => {
-              try {
-                await api.removeSequenceRef({ jobId: job.id, kind });
-                await reload(job.id);
-              } catch (error) {
-                setNotice({ kind: "error", text: msg(error) });
-              }
-            }
-          },
-          T("移除")
-        )
-      );
-    }
-
-    /** 序列帧播放预览：把抠好的帧按 fps 循环播出来。 */
-    function SequencePlayer(props) {
-      const urls = props.urls;
-      const canvasRef = React.useRef(null);
-      const imagesRef = React.useRef([]);
-      const rafRef = React.useRef(0);
-      const liveRef = React.useRef({ fps: 12, scale: 1 });
-      const [fps, setFps] = React.useState(12);
-      const [scale, setScale] = React.useState(1);
-      const [playing, setPlaying] = React.useState(true);
-      const [loaded, setLoaded] = React.useState(0);
-      const playingRef = React.useRef(true);
-      const key = urls.join("|");
-
-      liveRef.current.fps = fps;
-      liveRef.current.scale = scale;
-      playingRef.current = playing;
-
-      React.useEffect(() => {
-        let cancelled = false;
-        const images = [];
-        let done = 0;
-        urls.forEach((url, index) => {
-          const image = new Image();
-          image.onload = () => {
-            done++;
-            if (!cancelled) setLoaded(done);
-          };
-          image.onerror = () => {
-            done++;
-            if (!cancelled) setLoaded(done);
-          };
-          image.src = url;
-          images[index] = image;
-        });
-        imagesRef.current = images;
-        setLoaded(0);
-        return () => {
-          cancelled = true;
-          imagesRef.current = [];
-        };
-      }, [key]);
-
-      React.useEffect(() => {
-        const canvas = canvasRef.current;
-        if (canvas === null) return undefined;
-        const g = canvas.getContext("2d");
-        let frame = 0;
-        let last = performance.now();
-        const tick = (now) => {
-          rafRef.current = requestAnimationFrame(tick);
-          const live = liveRef.current;
-          const images = imagesRef.current.filter((image) => image !== undefined && image.naturalWidth > 0);
-          if (images.length === 0) return;
-          const interval = 1000 / Math.max(1, live.fps);
-          if (playingRef.current && now - last >= interval) {
-            last = now;
-            frame = (frame + 1) % images.length;
-          }
-          const image = images[frame % images.length];
-          const w = Math.round(image.naturalWidth * live.scale);
-          const h2 = Math.round(image.naturalHeight * live.scale);
-          canvas.width = w;
-          canvas.height = h2;
-          g.fillStyle = "#ffffff";
-          g.fillRect(0, 0, w, h2);
-          g.imageSmoothingEnabled = live.scale < 1;
-          g.drawImage(image, 0, 0, w, h2);
-        };
-        rafRef.current = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(rafRef.current);
-      }, [key]);
-
-      return h(
-        React.Fragment,
-        null,
-        h(
-          "div",
-          { className: "SPR_fields" },
-          h(NumField, { label: T("播放帧率（fps）"), value: fps, min: 1, max: 30, onChange: setFps }),
-          h(NumField, { label: T("预览缩放"), value: scale, min: 0.2, max: 2, step: 0.1, onChange: setScale }),
-          h(
-            "label",
-            { className: "SPR_field" },
-            h("span", { className: "SPR_fieldLabel" }, T("播放")),
-            h(
-              "select",
-              { className: "SPR_input", value: playing ? "on" : "off", onChange: (event) => setPlaying(event.target.value === "on") },
-              h("option", { value: "on" }, T("播放中")),
-              h("option", { value: "off" }, T("暂停"))
-            )
-          )
-        ),
-        h("p", { className: "SPR_hint" }, T("已载入 {n0}/{n1} 帧。这是抠像后的帧按顺序循环播放的效果，用来判断动作连贯性和抠像边缘是否稳定。", { n0: loaded, n1: urls.length })),
-        h("div", { className: "SPR_player" }, h("canvas", { ref: canvasRef, className: "SPR_canvasPlayer" }))
-      );
-    }
 
     /**
      * 任务日志面板。
@@ -2185,102 +2055,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      *  2. **级别筛选 + 关键字**。日志里绝大多数是 info，出问题时真正要看的是
      *     那几条 warn/error；40 条一屏根本翻不到。
      */
-    function JobLogPanel({ job }) {
-      const [level, setLevel] = React.useState("all");
-      const [query, setQuery] = React.useState("");
-      const raw = Array.isArray(job?.log) ? job.log : [];
-      if (raw.length === 0) return null;
-
-      const paired = [];
-      let open = null;
-      for (const entry of raw) {
-        if (typeof entry?.message !== "string") continue;
-        if (/^开始/.test(entry.message)) {
-          // 上一条还没闭合就再来一条「开始」：把它单独留下，不要吞掉。
-          if (open !== null) paired.push(open);
-          open = entry;
-          continue;
-        }
-        if (open !== null && /完成|失败/.test(entry.message)) {
-          paired.push({
-            at: entry.at,
-            level: entry.level,
-            message: T("{n0} → {n1}", { n0: open.message.replace(/^开始/, ""), n1: entry.message }),
-            startedAt: open.at,
-            elapsed: Math.max(0, entry.at - open.at)
-          });
-          open = null;
-          continue;
-        }
-        paired.push(entry);
-      }
-      if (open !== null) paired.push(open);
-
-      const wanted = level === "all" ? null : level === "warn" ? (e) => e.level !== "info" : (e) => e.level === "error";
-      const filtered = paired.filter((entry) => (wanted === null || wanted(entry)) && (query === "" || String(entry.message).includes(query)));
-      const entries = filtered.slice(-40).reverse();
-      const counts = paired.reduce((acc, entry) => { acc[entry.level] = (acc[entry.level] ?? 0) + 1; return acc; }, {});
-      const formatElapsed = (ms) => (ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s`);
-
-      return h(
-        "div",
-        { className: "SPR_log", "data-testid": "rig-log" },
-        h("div", { className: "SPR_logHead" },
-          h("span", { className: "SPR_fieldLabel" }, T("运行日志（{n0} 条{n1}）", { n0: paired.length, n1: counts.error ? T(" · {n0} 错误", { n0: counts.error }) : counts.warn ? T(" · {n0} 警告", { n0: counts.warn }) : "" })),
-          h("span", { className: "SPR_logFilters" },
-            h(Btn, { on: level === "all", "data-testid": "rig-log-all", onClick: () => setLevel("all") }, T("全部")),
-            h(Btn, { on: level === "warn", "data-testid": "rig-log-warn", onClick: () => setLevel("warn") }, T("警告+（{n0}）", { n0: (counts.warn ?? 0) + (counts.error ?? 0) })),
-            h(Btn, { on: level === "error", "data-testid": "rig-log-error", onClick: () => setLevel("error") }, T("错误（{n0}）", { n0: counts.error ?? 0 })),
-            h("input", {
-              className: "SPR_input",
-              style: { width: 130 },
-              placeholder: T("搜关键字…"),
-              "data-testid": "rig-log-query",
-              value: query,
-              onChange: (event) => setQuery(event.target.value)
-            })
-          )
-        ),
-        entries.length === 0
-          ? h("p", { className: "SPR_hint" }, filtered.length === 0 && paired.length > 0 ? T("当前筛选下没有日志。") : "")
-          : h(
-              "ul",
-              { className: "SPR_logList" },
-              entries.map((entry, index) =>
-                h(
-                  "li",
-                  { key: `${entry.at}-${index}`, "data-level": entry.level },
-                  h("span", { className: "SPR_logTime" }, new Date(entry.at).toLocaleTimeString("zh-CN", { hour12: false })),
-                  h("span", null, entry.message),
-                  entry.elapsed === undefined ? null : h("span", { className: "SPR_logElapsed" }, T("（{n0}）", { n0: formatElapsed(entry.elapsed) }))
-                )
-              )
-            )
-      );
-    }
-
-    function renderLog(project) {
-      const entries = Array.isArray(project.log) ? project.log.slice(-40).reverse() : [];
-      if (entries.length === 0) return null;
-      return h(
-        "div",
-        { className: "SPR_log" },
-        h("span", { className: "SPR_fieldLabel" }, T("运行日志")),
-        h(
-          "ul",
-          { className: "SPR_logList" },
-          entries.map((entry, index) =>
-            h(
-              "li",
-              { key: index, "data-level": entry.level },
-              h("span", { className: "SPR_logTime" }, new Date(entry.at).toLocaleTimeString("zh-CN", { hour12: false })),
-              h("span", null, entry.message)
-            )
-          )
-        )
-      );
-    }
-
     // ── 模块④：骨骼动画生成 ──────────────────────────────────────────────
     //
     // 四个阶段各自独立可重跑，和八方向图的手感一致：
@@ -2492,11 +2266,7 @@ import { createModuleIcon } from "./client/module-icon.js";
       };
     };
     const MapModuleBound = wrapFeature("map", MapModule);
-    const MusicModuleBound = wrapFeature("music", MusicModule);
-    const SfxModuleBound = wrapFeature("sfx", SfxModule);
     const IsoModuleBound = wrapFeature("iso", IsoModule);
-    const ImageModuleBound = wrapFeature("image", ImageModule);
-    const SequenceModuleBound = wrapFeature("sequence", SequenceModule);
     // ── 模块①：八方向图（feature 切片，见 src/client/features/sprite/）────────
     const sprite = createSprite({
       T,
@@ -2528,7 +2298,7 @@ import { createModuleIcon } from "./client/module-icon.js";
     });
     let IMAGE_MODES = sprite.IMAGE_MODES();
     const { renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage } = sprite;
-    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule: MapModuleBound, MusicModule: MusicModuleBound, SfxModule: SfxModuleBound, IsoModule: IsoModuleBound, ImageModule: ImageModuleBound, SequenceModule: SequenceModuleBound, renderLog, RigModule, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
+    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule: MapModuleBound, MusicModule, SfxModule, IsoModule: IsoModuleBound, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
 
     function apply(ctx) {
       // 界面文案跟随 DSH 的语言设置；服务不可用时安静地退回中文原文。
@@ -2845,7 +2615,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * `mapgeom` / `mapdoc` 的真实现做黄金对照逐点比对 —— 界面复刻的那部分几何
      * 必须有守门的，否则「预览与导出错位」会以静默的方式回来。
      */
-    bundleModule.exports.__test = { StudioPanel, IsoModule, ImageModule, SequenceModule, mergeDrafts, RigSemanticsPanel, MapModule, MusicModule, SfxModule, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, NumField, ZoomableImage, CSS, subscribeIntent, parseIntents, openStudioIntent, OPEN_QUERY_KEY, StudioGlyph, StudioGlyphIcon, publishHiddenModules, useHiddenModules, visibleModulesOf, normalizeHiddenKeys, ConfigSection, attachSessionBridge, openAssetChat, openMusicChat, buildAssetRequestPrompt, buildIsoAssetRequestPrompt, buildMusicRequestPrompt, buildComposeRequestPrompt, openIsoAssetChat, deriveAssetName, deriveMusicName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX };
+    bundleModule.exports.__test = { StudioPanel, IsoModule, ImageModule: ImageModuleRaw, SequenceModule: SequenceModuleRaw, mergeDrafts, RigSemanticsPanel, MapModule, MusicModule: MusicModuleRaw, SfxModule: SfxModuleRaw, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, NumField, ZoomableImage, CSS, subscribeIntent, parseIntents, openStudioIntent, OPEN_QUERY_KEY, StudioGlyph, StudioGlyphIcon, publishHiddenModules, useHiddenModules, visibleModulesOf, normalizeHiddenKeys, ConfigSection, attachSessionBridge, openAssetChat, openMusicChat, buildAssetRequestPrompt, buildIsoAssetRequestPrompt, buildMusicRequestPrompt, buildComposeRequestPrompt, openIsoAssetChat, deriveAssetName, deriveMusicName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX };
     return bundleModule.exports;
   }
 });
