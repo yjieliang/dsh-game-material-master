@@ -5,6 +5,8 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { studio } from "./platform/runtime.js";
 export interface StudioPanelRuntime {
   React: any;
   scheduler: any;
@@ -50,6 +52,8 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
   const { React, h, T, scheduler, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon } = rt;
 
 function StudioPanel(props) {
+  // 渲染计数：真机在控制台 __GMM_PERF__.renderCount("StudioPanel") 可看（验证「一次轮询最多重渲染几次」）。
+  try { studio().perf?.recordRender?.("StudioPanel"); } catch { /* 自检桩环境没有运行时 */ }
   const localeTick = useLocaleTick();
   const api = props?.api;
   const [projects, setProjects] = React.useState([]);
@@ -79,7 +83,8 @@ function StudioPanel(props) {
    * 用它判断界面上的草稿有没有被用户改过，别再拿宿主的值把正在输入的内容覆盖掉
    * （真机反馈：「我替换的时候它一秒钟又换回来」）。判定规则见 `mergeDrafts`。
    */
-  const loadedPrompts = React.useRef({ projectId: null, images: {}, video: "" });
+  const loadedPrompts = React.useRef({ projectId: null, images: {}, video: "", signature: "" });
+
   const visibleModules = visibleModulesOf(hidden);
   /**
    * 真正渲染的模块：当前选中项被隐藏（或压根不存在）时落到第一个可见模块。
@@ -127,12 +132,17 @@ function StudioPanel(props) {
       if (api === undefined || id === null) return;
       try {
         const next = await api.getProject(id);
+
         const previous = loadedPrompts.current;
+        // 内容没变就别 setState（轮询的绝大多数时刻都是这种情况）。
+        const signature = JSON.stringify(next ?? null);
+        const forceUpdate = options.resetDrafts === true;
+        if (!forceUpdate && previous.projectId === id && signature === previous.signature) return;
         // 换项目、或用户明确点了「重置为默认」：草稿整份换成宿主的。
         const force = options.resetDrafts === true || previous.projectId !== id;
         const images = { ...(next.prompts?.images ?? {}) };
         const video = next.prompts?.video ?? "";
-        loadedPrompts.current = { projectId: id, images, video };
+        loadedPrompts.current = { projectId: id, images, video, signature };
         setProject(next);
         setPromptDraft((current) => mergeDrafts(current, previous.images, images, force));
         setVideoPromptDraft((current) => mergeDrafts(current, previous.video, video, force));

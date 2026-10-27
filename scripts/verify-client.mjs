@@ -894,6 +894,12 @@ function checkFramePickContracts(text, label) {
  */
 function checkDraftContracts(text, label) {
   check(
+    "浏览器半区：轮询内容没变时跳过 setState（避免每 2.5 秒整树重渲染）",
+    /const signature = JSON\.stringify\(next \?\? null\);/.test(text) &&
+      /signature === previous\.signature\)/.test(text) &&
+      /forceUpdate = options\.resetDrafts === true/.test(text)
+  );
+  check(
     `${label}：草稿合并只更新用户没动过的字段`,
     /function mergeDrafts\(current, previous, next, force\)/.test(text) &&
       // 打包器会把 `undefined` 规范成 `void 0`（语义相同），两边都要认。

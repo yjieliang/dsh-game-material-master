@@ -144,6 +144,10 @@ const tick = (label) => {
 
 const mount = tick("mount");
 
+// 渲染计数接线自检：面板每次渲染都会记一笔（真机看 __GMM_PERF__）。
+const panelRenders = globalThis.__GMM_PERF__ ? globalThis.__GMM_PERF__.renderCount("StudioPanel") : -1;
+console.log("StudioPanel 渲染计数 = " + panelRenders);
+
 // 再逐个渲染各模块根组件：得到「每个模块挂载一次的渲染面」基线
 const apiStub = {
   getConfig: async () => ({}),
