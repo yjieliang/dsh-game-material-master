@@ -24,7 +24,7 @@ const BUNDLE = ROOT + "lib/client.js";
 /** 迁移期棘轮：历史遗留允许存在，但不得增长（每迁一个模块就把数字往下调）。 */
 const BASELINE = {
   /** 非 platform 客户端源码里的 setInterval/setTimeout 计数 */
-  legacyTimers: 20,
+  legacyTimers: 16,
   /** 非 platform 客户端源码里的裸 fetch( 计数 */
   legacyFetch: 3,
   /** 非 platform 客户端源码里的 addEventListener 计数（走 lifecycle 之前允许存在） */
@@ -81,6 +81,7 @@ if (exists(CLIENT)) clientFiles.push(...walk(CLIENT));
 section("依赖规则");
 const featureImports = [];
 const platformReverse = [];
+const platformFilesReverse = [];
 const thirdParty = [];
 for (const file of clientFiles) {
   const name = rel(file);
@@ -100,6 +101,9 @@ for (const file of clientFiles) {
   if (name.startsWith("platform/") && /from\s+["']\.\.\/(features|shell)\//.test(text)) {
     platformReverse.push(name);
   }
+  if (name.startsWith("platform/") && /from\s+["']\.\.\/shell\//.test(text)) {
+    platformFilesReverse.push(name);
+  }
 }
 check("客户端源码没有 import 第三方包", thirdParty.length === 0, thirdParty.slice(0, 3).join("; ") || undefined);
 if (exists(FEATURES)) {
@@ -108,6 +112,15 @@ if (exists(FEATURES)) {
   skip("features 之间零 import", "features/ 还没建（P3 起生效）");
 }
 check("platform 不反向依赖 features / shell", platformReverse.length === 0, platformReverse.join(", ") || undefined);
+check("platform 不依赖 shell（依赖只能单向：shell → features → platform）", platformFilesReverse.length === 0);
+
+// 入口文件只剩「注册插件 + 取 React」；装配全在 shell/bootstrap.ts。
+const clientEntryLineCount = source(SRC + "/client.ts").split("\n").length;
+check(
+  "client.ts（入口）≤ 400 行（当前 " + clientEntryLineCount + " 行）",
+  clientEntryLineCount <= 400,
+  clientEntryLineCount > 400 ? "装配代码应放到 shell/ 里" : undefined
+);
 check("platform 不在模块顶层 import react（必须由 runtime 注入）", clientFiles.filter(f => rel(f).startsWith("client/platform/") && /^import\s+.*from\s+["']react["']/m.test(source(f))).length === 0);
 
 // 单文件 esbuild 打包会把跨模块重名的顶层标识符改名为 xxx2，而自检里有一批
