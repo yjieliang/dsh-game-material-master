@@ -32,6 +32,10 @@
   "engines": {
     "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.0-rc.2 <0.3.0-0",
+    "zod": ">=4 <5"
+  },
   "files": [
     "lib",
     "README.md",
