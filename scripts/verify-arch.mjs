@@ -55,6 +55,13 @@ const exists = path => {
     return false;
   }
 };
+const fileExists = path => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
 const walk = (dir, out = []) => {
   for (const entry of readdirSync(dir)) {
     const path = dir + "/" + entry;
@@ -150,10 +157,10 @@ if (!exists(FEATURES)) {
   skip("每个 feature 根组件被 FeatureBoundary 包裹", "P2 起生效");
 } else {
   const dirs = readdirSync(FEATURES).filter(name => exists(FEATURES + "/" + name));
-  const missing = dirs.filter(name => !exists(FEATURES + "/" + name + "/descriptor.ts"));
+  const missing = dirs.filter(name => !fileExists(FEATURES + "/" + name + "/descriptor.ts"));
   check("每个 feature 有 descriptor.ts", missing.length === 0, missing.join(", ") || undefined);
   const registryPath = FEATURES + "/registry.ts";
-  if (!exists(registryPath)) {
+  if (!fileExists(registryPath)) {
     skip("registry 覆盖全部 features", "registry.ts 还没建（P6）");
   } else {
     const registry = source(registryPath);
@@ -162,7 +169,7 @@ if (!exists(FEATURES)) {
   }
   const unwrapped = dirs.filter(name => {
     const index = FEATURES + "/" + name + "/index.ts";
-    if (!exists(index)) return true;
+    if (!fileExists(index)) return true;
     return !/createFeatureBoundary|FeatureBoundary/.test(source(index));
   });
   check("每个 feature 根组件被 FeatureBoundary 包裹", unwrapped.length === 0, unwrapped.join(", ") || undefined);
