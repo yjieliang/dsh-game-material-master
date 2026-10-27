@@ -36,6 +36,14 @@ export function createFeatureBoundary(options: FeatureBoundaryOptions) {
   const degradeText = options.degradeText ?? "该模块暂时不可用，可以切到其它模块，或点重试";
   const fallbackText = T("模块渲染出错");
 
+  // 自检用的假 React 不一定实现 class 组件；那种环境下退化成透传，
+  // 保证「产物可加载」不被测试桩限制，真实浏览器永远走下面的完整边界。
+  if (typeof React.Component !== "function") {
+    return function PassthroughBoundary(props: any) {
+      return props.children;
+    };
+  }
+
   class FeatureBoundary extends React.Component {
     constructor(props: any) {
       super(props);

@@ -18,6 +18,8 @@ import { CSS } from "./client/styles.js";
 import { createUiKit } from "./client/ui.js";
 import { installRuntime } from "./client/platform/runtime.js";
 import { perf } from "./client/platform/perf.js";
+import { provideRuntime } from "./client/platform/runtime.js";
+import { createFeatureBoundary } from "./client/platform/errors.js";
 import { EN } from "./client/i18n-en.js";
 
 import { createSfxModule } from "./client/sfx-module.js";
@@ -1554,7 +1556,9 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     // ── 小工具与基础组件 ───────────────────────────────────────────────────
     // 实现已移到 src/client/ui.ts；这里取回同一份引用继续用。
-    const { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn } = createUiKit({ React, h, T });
+    const { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } = createUiKit({ React, h, T, useLocaleTick });
+    // ui 组件表挂到运行时：后续模块可直接 studio().ui.Btn 取用（P3 起）
+    provideRuntime({ ui: { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } });
 
     /**
      * 数字参数输入框。
@@ -1579,119 +1583,14 @@ import { createModuleIcon } from "./client/module-icon.js";
      * `cell.png` → 单格；`grid{C}x{R}.png` → C×R 矩形；
      * `shape-{格子}.png` → 非矩形（把格子坐标列出来，用户能对上是哪个形状）。
      */
-    function NumField({ label, value, onChange, min, max, step, hint, disabled, testId }) {
-      const [text, setText] = React.useState(String(value ?? ""));
-      const [focused, setFocused] = React.useState(false);
-      // 外部值变了（宿主回包、切换项目）而用户没在输入时，同步过来。
-      React.useEffect(() => {
-        if (!focused) setText(String(value ?? ""));
-      }, [value, focused]);
-      /**
-       * ⚠️ 必须传 `onChange`（不是 `onCommit`）。
-       *
-       * 曾经有 5 个调用点写成 `onCommit`，而这里解构的是 `onChange` ——
-       * 于是 `onChange` 是 `undefined`，一失焦就抛 `onChange is not a function`，
-       * **值永远同步不进草稿**：用户改了「变体数 / 占格」，点保存看着成功，
-       * 实际提交的还是旧值（真机表现：「改了变体数保存后还是 2」）。
-       *
-       * 这里主动校验一次并把错误说清楚 —— 静默失败比直接报错难查得多。
-       */
-      if (onChange === undefined) {
-        throw new Error(`NumField「${label ?? ""}」缺少 onChange —— 是不是写成了 onCommit？`);
-      }
-      const commit = () => {
-        const parsed = Number(text);
-        if (text.trim() === "" || !Number.isFinite(parsed)) {
-          setText(String(value ?? ""));
-          return;
-        }
-        const clamped = Math.min(max ?? Number.POSITIVE_INFINITY, Math.max(min ?? Number.NEGATIVE_INFINITY, parsed));
-        setText(String(clamped));
-        if (clamped !== value) onChange(clamped);
-      };
-      return h(
-        "label",
-        { className: "SPR_field", "data-num-field": "1" },
-        h("span", { className: "SPR_fieldLabel" }, label),
-        h("input", {
-          className: "SPR_input",
-          type: "number",
-          inputMode: "decimal",
-          value: text,
-          min,
-          max,
-          step: step === undefined ? 1 : step,
-          ...(testId === undefined ? {} : { "data-testid": testId }),
-          // 不能用的字段要**看得出来**：整格没有动画，帧数锁在 1（见 AI 对话框）。
-          disabled: disabled === true ? true : undefined,
-          "data-disabled": disabled === true ? "true" : undefined,
-          "data-dirty": focused && text !== String(value ?? "") ? "true" : undefined,
-          onChange: (event) => setText(event.target.value),
-          onFocus: (event) => {
-            setFocused(true);
-            // 光标落进来就全选：改参数基本都是整份替换，省一次三击。
-            try {
-              event.target.select?.();
-            } catch {
-              /* 个别浏览器对 number 输入框的 select 有限制，忽略即可 */
-            }
-          },
-          onBlur: () => {
-            setFocused(false);
-            commit();
-          },
-          onKeyDown: (event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.currentTarget.blur();
-            }
-          }
-        }),
-        hint === undefined ? null : h("span", { className: "SPR_fieldLabel" }, hint)
-      );
-    }
 
     /**
      * 全局模型设置。生图模型 / 视频模型都是插件级设置（设置 → 游戏素材大师），
      * 各功能模块只跟随、不各自留一份副本——否则切换模型后旧任务会打到错误网关
      * （实测：任务里存官方 H3 + 全局已切优云智算 → cp.compshare.cn/v2/... 404）。
      */
-    function useGlobalConfig(api) {
-      const [value, setValue] = React.useState(null);
-      React.useEffect(() => {
-        let alive = true;
-        void (async () => {
-          try {
-            const next = await api.getConfig();
-            if (alive) setValue(next);
-          } catch {
-            /* 取不到就退回任务里记录的值 */
-          }
-        })();
-        return () => {
-          alive = false;
-        };
-      }, [api]);
-      return value;
-    }
 
-    /** 只读展示当前生效的全局模型：模型只在设置里改，模块内不允许覆盖。 */
-    function GlobalModelField({ label, value }) {
-      return h(
-        "label",
-        { className: "SPR_field" },
-        h("span", { className: "SPR_fieldLabel" }, label),
-        h("input", { className: "SPR_input", value: value ?? "", readOnly: true, disabled: true }),
-        h("span", { className: "SPR_fieldLabel" }, T("跟随即「设置 → 游戏素材大师」"))
-      );
-    }
 
-    function assetUrl(project, relative, version) {
-      if (project === null || relative === undefined || relative === null) return undefined;
-      const base = project.assetBase ?? "";
-      const suffix = version === undefined ? "" : `?v=${version}`;
-      return `${base}${relative}${suffix}`;
-    }
 
     /**
      * 双击看大图的缩略图。
@@ -1700,71 +1599,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 动作与抠像质量——双击弹出原图，右上角「×」、点背景、按 Esc 都能关。
      * 遮罩用 position:fixed，所以它在卡片内部渲染也能盖住整页。
      */
-    function ZoomableImage({ src, alt, className, caption, style }) {
-      const [open, setOpen] = React.useState(false);
-      React.useEffect(() => {
-        if (!open) return undefined;
-        const onKey = (event) => {
-          if (event.key === "Escape") setOpen(false);
-        };
-        if (typeof window !== "undefined") window.addEventListener("keydown", onKey);
-        return () => {
-          if (typeof window !== "undefined") window.removeEventListener("keydown", onKey);
-        };
-      }, [open]);
-      const openImage = (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        setOpen(true);
-      };
-      return h(
-        React.Fragment,
-        null,
-        h("img", {
-          className,
-          src,
-          alt,
-          style,
-          title: T("双击看大图"),
-          "data-zoomable": "true",
-          onDoubleClick: openImage
-        }),
-        open
-          ? h(
-              "div",
-              {
-                className: "SPR_zoomMask",
-                role: "dialog",
-                "aria-modal": "true",
-                "data-testid": "zoom-mask",
-                onClick: () => setOpen(false)
-              },
-              h(
-                "button",
-                {
-                  type: "button",
-                  className: "SPR_zoomClose",
-                  "aria-label": T("关闭大图"),
-                  title: T("关闭（Esc）"),
-                  "data-testid": "zoom-close",
-                  onClick: (event) => {
-                    event.stopPropagation();
-                    setOpen(false);
-                  }
-                },
-                "×"
-              ),
-              h("img", {
-                className: "SPR_zoomImg",
-                src,
-                alt,
-                onClick: (event) => event.stopPropagation()
-              }),
-              caption !== undefined && caption !== null ? h("div", { className: "SPR_zoomCaption" }, caption) : null
-            )
-          : null
-      );
-    }
 
     // ── 「正在调用接口」的视觉反馈 ───────────────────────────────────────
     /**
@@ -1781,82 +1615,12 @@ import { createModuleIcon } from "./client/module-icon.js";
      *    变旧了但还没盖上」的闪烁。多留 700ms 足够让下一次轮询把 running 状态刷进来。
      * 2. 卸载后不再 setState（长任务可能几分钟才回来）。
      */
-    const TASK_HOLD_MS = 700;
 
-    function usePendingTasks() {
-      // React 经由 require 拿到，是 any，不能写泛型实参（TS2347）。
-      const [map, setMap] = React.useState({});
-      const aliveRef = React.useRef(true);
-      const timersRef = React.useRef([]);
-
-      React.useEffect(() => {
-        aliveRef.current = true;
-        const timers = timersRef.current;
-        return () => {
-          aliveRef.current = false;
-          for (const id of timers) clearTimeout(id);
-          timers.length = 0;
-        };
-      }, []);
-
-      const release = React.useCallback((key) => {
-        const id = setTimeout(() => {
-          if (!aliveRef.current) return;
-          setMap((current) => {
-            if (current[key] === undefined) return current;
-            const next = { ...current };
-            delete next[key];
-            return next;
-          });
-        }, TASK_HOLD_MS);
-        timersRef.current.push(id);
-      }, []);
-
-      const run = React.useCallback(
-        (key, label, fn) => {
-          if (!aliveRef.current) return Promise.resolve(undefined);
-          setMap((current) => (current[key] === label ? current : { ...current, [key]: label }));
-          return Promise.resolve()
-            .then(fn)
-            .then(
-              (value) => {
-                release(key);
-                return value;
-              },
-              (error) => {
-                release(key);
-                throw error;
-              }
-            );
-        },
-        [release]
-      );
-
-      const has = React.useCallback((key) => map[key] !== undefined, [map]);
-      const label = React.useCallback((key) => map[key], [map]);
-      const any = React.useCallback((prefix) => Object.keys(map).some((key) => key.startsWith(prefix)), [map]);
-      const keys = React.useCallback((prefix) => Object.keys(map).filter((key) => key.startsWith(prefix)), [map]);
-      const active = Object.keys(map).length > 0;
-      // 第一条 pending 的文案，用作「总有一个在跑」时的兜底显示。
-      const firstLabel = Object.values(map)[0];
-
-      return { map, run, has, label, any, keys, active, firstLabel };
-    }
 
     /**
      * 盖在预览区上的 loading 遮罩。父元素必须是 position:relative
      * （`.SPR_thumbBox` 或 `.SPR_stage`）。
      */
-    function LoadingOverlay({ show, text, sub }) {
-      if (show !== true) return null;
-      return h(
-        "div",
-        { className: "SPR_ovl", role: "status", "aria-live": "polite", "aria-busy": "true" },
-        h("span", { className: "SPR_spin" }),
-        h("span", { className: "SPR_ovlText" }, text ?? T("处理中…")),
-        sub === undefined || sub === null ? null : h("span", { className: "SPR_ovlSub" }, sub)
-      );
-    }
 
     /**
      * 行内进度条：**不遮挡、可点击穿透**。
@@ -1873,35 +1637,8 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 原来各阶段的 `<img className="SPR_thumb">` 直接放在节点卡片里，
      * 现在统一包一层定位容器，遮罩才能正好盖住预览区。
      */
-    function MediaBox({ overlay, text, className, children }) {
-      return h(
-        "div",
-        { className: cls("SPR_thumbBox", className) },
-        h("div", { style: { visibility: overlay === true ? "hidden" : undefined } }, children),
-        h(LoadingOverlay, { show: overlay === true, text: text ?? T("正在生成…") })
-      );
-    }
 
-    /** 按钮级别的「正在跑」：转圈 + 文案，并把按钮本身置灰防重复点击。 */
-    function BusyBtn({ busy, busyText, children, onClick, ...rest }) {
-      return h(
-        Btn,
-        { ...rest, onClick, disabled: busy === true || rest.disabled === true, busy: busy === true },
-        busy === true ? h("span", { className: "SPR_spinSm" }) : null,
-        busy === true ? busyText ?? T("处理中…") : children
-      );
-    }
 
-    /** 工具栏上的状态徽章：有任务在跑时显示，同时兼作按钮区的位置占位。 */
-    function BusyBadge({ show, text }) {
-      if (show !== true) return null;
-      return h(
-        "span",
-        { className: "SPR_busyBadge", role: "status", "aria-live": "polite" },
-        h("span", { className: "SPR_spinSm" }),
-        text ?? T("正在处理…")
-      );
-    }
 
     // ── 验收：审核模式与「通过」───────────────────────────────────────────
     /**
@@ -1910,58 +1647,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 与对话里的 `game_material({action:'reviewMode'})` 写的是同一份数据（存在项目 / 任务上），
      * 所以用户在界面上改了、会话里的 agent 也会按新值走，反之亦然。
      */
-    function ReviewModeBar({ api, module, id, mode, onChanged }) {
-      const [busy, setBusy] = React.useState(false);
-      const change = async (next) => {
-        if (busy || next === "" || id === null || id === undefined) return;
-        setBusy(true);
-        try {
-          await api.setReviewMode({ module, id, reviewMode: next });
-          if (onChanged !== undefined) onChanged(next);
-        } catch {
-          // 失败就保持原值；下一次轮询会把宿主上的真实值带回来。
-        } finally {
-          setBusy(false);
-        }
-      };
-      return h(
-        "div",
-        { className: "SPR_toolbar" },
-        h("span", { className: "SPR_refRow" }, T("审核模式")),
-        h(
-          "select",
-          {
-            className: "SPR_input",
-            style: { width: 210 },
-            value: mode ?? "",
-            disabled: busy || id === null || id === undefined,
-            onChange: (event) => void change(event.target.value)
-          },
-          h("option", { value: "" }, T("未设置（对话里会先问）")),
-          h("option", { value: "auto" }, T("自动审核")),
-          h("option", { value: "manual" }, T("每一步人工审核"))
-        ),
-        h(
-          "span",
-          { className: "SPR_refRow" },
-          mode === "manual"
-            ? T("每一步产出后 agent 会贴出验收链接并停下来等你确认")
-            : mode === "auto"
-              ? T("agent 自己检查每步产出后继续推进")
-              : T("还没定：对话里 agent 会先问你要哪种")
-        )
-      );
-    }
 
-    /** 单个产物的「通过 / 取消通过」。与对话里的 game_material({action:'approve'}) 同一份数据。 */
-    function ApproveBtn(props) {
-      const { approved, disabled, onToggle, idleText } = props;
-      return h(
-        Btn,
-        { on: approved === true, disabled: disabled === true, onClick: onToggle },
-        approved === true ? T("已通过") : idleText ?? T("通过")
-      );
-    }
 
     // ── 侧栏图标（入口按钮 + 快捷菜单）───────────────────────────────────
     /**
@@ -2184,7 +1870,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 前缀刻意和 `turn:*` / `video:*` 错开：那两个前缀被「这个阶段有没有在跑」
      * 的判定用着（`tasks.any("video:*")`），混进去会把不相干的按钮一起禁用。
      */
-    const KEY_LOCAL_VIDEO = (key) => `local-video:${key}`;
     /** 「保存全部图片（zip）」的 pending key（这条工具栏是各阶段共用的）。 */
     const KEY_EXPORT_IMAGES = "images:*zip";
     // 与宿主 src/directions.ts 的 TURN_FRAME_COUNT_MIN / _MAX 保持一致：
@@ -4134,75 +3819,7 @@ import { createModuleIcon } from "./client/module-icon.js";
     }
 
 
-    // ── 公共小工具 ──────────────────────────────────────────────────────
-    /** 把 File 读成不带 data: 前缀的 base64。 */
-    function readFileBase64(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const text = String(reader.result ?? "");
-          resolve(text.slice(text.indexOf(",") + 1));
-        };
-        reader.onerror = () => reject(new Error(T("读取文件失败")));
-        reader.readAsDataURL(file);
-      });
-    }
 
-    /** 一个「拖进来或点按钮选文件」的上传区。 */
-    function UploadBox({ label, accept, multiple, onFiles, busy }) {
-      const [over, setOver] = React.useState(false);
-      const inputRef = React.useRef(null);
-      const handle = (files) => {
-        const list = Array.from(files ?? []);
-        if (list.length > 0) void onFiles(list);
-      };
-      return h(
-        React.Fragment,
-        null,
-        h(
-          "div",
-          {
-            className: "SPR_drop",
-            "data-over": over ? "true" : "false",
-            "data-busy": busy === true ? "true" : undefined,
-            onDragOver: (event) => {
-              event.preventDefault();
-              setOver(true);
-            },
-            onDragLeave: () => setOver(false),
-            onDrop: (event) => {
-              event.preventDefault();
-              setOver(false);
-              handle(event.dataTransfer?.files);
-            }
-          },
-          busy === true
-            ? h(
-                "span",
-                { style: { display: "inline-flex", alignItems: "center", gap: 7, justifyContent: "center" } },
-                h("span", { className: "SPR_spinSm" }),
-                T("正在上传…")
-              )
-            : label
-        ),
-        h(
-          "div",
-          { className: "SPR_toolbar" },
-          h(BusyBtn, { onClick: () => inputRef.current?.click(), busy: busy === true, busyText: T("正在上传…") }, T("选择文件")),
-          h("input", {
-            ref: inputRef,
-            type: "file",
-            accept,
-            multiple: multiple === true,
-            style: { display: "none" },
-            onChange: (event) => {
-              handle(event.target.files);
-              event.target.value = "";
-            }
-          })
-        )
-      );
-    }
 
     /**
      * 「选择本地视频」：一个包着隐藏 `<input type="file">` 的标签按钮。
@@ -4211,37 +3828,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 而 label 天然把点击转给内部的 input，不需要 useRef / useState——少一个 Hook
      * 就少一处「渲染顺序变了」的坑（这个模块的界面测试按住 Hook 顺序）。
      */
-    function LocalVideoPick({ label, title, onFile, disabled, testId }) {
-      return h(
-        "label",
-        {
-          className: "SPR_btn SPR_fileBtn",
-          "data-disabled": disabled === true ? "true" : undefined,
-          title,
-          "data-testid": testId
-        },
-        label,
-        h("input", {
-          type: "file",
-          accept: "video/*",
-          disabled: disabled === true,
-          style: { display: "none" },
-          "data-testid": testId === undefined ? undefined : `${testId}-input`,
-          onChange: (event) => {
-            const file = event.target.files?.[0];
-            // 先清空 value：同一个文件连选两次也要能触发 change。
-            event.target.value = "";
-            if (file !== undefined && file !== null) void onFile(file);
-          }
-        })
-      );
-    }
 
-    /** `download` 属性要的是**文件名**：带上目录浏览器会当非法名丢掉。 */
-    function fileLabel(relative) {
-      const name = String(relative ?? "").split("/").pop() ?? "";
-      return name === "" ? "asset.png" : name;
-    }
 
     /**
      * 一张中间产物的「保存」。
@@ -4249,22 +3836,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 用 `<a download>` 而不是按钮：下载本来就是浏览器的事（同源静态路由直接给文件），
      * 宿主不必为它多开一个方法；产物就在眼前时，「保存」应该是一个链接而不是又一次调用。
      */
-    function SaveLink({ url, name, label, busy, title }) {
-      if (url === undefined || url === null) return null;
-      return h(
-        "a",
-        {
-          className: "SPR_btn SPR_fileBtn",
-          href: url,
-          download: name,
-          title,
-          style: { textDecoration: "none" },
-          "aria-disabled": busy === true ? "true" : undefined,
-          onClick: busy === true ? (event) => event.preventDefault() : undefined
-        },
-        label ?? T("保存")
-      );
-    }
 
     /**
      * 选用一段本地视频（「选择本地视频」/ 拖进来之后走这里）。
@@ -4273,40 +3844,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 八个方向），其余 key 是某个方向的行走视频（之后照旧到第 3 步抽帧）。
      * 文件字节走和源图同一条 base64 通道——插件零运行时依赖，不为它另开上传接口。
      */
-    function pickLocalVideo({ start, setNotice, api, project, key, file, label }: any) {
-      if (project === null || file === undefined || file === null) return;
-      void start(
-        async () => {
-          const data = await readFileBase64(file);
-          const result = await api.uploadVideo({ projectId: project.id, key, name: file.name, data });
-          setNotice({
-            kind: "ok",
-            text:
-              key === "turn"
-                ? result?.extractStarted === true
-                  ? T("已选用本地视频，正在抽候选帧并切出八个方向…")
-                  : T("已选用本地视频（抽帧没有自动开始，点「抽取候选帧」即可）")
-                : T("已选用「{n0}」的本地视频，接着到第 3 步抽取序列帧", { n0: label ?? key })
-          });
-          return result;
-        },
-        { reload: true },
-        { key: KEY_LOCAL_VIDEO(key), label: T("正在导入本地视频…") }
-      );
-    }
 
-    /** 抠像参数表单（三个模块共用同一套字段）。 */
-    function KeyingFields({ draft, onChange }) {
-      return h(
-        "div",
-        { className: "SPR_fields" },
-        h(NumField, { label: T("抠像下限（绿色优势）"), value: draft.keyLow ?? 14, min: 0, max: 255, onChange: (v) => onChange({ keyLow: v }) }),
-        h(NumField, { label: T("抠像上限（绿色优势）"), value: draft.keyHigh ?? 80, min: 1, max: 255, onChange: (v) => onChange({ keyHigh: v }) }),
-        h(NumField, { label: T("去绿溢出 0~1"), value: draft.despill ?? 0.65, min: 0, max: 1, step: 0.05, onChange: (v) => onChange({ despill: v }) }),
-        h(NumField, { label: T("背景分割容差（0 = 只认绿色）"), value: draft.bgTolerance ?? 90, min: 0, max: 160, onChange: (v) => onChange({ bgTolerance: v }) }),
-        h(NumField, { label: T("边缘收缩（px）"), value: draft.edgeShrink ?? 0, min: 0, max: 8, onChange: (v) => onChange({ edgeShrink: v }) })
-      );
-    }
 
     /** 一份任务/项目列表（左侧栏）。 */
     /**
@@ -4315,32 +3853,6 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 浏览器半区可能跑在 Electron / 普通网页 / 自检桩里：优先用 Clipboard API，
      * 失败再退回旧式 `execCommand("copy")`。返回是否成功，界面据此显示「已复制 / 复制失败」。
      */
-    async function copyIdText(text) {
-      if (typeof navigator !== "undefined" && navigator.clipboard !== undefined && typeof navigator.clipboard.writeText === "function") {
-        try {
-          await navigator.clipboard.writeText(text);
-          return true;
-        } catch {
-          /* 剪贴板权限被拒时走下面的兜底 */
-        }
-      }
-      try {
-        if (typeof document === "undefined" || document.body === undefined || document.body === null) return false;
-        const area = document.createElement("textarea");
-        area.value = text;
-        area.setAttribute("readonly", "readonly");
-        area.style.position = "fixed";
-        area.style.left = "-9999px";
-        area.style.top = "0";
-        document.body.appendChild(area);
-        area.select();
-        const ok = typeof document.execCommand === "function" ? document.execCommand("copy") : false;
-        document.body.removeChild(area);
-        return ok === true;
-      } catch {
-        return false;
-      }
-    }
 
     /**
      * 「复制项目 ID」按钮。
@@ -4348,75 +3860,7 @@ import { createModuleIcon } from "./client/module-icon.js";
      * 所有模块的项目 / 任务共用它：把当前 id 一键复制给 agent，省得用户从日志或
      * 回复里翻 ID。`inline` 用在侧栏项目行里（span，避免 button 套 button）。
      */
-    function CopyIdButton({ id, inline = false, className = "" }) {
-      const [state, setState] = React.useState("idle");
-      const timer = React.useRef(null);
-      React.useEffect(() => () => {
-        if (timer.current !== null) clearTimeout(timer.current);
-      }, []);
-      if (id === null || id === undefined || id === "") return null;
-      const text = String(id);
-      const copy = async (event) => {
-        if (event !== null && event !== undefined && typeof event.stopPropagation === "function") event.stopPropagation();
-        const ok = await copyIdText(text);
-        setState(ok ? "ok" : "failed");
-        if (timer.current !== null) clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          setState("idle");
-        }, 1600);
-      };
-      const label = state === "ok" ? T("已复制") : state === "failed" ? T("复制失败") : inline ? "⧉" : T("复制 ID");
-      const tag = inline ? "span" : "button";
-      return h(
-        tag,
-        {
-          ...(inline ? { role: "button", tabIndex: 0 } : { type: "button" }),
-          className: `SPR_copyId${inline ? " SPR_copyIdInline" : ""}${className === "" ? "" : ` ${className}`}`,
-          "data-copied": state === "ok" ? "true" : undefined,
-          "data-failed": state === "failed" ? "true" : undefined,
-          title: T("复制项目 ID：{n0}", { n0: text }),
-          "aria-label": T("复制项目 ID"),
-          onClick: copy,
-          onKeyDown: inline
-            ? (event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  void copy(event);
-                }
-              }
-            : undefined
-        },
-        label
-      );
-    }
 
-    function JobSidebar({ title, items, activeId, onSelect, onCreate, renderMeta }) {
-      return h(
-        "div",
-        { className: "SPR_side" },
-        h("div", { className: "SPR_sideTitle" }, T("{n0}（{n1}）", { n0: title, n1: items.length })),
-        items.length === 0 ? h("p", { className: "SPR_hint" }, T("还没有内容，点右上角新建一个。")) : null,
-        items.map((item) =>
-          h(
-            "button",
-            {
-              key: item.id,
-              type: "button",
-              className: "SPR_projItem",
-              "data-active": item.id === activeId ? "true" : "false",
-              onClick: () => onSelect(item.id)
-            },
-            h("span", { className: "SPR_projNameRow" },
-              h("span", { className: "SPR_projName" }, item.name),
-              h(CopyIdButton, { id: item.id, inline: true })
-            ),
-            h("span", { className: "SPR_projMeta" }, renderMeta(item))
-          )
-        ),
-        items.length === 0 ? h(Btn, { onClick: onCreate, primary: true }, T("新建")) : null
-      );
-    }
 
     // ── 模块六 · 地图编辑器（单屏 · 零术语）────────────────────────────────
     //
@@ -7902,7 +7346,22 @@ import { createModuleIcon } from "./client/module-icon.js";
 
     // StudioPanel 引用所有面板模块的 const —— 必须等它们都初始化完再构造。
     // （以前 `function StudioPanel` 靠函数提升，读的是调用期的值，所以放前面也没事。）
-    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon });
+    // ── 错误隔离：每个功能模块套一层边界 ────────────────────────────────
+    // 单模块渲染抛错时只降级这一块（外壳与其它模块照常可用），并且计入 perf。
+    const wrapFeature = (name: string, Component: any) => {
+      const Boundary = createFeatureBoundary({ name });
+      return function FeatureBoundary(props: any) {
+        return h(Boundary, null, h(Component, props));
+      };
+    };
+    const MapModuleBound = wrapFeature("map", MapModule);
+    const MusicModuleBound = wrapFeature("music", MusicModule);
+    const SfxModuleBound = wrapFeature("sfx", SfxModule);
+    const IsoModuleBound = wrapFeature("iso", IsoModule);
+    const ImageModuleBound = wrapFeature("image", ImageModule);
+    const SequenceModuleBound = wrapFeature("sequence", SequenceModule);
+    const RigModuleBound = wrapFeature("rig", RigModule);
+    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule: MapModuleBound, MusicModule: MusicModuleBound, SfxModule: SfxModuleBound, IsoModule: IsoModuleBound, ImageModule: ImageModuleBound, SequenceModule: SequenceModuleBound, renderLog, RigModule: RigModuleBound, ModuleIcon, StudioGlyphIcon });
 
     function apply(ctx) {
       // 界面文案跟随 DSH 的语言设置；服务不可用时安静地退回中文原文。

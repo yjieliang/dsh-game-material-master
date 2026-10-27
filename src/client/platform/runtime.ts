@@ -45,6 +45,20 @@ export function installRuntime(next: StudioRuntime): StudioRuntime {
   return next;
 }
 
+/**
+ * 补装/覆盖运行时依赖（组合根分两步装：先 React/h/T，等 ui 组件表就绪后再补 ui）。
+ * 只用于「创建期先后顺序」问题，不要在运行中反复改。
+ * @param patch - 要合并进运行时的依赖
+ * @returns 合并后的依赖
+ */
+export function provideRuntime(patch: Partial<StudioRuntime>): StudioRuntime {
+  if (gmmRuntime === null) {
+    throw new Error("platform/runtime: provideRuntime() 之前必须先 installRuntime()");
+  }
+  gmmRuntime = { ...gmmRuntime, ...patch };
+  return gmmRuntime;
+}
+
 /** 是否已经装入依赖（自检 / 降级路径用）。 */
 export function hasRuntime(): boolean {
   return gmmRuntime !== null;
