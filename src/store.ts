@@ -311,6 +311,11 @@ export interface Project {
    */
   reviewMode?: ReviewMode;
   log: LogEntry[];
+  /**
+   * 最近一次「引擎导出」的记录（设计 §9.2 的 export 字段）：产物相对路径、勾选的格式、时间。
+   * 只用于界面显示「上次导出」，不参与任何计算；老项目没有这个字段是正常的。
+   */
+  export?: { files: string[]; formats: string[]; at: number };
 }
 
 export interface ProjectSummary {
@@ -710,7 +715,15 @@ function normalizeProject(raw: any): Project {
     imageMode,
     turn: normalizeTurn(raw?.turn, merged.turnFrameCount),
     reviewMode: raw?.reviewMode === "manual" ? "manual" : raw?.reviewMode === "auto" ? "auto" : undefined,
-    log: Array.isArray(raw?.log) ? raw.log.slice(-200) : []
+    log: Array.isArray(raw?.log) ? raw.log.slice(-200) : [],
+    export:
+      raw?.export !== null && typeof raw?.export === "object" && Array.isArray(raw.export.files)
+        ? {
+            files: raw.export.files.map(String),
+            formats: Array.isArray(raw.export.formats) ? raw.export.formats.map(String) : [],
+            at: num(raw.export.at, now)
+          }
+        : undefined
   };
 }
 

@@ -70,6 +70,24 @@ const uploadVideoSchema = z.object({
 });
 /** 打包中间图片：只有项目 id，没有别的参数（打哪些是宿主按项目状态算的）。 */
 const exportImagesSchema = z.object({ projectId: z.string() });
+/**
+ * 引擎导出：manifest / Godot SpriteFrames / Aseprite JSON / 帧序列（可再打 zip）。
+ *
+ * - `projectId`（模块①）与 `jobId`（模块③）二选一；
+ * - `formats` 勾选内容（sheet / frames / manifest / godot / aseprite / zip），缺省用配置的 `exportDefaults`；
+ * - `name` 覆盖落盘名，`fps` 覆盖默认 10 帧/秒，`loop` 覆盖默认循环。
+ *
+ * ⚠️ 每个键都必须写在这里：typert 按 schema 校验 payload，schema 里没有的键会被
+ * **静默丢掉**，界面表现是「勾了的东西没导出来 / 改了帧率没生效」，且不报任何错。
+ */
+const exportSpriteSchema = z.object({
+  projectId: z.string().optional(),
+  jobId: z.string().optional(),
+  formats: z.array(z.enum(["sheet", "frames", "manifest", "godot", "aseprite", "zip"])).optional(),
+  name: z.string().optional(),
+  fps: z.number().optional(),
+  loop: z.boolean().optional()
+});
 const promptsSchema = z.object({
   projectId: z.string(),
   /** 界面语言：「重置为默认」要重置成哪一国话的默认提示词（见 getProjectSchema）。 */
@@ -1226,6 +1244,8 @@ export const METHODS: MethodSpec[] = [  { method: "getConfig", result: configVie
   { method: "revealProject", payload: projectIdSchema, result: okSchema },
   { method: "uploadVideo", payload: uploadVideoSchema, result: jsonObject },
   { method: "exportImages", payload: exportImagesSchema, result: jsonObject },
+  // 引擎导出（本地派生，不产生费用、不建 receipt）：manifest / Godot / Aseprite / 帧序列 / zip。
+  { method: "exportSprite", payload: exportSpriteSchema, result: jsonObject },
 
   { method: "runImage", payload: withPaidFields(runImageSchema), result: startedSchema },
   { method: "runImages", payload: withPaidFields(runImagesSchema), result: startedSchema },

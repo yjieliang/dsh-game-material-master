@@ -135,6 +135,8 @@ export interface SequenceJob {
   /** 固定流程里问过用户的审核模式；没问过就是 undefined。 */
   reviewMode?: "auto" | "manual";
   log: JobLogEntry[];
+  /** 最近一次「引擎导出」的记录（设计 §9.2）：产物相对路径、勾选格式、时间。 */
+  export?: { files: string[]; formats: string[]; at: number };
 }
 
 export interface SequenceJobSummary {
@@ -347,7 +349,15 @@ function normalizeSequenceJob(raw: any): SequenceJob {
       updatedAt: typeof raw?.sheet?.updatedAt === "number" ? raw.sheet.updatedAt : undefined
     },
     reviewMode: raw?.reviewMode === "manual" ? "manual" : raw?.reviewMode === "auto" ? "auto" : undefined,
-    log: Array.isArray(raw?.log) ? raw.log.slice(-200) : []
+    log: Array.isArray(raw?.log) ? raw.log.slice(-200) : [],
+    export:
+      raw?.export !== null && typeof raw?.export === "object" && Array.isArray(raw.export.files)
+        ? {
+            files: raw.export.files.map(String),
+            formats: Array.isArray(raw.export.formats) ? raw.export.formats.map(String) : [],
+            at: num(raw.export.at, Date.now())
+          }
+        : undefined
   };
 }
 
