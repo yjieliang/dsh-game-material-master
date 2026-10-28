@@ -54,6 +54,7 @@ export function createRemote(deps: any) {
       ["setFramePicks", true],
       ["resetFramePicks", true],
       ["rekey", true],
+      ["rematte", true],
       ["compose", true],
 
       // 模块②（图片生成）—— 这一段只是远程方法清单，和下面的组件区无关

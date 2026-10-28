@@ -58,7 +58,17 @@ import {
   videoFailureReason,
   videoBackendOf
 } from "./videogen.js";
-import { composeSheet, keyGreen, type SheetRow } from "./chroma.js";
+import { composeSheet, type SheetRow } from "./chroma.js";
+import {
+  combineMatteInfos,
+  describeMatte,
+  matteBatch,
+  summarizeMatte,
+  type MatteBackend,
+  type MatteInput,
+  type MatteJobInfo,
+  type MatteResult
+} from "./matte.js";
 import { encodePng } from "./png.js";
 import { zipEntries, type ZipEntry } from "./zip.js";
 import {
@@ -1595,9 +1605,9 @@ export function startExtract(projectId: string, keys?: string[]): { started: boo
 // ── 阶段 4：抠像 + 合成整图 ──────────────────────────────────────────────
 
 /** 只按当前参数重跑抠像与合成（不重新解码视频）。 */
-export function startRekey(projectId: string): { started: boolean; reason?: string } {
+export function startRekey(projectId: string, matteBackend?: MatteBackend): { started: boolean; reason?: string } {
   const started = kick(projectId, "sheet:key", "重新抠像", async () => {
-    await renderSheet(projectId, { requireFrames: true });
+    await renderSheet(projectId, { requireFrames: true, matteBackend });
   });
   return started ? { started: true } : kickFailure("抠像任务已在进行中");
 }
@@ -1612,6 +1622,8 @@ export function startCompose(projectId: string): { started: boolean; reason?: st
 export interface RenderOptions {
   /** 一组帧都没有时直接报错（手动点「合成」时的期望），而不是产出空图。 */
   requireFrames?: boolean;
+  /** 本阶段临时覆盖去背后端（rematte 的一次性切换）；不传 = 用配置。 */
+  matteBackend?: MatteBackend;
 }
 
 /**
@@ -1625,6 +1637,9 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
   const project = await readProject(projectId);
   if (project === undefined) throw new Error(`项目不存在：${projectId}`);
   const settings = project.settings;
+  const config = await loadConfig();
+  // 去背后端每个方向单独汇总（哪个方向回退了要能直接看出来），最后再汇总到 sheet.matte。
+  const matteByDirection: Record<string, MatteJobInfo> = {};
 
   await patchProject(projectId, (current) => {
     current.sheet = { ...current.sheet, status: "running", error: undefined };
@@ -1666,18 +1681,36 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
         const keyedPaths: string[] = [];
         const keyedBuffers: Buffer[] = [];
 
+        // 去背走统一抽象：默认仍是 keygreen（行为不变），设置里选了 birefnet / auto
+        // 才换模型；每帧单独计时 / 单独回退，批量并发默认 2，不把一整批帧压给 ComfyUI。
+        const inputs: MatteInput[] = [];
         for (let i = 0; i < count; i++) {
-          const slice = Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes));
-          const result = keyGreen(slice, width, height, keyOptions);
-          backgroundSum += result.backgroundFraction;
+          inputs.push({ rgba: Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes)), width, height });
+        }
+        const results: MatteResult[] = await matteBatch(config, inputs, {
+          keying: keyOptions,
+          backend: options.matteBackend
+        });
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          backgroundSum += result.backgroundFraction ?? 0;
           keyedSamples++;
-          borderSamples += result.borderSamples;
-          borderSamplesDropped += result.borderSamplesDropped;
+          borderSamples += result.borderSamples ?? 0;
+          borderSamplesDropped += result.borderSamplesDropped ?? 0;
           row.frames.push(result.rgba);
           keyedBuffers.push(result.rgba);
           const relative = `keyed/${key}/f${String(i).padStart(2, "0")}.png`;
           await writeFile(assetPath(projectId, relative), encodePng(result.rgba, width, height));
           keyedPaths.push(relative);
+        }
+        const directionMatte = summarizeMatte(results);
+        if (directionMatte !== undefined) {
+          matteByDirection[key] = directionMatte;
+          if (directionMatte.fallbackReason !== undefined) {
+            await patchProject(projectId, (current) => {
+              log(current, "warn", `方向 ${key} 去背回退到绿幕：${directionMatte.fallbackReason}`);
+            });
+          }
         }
         if (keyedBuffers.length > 0) {
           hasFrames = true;
@@ -1698,6 +1731,7 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
             if (target !== undefined) {
               target.keyed = keyedPaths;
               target.strip = `preview/${key}.png`;
+              target.matte = matteByDirection[key];
             }
           });
           // 第 3 步里「抽帧完成」和「预览带可见」之间隔着这一步，所以抽帧任务的
@@ -1731,6 +1765,7 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
     const relative = "out/sheet.png";
     await writeFile(assetPath(projectId, relative), encodePng(sheet.rgba, sheet.width, sheet.height));
 
+    const matteInfo = combineMatteInfos(Object.values(matteByDirection));
     await patchProject(projectId, (current) => {
       const backgroundFraction = keyedSamples > 0 ? backgroundSum / keyedSamples : undefined;
       current.sheet = {
@@ -1747,7 +1782,8 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
         frameCount: settings.frameCount,
         backgroundFraction,
         borderSamples,
-        borderSamplesDropped
+        borderSamplesDropped,
+        matte: matteInfo
       };
       const droppedNote =
         borderSamplesDropped > 0
@@ -1758,6 +1794,7 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
         "info",
         `整图合成完成：${sheet.width}×${sheet.height}（${sheet.columns} 列 × ${sheet.rows} 行，裁剪框 ${sheet.bbox.width}×${sheet.bbox.height}，背景占比 ${backgroundFraction === undefined ? "?" : (backgroundFraction * 100).toFixed(1)}%${droppedNote}）`
       );
+      if (matteInfo !== undefined) log(current, "info", describeMatte(matteInfo));
     });
   } catch (error) {
     const message = messageOf(error);

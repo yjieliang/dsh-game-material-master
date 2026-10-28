@@ -1039,6 +1039,64 @@ function ConfigSection(props) {
       )
     ),
 
+    /**
+     * 去背后端（模块①②③ 共用）。
+     *
+     * 默认 keygreen = 现有绿幕算法，升级不改行为；birefnet 用本机 ComfyUI 的
+     * BiRefNet 工作流（见 src/matte.ts，内置 builtin.matte-birefnet）。
+     */
+    h(
+      "details",
+      { className: "SPR_settingsGroup", "data-testid": "cfg-matte" },
+      groupHead(
+        T("去背后端"),
+        T("动画帧 / 图片生成 / 序列帧共用"),
+        config.matteBackend === "birefnet" ? T("当前：BiRefNet") : config.matteBackend === "auto" ? T("当前：自动") : T("当前：绿幕")
+      ),
+      h("p", null, T("绿幕抠像只适合纯色背景；手绘、照片、渐变背景用 BiRefNet（本机 ComfyUI，免费）去得更干净。默认仍是绿幕，不改既有行为。")),
+      h(
+        "label",
+        { className: "SPR_field" },
+        h("span", { className: "SPR_fieldLabel" }, T("去背后端")),
+        h(
+          "select",
+          {
+            className: "SPR_input",
+            "data-testid": "cfg-matte-backend",
+            value: config.matteBackend ?? "keygreen",
+            onChange: (event) => void patch({ matteBackend: event.target.value })
+          },
+          h("option", { value: "keygreen" }, T("绿幕（默认）")),
+          h("option", { value: "birefnet" }, T("BiRefNet 模型（本机 ComfyUI）")),
+          h("option", { value: "auto" }, T("自动（先试绿幕，不行再用模型）"))
+        )
+      ),
+      h(
+        "label",
+        { className: "SPR_check" },
+        h("input", {
+          type: "checkbox",
+          "data-testid": "cfg-matte-fallback",
+          checked: config.matteFallback !== false,
+          onChange: (event) => void patch({ matteFallback: event.target.checked })
+        }),
+        h("span", null, T("BiRefNet 失败时自动回退绿幕，并在任务日志里写明原因"))
+      ),
+      h(
+        "label",
+        { className: "SPR_field" },
+        h("span", { className: "SPR_fieldLabel" }, T("去背工作流")),
+        h("input", {
+          className: "SPR_input",
+          "data-testid": "cfg-matte-workflow",
+          value: config.matteWorkflowId ?? "",
+          onChange: (event) => void patch({ matteWorkflowId: event.target.value }),
+          placeholder: "builtin.matte-birefnet"
+        })
+      ),
+      h("p", null, T("BiRefNet 走本机 ComfyUI（默认 127.0.0.1:8188），需要装好 background_removal 的 birefnet 模型；可在上方 ComfyUI 分组点「测试连接」确认服务可达。"))
+    ),
+
     h(
       "details",
       { className: "SPR_settingsGroup" },

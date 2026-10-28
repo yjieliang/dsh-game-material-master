@@ -2090,5 +2090,23 @@ export const EN: Record<string, string> = {
   "已导出 {n0} 个文件：{n1} 帧 / {n2} 个动画，{n3} fps": "Exported {n0} file(s): {n1} frames / {n2} animation(s) at {n3} fps",
   "下载 zip 包": "Download the zip",
   "引擎导出完成：{n0} 个文件（{n1} 帧）": "Engine export finished: {n0} file(s), {n1} frames",
+  // ── BiRefNet 去背（模块①②③ 共用，设计 §5）──
+  "去背后端": "Matting backend",
+  "动画帧 / 图片生成 / 序列帧共用": "Shared by frame toolbox / image generation / sequence frames",
+  "当前：BiRefNet": "Current: BiRefNet",
+  "当前：自动": "Current: Auto",
+  "当前：绿幕": "Current: Chroma key",
+  "绿幕抠像只适合纯色背景；手绘、照片、渐变背景用 BiRefNet（本机 ComfyUI，免费）去得更干净。默认仍是绿幕，不改既有行为。": "Chroma keying only works well on flat backgrounds. Hand-drawn, photo, and gradient backgrounds come out cleaner with BiRefNet (local ComfyUI, free). The default stays chroma key so existing behaviour is unchanged.",
+  "绿幕（默认）": "Chroma key (default)",
+  "BiRefNet 模型（本机 ComfyUI）": "BiRefNet model (local ComfyUI)",
+  "自动（先试绿幕，不行再用模型）": "Automatic (try chroma key first, then the model)",
+  "BiRefNet 失败时自动回退绿幕，并在任务日志里写明原因": "Fall back to chroma key when BiRefNet fails, and record the reason in the task log",
+  "去背工作流": "Matting workflow",
+  "BiRefNet 走本机 ComfyUI（默认 127.0.0.1:8188），需要装好 background_removal 的 birefnet 模型；可在上方 ComfyUI 分组点「测试连接」确认服务可达。": "BiRefNet runs on local ComfyUI (default 127.0.0.1:8188) and needs the background_removal birefnet model installed. Use \"Test connection\" in the ComfyUI section above to confirm the server is reachable.",
+  "BiRefNet 模型": "BiRefNet model",
+  "绿幕": "Chroma key",
+  "去背后端：{n0}（在设置页切换；BiRefNet 失败会自动回退绿幕并写明原因）": "Matting backend: {n0} (switch it in Settings; BiRefNet falls back to chroma key and records the reason)",
+  "去背：{n0}": "Matte: {n0}",
+  "去背：{n0} · 回退原因：{n1}": "Matte: {n0} · fallback reason: {n1}"
 };
 /*! i18n-ignore-end */

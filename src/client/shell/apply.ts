@@ -141,6 +141,7 @@ export function createApply(deps: ApplyDeps) {
         setFramePicks: (payload) => call("setFramePicks", payload),
         resetFramePicks: (payload) => call("resetFramePicks", payload),
         rekey: (payload) => call("rekey", payload),
+        rematte: (payload) => call("rematte", payload),
         compose: (payload) => call("compose", payload),
         // 素材互操作（跨模块）：本机路径导入 + ComfyUI 工作流文件导入。
         importLocalPath: (payload) => call("importLocalPath", payload),

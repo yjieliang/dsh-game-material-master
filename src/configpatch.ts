@@ -63,6 +63,10 @@ export function buildConfigPatch(payload: unknown): Record<string, any> {
     "comfySeconds",
     "comfySeed",
     "comfyTimeoutMs",
+    // 去背后端（模块①②③ 共用；非凭据，原样透传）。
+    "matteBackend",
+    "matteFallback",
+    "matteWorkflowId",
     // 音乐生成编辑（模块七）。Key 不进这里（见下面单独处理）。
     "musicProvider",
     "musicBaseUrl",
