@@ -159,5 +159,8 @@ scripts/verify-qa.mjs（102 项，纯本地、零付费）：
 9. 网关（runQA 三路分派、三个 get* 回包摘要、fail-closed 拦截与开关还原、saveConfig 阈值收敛、wire 189）
 10. 资源路由（三个 scope 的 qa/report.json 200、目录穿越 400）
 
-另外 node scripts/gate.mjs 全绿（verify-host 387 / verify-tools 197 / verify-client 368 / verify-feedback 218 /
+界面侧的真渲染断言补在 scripts/verify-feedback.mjs（阶段④ 与模块③ 的 QA 卡片：徽标文案、隐藏/展开按钮、
+导出链接、失败态、没有报告时不渲染；+9 项 → 227 项）。
+
+另外 node scripts/gate.mjs 全绿（verify-host 387 / verify-tools 197 / verify-client 368 / verify-feedback 227 /
 verify-i18n 9 / verify-pipeline 35 / verify-arch 18）。
