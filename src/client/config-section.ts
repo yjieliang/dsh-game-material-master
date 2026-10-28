@@ -57,6 +57,21 @@ function ConfigSection(props) {
   const [scorePaths, setScorePaths] = React.useState(null);
   /** 音效模块的语音 API Key（单独一份，不是方舟 Key）。 */
   const [sfxKey, setSfxKey] = React.useState("");
+  /**
+   * 素材互操作：本机路径导入 / ComfyUI 工作流文件导入。
+   *
+   * 放在设置页的原因：路径由**宿主**读盘（不经过浏览器 base64），输入框就是「本机绝对路径」；
+   * 工作流文件也在这里解析（API / 界面两种格式，能连 ComfyUI 时按 /object_info 精确转换）。
+   * 新 Hook 追加在最后：前面 Hook 的槽位顺序保持不变（verify-feedback 按槽位喂桩）。
+   */
+  const [importTarget, setImportTarget] = React.useState("project-source");
+  const [importPath, setImportPath] = React.useState("");
+  const [importProjectId, setImportProjectId] = React.useState("");
+  const [importJobId, setImportJobId] = React.useState("");
+  const [importKey, setImportKey] = React.useState("turn");
+  const [importKind, setImportKind] = React.useState("referenceImage");
+  const [importNotice, setImportNotice] = React.useState(null);
+  const [importBusy, setImportBusy] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (api === undefined) return;
@@ -100,6 +115,81 @@ function ConfigSection(props) {
   }
 
   const patch = (values) => run(() => api.saveConfig(values), T("配置已保存"));
+
+  /** 素材互操作：本机路径导入（图片 / 视频 / 目录批量；宿主读盘，零计费）。 */
+  const runPathImport = async () => {
+    if (api === undefined) return;
+    const path = importPath.trim();
+    if (path === "") {
+      setImportNotice({ kind: "error", text: T("请先填写本机绝对路径") });
+      return;
+    }
+    const needsProject = importTarget === "project-source" || importTarget === "project-video";
+    try {
+      setImportBusy(true);
+      const result = await api.importLocalPath({
+        target: importTarget,
+        path,
+        projectId: needsProject ? importProjectId.trim() : undefined,
+        jobId: needsProject ? undefined : importJobId.trim(),
+        key: importTarget === "project-video" ? importKey : undefined,
+        kind: importTarget === "sequence-ref" ? importKind : undefined
+      });
+      const imported = Array.isArray(result?.imported) ? result.imported : [];
+      const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+      const skippedText =
+        skipped.length === 0
+          ? ""
+          : T("；跳过 {n0} 个：{n1}", {
+              n0: skipped.length,
+              n1: skipped
+                .slice(0, 3)
+                .map((item) => item.reason)
+                .join("；")
+            });
+      setImportNotice({ kind: skipped.length === 0 ? "ok" : "warn", text: T("已导入 {n0} 个文件", { n0: imported.length }) + skippedText });
+    } catch (error) {
+      setImportNotice({ kind: "error", text: msg(error) });
+    } finally {
+      setImportBusy(false);
+    }
+  };
+  /** 素材互操作：解析 ComfyUI 工作流文件（只读 + 校验，免费；缺节点/缺绑定会逐条列出）。 */
+  const runWorkflowImport = async () => {
+    if (api === undefined) return;
+    const path = importPath.trim();
+    if (path === "") {
+      setImportNotice({ kind: "error", text: T("请先填写本机绝对路径") });
+      return;
+    }
+    try {
+      setImportBusy(true);
+      const result = await api.importWorkflowFile({ path });
+      const workflow = result?.workflow ?? {};
+      const bindings = workflow.bindings ?? {};
+      const lines = [
+        T("已解析「{n0}」：{n1} 个节点（{n2} 格式）", { n0: workflow.name ?? "", n1: workflow.nodeCount ?? 0, n2: workflow.protocol ?? "?" }),
+        T("提示词绑定：{n0}；图像输入：{n1}；种子：{n2}", {
+          n0: bindings.prompt ?? T("未识别"),
+          n1: bindings.image ?? T("无"),
+          n2: bindings.seed ?? T("未识别")
+        })
+      ];
+      if (Array.isArray(workflow.requiredModels) && workflow.requiredModels.length > 0) {
+        lines.push(T("模型：{n0}", { n0: workflow.requiredModels.join("、") }));
+      }
+      if (Array.isArray(workflow.unknownNodes) && workflow.unknownNodes.length > 0) {
+        lines.push(T("缺节点：{n0}", { n0: workflow.unknownNodes.map((item) => `#${item.node} ${item.classType}`).join("、") }));
+      }
+      for (const warning of Array.isArray(workflow.warnings) ? workflow.warnings : []) lines.push("· " + warning);
+      const hasProblem = Array.isArray(workflow.unknownNodes) && workflow.unknownNodes.length > 0;
+      setImportNotice({ kind: hasProblem ? "warn" : "ok", text: lines.join("\n") });
+    } catch (error) {
+      setImportNotice({ kind: "error", text: msg(error) });
+    } finally {
+      setImportBusy(false);
+    }
+  };
 
   /**
    * 功能管理：`hiddenModules` 的当前值（以宿主返回的为准）。
@@ -1483,6 +1573,88 @@ function ConfigSection(props) {
               n1: MODULES.filter((entry) => hiddenNow.includes(entry.key)).map((entry) => entry.title).join("、")
             })
           )
+    ),
+
+    /**
+     * 素材互操作：本机路径导入 + ComfyUI 工作流文件解析。
+     *
+     * 两个按钮都**不花钱**（本地读盘 / 只读 /object_info），所以没有付费确认；
+     * 路径由宿主读，浏览器只传路径字符串——100MB 的视频也不会变成 133MB 的 base64。
+     */
+    h(
+      "details",
+      { className: "SPR_settingsGroup" },
+      groupHead(T("素材互操作"), T("本机路径 / 工作流文件")),
+      h("p", null, T("宿主直接读本机文件（不经过浏览器 base64）：支持图片 / 视频 / 目录批量；工作流文件支持 ComfyUI 的 API 与界面两种格式。只读你显式给出的路径，不会扫描其它目录。")),
+      h(
+        "div",
+        { className: "SPR_toolbar" },
+        h(
+          "select",
+          {
+            className: "SPR_input",
+            "data-testid": "cfg-import-target",
+            value: importTarget,
+            onChange: (event) => setImportTarget(event.target.value)
+          },
+          h("option", { value: "project-source" }, T("项目源图")),
+          h("option", { value: "project-video" }, T("项目视频槽位")),
+          h("option", { value: "image-ref" }, T("图片任务参考图")),
+          h("option", { value: "image-item" }, T("图片任务产物")),
+          h("option", { value: "sequence-ref" }, T("序列帧参考素材"))
+        ),
+        importTarget === "project-source" || importTarget === "project-video"
+          ? h("input", {
+              className: "SPR_input",
+              "data-testid": "cfg-import-project",
+              placeholder: T("项目 id（p…）"),
+              value: importProjectId,
+              onChange: (event) => setImportProjectId(event.target.value)
+            })
+          : h("input", {
+              className: "SPR_input",
+              "data-testid": "cfg-import-job",
+              placeholder: T("任务 id（i… / s…）"),
+              value: importJobId,
+              onChange: (event) => setImportJobId(event.target.value)
+            }),
+        importTarget === "project-video"
+          ? h(
+              "select",
+              { className: "SPR_input", value: importKey, onChange: (event) => setImportKey(event.target.value) },
+              h("option", { value: "turn" }, T("转圈视频")),
+              ["front", "downLeft", "left", "upLeft", "back", "upRight", "right", "downRight"].map((key) =>
+                h("option", { key, value: key }, key)
+              )
+            )
+          : null,
+        importTarget === "sequence-ref"
+          ? h(
+              "select",
+              { className: "SPR_input", value: importKind, onChange: (event) => setImportKind(event.target.value) },
+              h("option", { value: "referenceImage" }, T("参考图")),
+              h("option", { value: "referenceVideo" }, T("参考视频")),
+              h("option", { value: "firstFrame" }, T("首帧图")),
+              h("option", { value: "lastFrame" }, T("尾帧图"))
+            )
+          : null
+      ),
+      h("input", {
+        className: "SPR_input",
+        "data-testid": "cfg-import-path",
+        placeholder: T("本机绝对路径（文件或目录）"),
+        value: importPath,
+        onChange: (event) => setImportPath(event.target.value)
+      }),
+      h(
+        "div",
+        { className: "SPR_toolbar" },
+        h(Btn, { primary: true, busy: importBusy, onClick: () => void runPathImport() }, T("从本机路径导入")),
+        h(Btn, { busy: importBusy, onClick: () => void runWorkflowImport() }, T("解析工作流文件"))
+      ),
+      importNotice === null
+        ? null
+        : h("p", { className: "SPR_hint", "data-testid": "cfg-import-notice" }, importNotice.text)
     ),
 
     h(
