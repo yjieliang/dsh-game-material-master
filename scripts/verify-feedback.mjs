@@ -1658,4 +1658,59 @@ section("语言切换：8 个模块页签标题 / 副标题跟着变（req_5d9a0
   for (const listener of [...listeners]) listener();
 }
 
+section("产物 QA 卡片：徽标 / 指标表 / 导出（req_aee289460b）");
+{
+  /**
+   * QA 卡是**真渲染**验证：报告摘要来自宿主回包（project.qa / job.qa），
+   * 卡片本身是 features/sprite 与 features/sequence 里的组件。
+   * 这里只断言「有卡片、徽标对、导出链接在、没报告时不渲染」，指标表内容由
+   * verify-qa.mjs 的指标黄金值与 runQA 覆盖（渲染侧只需证明入口存在且不炸）。
+   */
+  const makeQa = (verdict, warnCount, failCount, issues) => ({
+    verdict,
+    scope: "sprite",
+    issues,
+    warnCount,
+    failCount,
+    frameCount: 8,
+    sampled: 1,
+    generatedAt: 1,
+    failClosed: false,
+    blocked: false,
+    reportPath: "qa/report.json"
+  });
+  const warnProject = makeProject();
+  warnProject.qa = makeQa("warn", 1, 0, [{ code: "heightCv", message: "身高 CV 1.4% 超过 1%", level: "warn" }]);
+  const warnTree = renderStage(warnProject, "sheet", makeTasks()).tree;
+  const cards = collect(warnTree, (node) => node.props?.["data-testid"] === "qa-card");
+  check("阶段④ 渲染出 QA 卡片", cards.length === 1, cards.length + " 个");
+  const badge = collect(warnTree, (node) => node.props?.["data-testid"] === "qa-badge")[0];
+  check("警告徽标带出警告项数", textOf(badge).includes("QA") && textOf(badge).includes("1 项警告"), textOf(badge));
+  check("摘要点出需要关注的指标（按 key 映射文案）", textOf(cards[0]).includes("身高 CV"), textOf(cards[0]).slice(0, 120));
+  const toggle = collect(warnTree, (node) => node.props?.["data-testid"] === "qa-toggle")[0];
+  const refresh = collect(warnTree, (node) => node.props?.["data-testid"] === "qa-refresh")[0];
+  check("有展开指标与重新体检按钮", toggle !== undefined && refresh !== undefined);
+  const exportLink = collect(warnTree, (node) => node.props?.["data-testid"] === "qa-export")[0];
+  check(
+    "导出链接指向 qa/report.json（带 download）",
+    String(exportLink?.props?.href ?? "").includes("qa/report.json?download=1") && exportLink?.props?.download === "qa-report.json",
+    String(exportLink?.props?.href ?? "无")
+  );
+
+  const failProject = makeProject();
+  failProject.qa = makeQa("fail", 1, 2, [{ code: "loopSeamIou", message: "循环缝 IoU 0.2 低于 0.35", level: "fail" }]);
+  const failTree = renderStage(failProject, "sheet", makeTasks()).tree;
+  const failBadge = collect(failTree, (node) => node.props?.["data-testid"] === "qa-badge")[0];
+  check("失败徽标带出失败项数", textOf(failBadge).includes("QA 失败") && textOf(failBadge).includes("2 项失败"), textOf(failBadge));
+
+  const plainTree = renderStage(makeProject(), "sheet", makeTasks()).tree;
+  check("没有 QA 报告时不渲染卡片（老任务不出现空卡片）", collect(plainTree, (node) => node.props?.["data-testid"] === "qa-card").length === 0);
+
+  const seqJob = makeSequenceJob({ qa: makeQa("pass", 0, 0, []) });
+  const seqTree = renderModule(SequenceModule, seqJob, makeTasks()).tree;
+  check("模块③ 条图也渲染 QA 卡片", collect(seqTree, (node) => node.props?.["data-testid"] === "qa-card").length === 1);
+  const seqBadge = collect(seqTree, (node) => node.props?.["data-testid"] === "qa-badge")[0];
+  check("模块③ 通过徽标", textOf(seqBadge).includes("QA 通过"), textOf(seqBadge));
+}
+
 report();

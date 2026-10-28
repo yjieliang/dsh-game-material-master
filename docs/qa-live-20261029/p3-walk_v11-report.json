@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "scope": "sprite",
+  "frameCount": 8,
+  "sampled": 1,
+  "metrics": [
+    {
+      "key": "transparentRatio",
+      "label": "透明像素占比",
+      "value": 0.7212,
+      "threshold": 0.05,
+      "thresholdMax": 0.95,
+      "comparison": "min",
+      "verdict": "pass"
+    },
+    {
+      "key": "fringeRatio",
+      "label": "边缘彩边比例",
+      "value": 0.0004,
+      "threshold": 0.15,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "bboxCv",
+      "label": "包围盒宽度 CV",
+      "value": 13.04,
+      "threshold": 5,
+      "comparison": "max",
+      "verdict": "warn"
+    },
+    {
+      "key": "heightCv",
+      "label": "身高 CV",
+      "value": 0,
+      "threshold": 1,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "headWidthCv",
+      "label": "头宽 CV",
+      "value": 1.69,
+      "threshold": 2,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "loopSeamIou",
+      "label": "循环缝 IoU",
+      "value": 0.619,
+      "threshold": 0.35,
+      "comparison": "min",
+      "verdict": "pass"
+    },
+    {
+      "key": "loopSeamDiff",
+      "label": "循环缝 RGB 差",
+      "value": 22.4,
+      "threshold": 24,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "centroidJitter",
+      "label": "相邻帧质心位移最大值",
+      "value": 15.31,
+      "verdict": "info"
+    },
+    {
+      "key": "centroidJitterMedian",
+      "label": "相邻帧质心位移中位数",
+      "value": 12.94,
+      "verdict": "info"
+    }
+  ],
+  "issues": [
+    {
+      "code": "bboxCv",
+      "message": "包围盒宽度 CV 13.04% 超过 5%：各帧角色胖瘦 / 朝向差异偏大",
+      "level": "warn"
+    }
+  ],
+  "verdict": "warn",
+  "thresholds": {
+    "transparentRatioMin": 0.05,
+    "transparentRatioMax": 0.95,
+    "fringeRatioMax": 0.15,
+    "bboxCvMax": 5,
+    "heightCvMax": 1,
+    "headWidthCvMax": 2,
+    "loopSeamIouMin": 0.35,
+    "loopSeamDiffMax": 24
+  },
+  "generatedAt": 1793210879557,
+  "elapsedMs": 8
+}

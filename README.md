@@ -180,6 +180,18 @@ flowchart LR
 
 ![行走预览](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-05-sprite-preview.png)
 
+### 产物体检（QA 报告）
+
+阶段④合完整图后会自动体检一次（模块③的序列帧条图、模块②抠像后的图片任务同理）：
+透明比例、边缘彩边、帧间包围盒/身高/头宽一致性、循环首尾缝（IoU + RGB 差）、质心抖动。
+结论以徽标显示（**QA 通过 / N 项警告 / N 项失败**），点「展开指标」看逐项数值与阈值，
+「导出报告 JSON」下载完整报告（落在产物目录的 `qa/report.json`）。默认**只警告、不阻断**，
+在「设置 → 墨盒 → 产物体检（QA）」里可以调阈值，也可以打开「QA 不通过时阻断验收」。
+大图（长边 > 512）先盒式降采样再算，报告里会标出降采样倍数。
+
+> 指标口径、阈值来源与真实产物读数见 [docs/产物QA报告-设计.md](docs/产物QA报告-设计.md)
+> 与 [docs/qa-live-20261029/README.md](docs/qa-live-20261029/README.md)。
+
 > **单独重跑**：任何一步不满意，只重做那一步——单个方位、单个阶段都行，不必整批重来。
 
 ---
@@ -480,9 +492,9 @@ Key 只写入本机 `<DSH_HOME>/inkbox/config.json`，界面回显始终脱敏�
 
 ```
 <DSH_HOME>/inkbox/
-├── projects/<id>/      八方向图（source / images / videos / frames / keyed / preview / out）
-├── image-jobs/<id>/    图片生成
-├── sequence-jobs/<id>/ 序列帧生成
+├── projects/<id>/      八方向图（source / images / videos / frames / keyed / preview / out / qa）
+├── image-jobs/<id>/    图片生成（refs / out / keyed / qa）
+├── sequence-jobs/<id>/ 序列帧生成（… / out / qa）
 ├── rig-jobs/<id>/      骨骼动画（实验性：sheet / parts / layout / rig / atlas）
 ├── iso-jobs/<id>/      45° 地图编辑器（project.json / map.json / tilesets / preview / export）
 ├── map-jobs/<id>/      地图编辑器（project.json / map.json / tilesets / ai / preview / export）
@@ -503,6 +515,7 @@ npm run typecheck    # 只做类型检查
 本地自检（不联网、不花钱）：`scripts/verify-host.mjs`（宿主链路）、`verify-tools.mjs`
 （对话调用面）、`verify-pipeline.mjs`（抽帧 / 抠像 / 合成）、`verify-client.mjs` +
 `verify-feedback.mjs`（浏览器半区契约与真渲染）、`verify-i18n.mjs`（中英词条表完整性）、
+`verify-qa.mjs`（产物体检：黄金 fixture / 阈值边界 / 降采样 / 落盘 / 网关 / fail-closed）、
 `verify-rig.mjs`（骨骼算法层）等。真实 API 端到端脚本会花钱，按需运行。
 
 ### 加一条界面文案
