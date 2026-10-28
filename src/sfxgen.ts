@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadConfig, sfxJobsRoot } from "./config.js";
+import { assertSafeId } from "./safeid.js";
 import { appendJobLog, messageOf, readJson, sweepTempFiles, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
   busyOf,
@@ -138,7 +139,7 @@ const JOB_ID_PATTERN = /^f[a-z0-9]{4,40}$/;
 export const SERVABLE_SFX_DIRS = new Set(["refs", "takes", "out"]);
 
 export function sfxJobDir(id: string): string {
-  return join(sfxJobsRoot(), id);
+  return join(sfxJobsRoot(), assertSafeId(id, "音效任务 id"));
 }
 
 export function sfxJobFile(id: string): string {

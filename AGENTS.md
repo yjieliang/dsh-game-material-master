@@ -40,7 +40,7 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 | 约束 | 原因 |
 |---|---|
 | **产物** `lib/client.js` 必须是经典脚本（不能有 `import` / `export`）；源码可以按模块拆，React 元素一律 `React.createElement` | 宿主把 `lib/client.js` 当**普通脚本**直接发给浏览器（没有模块加载器）。`tsc` 只会产出 ESM，所以 `scripts/bundle-client.mjs`（esbuild）负责把 `src/client.ts` + `src/client/*.ts` 内联回单文件；`scripts/strip-client-export.mjs` 最后再确认一次。React 由宿主 `require("react")` 提供，**任何客户端源码都不许 import 第三方包**（会打进包、页面里出现两份 React），`verify-tools.mjs` 拦这条 |
-| **客户端分四层，依赖只能单向 `shell → features → platform`**：`features/*` 只能 import `platform/*`，features 之间零 import，`platform/*` 不许反向 import features / shell；新能力放 `platform/`，别在 feature 里 import 另一个 feature | 反向依赖被 esbuild 内联成单文件后**不报错**，只会在打开面板时 TDZ 白屏（`Cannot access 'xxx' before initialization`）。`scripts/verify-arch.mjs` 17 项逐条钉住（依赖方向、入口行数、裸定时器 / 裸 fetch / 裸监听器**棘轮只许降不许涨**、feature 结构、产物体积与经典脚本），分层说明与「加一个模块要改哪些文件」见 `docs/ENGINEERING.md` 的「客户端分层」一节 |
+| **客户端分四层，依赖只能单向 `shell → features → platform`**：`features/*` 只能 import `platform/*`，features 之间零 import，`platform/*` 不许反向 import features / shell；新能力放 `platform/`，别在 feature 里 import 另一个 feature | 反向依赖被 esbuild 内联成单文件后**不报错**，只会在打开面板时 TDZ 白屏（`Cannot access 'xxx' before initialization`）。`scripts/verify-arch.mjs` 18 项逐条钉住（依赖方向、入口行数、裸定时器 / 裸 fetch / 裸监听器**棘轮只许降不许涨**、feature 结构、产物体积与经典脚本），分层说明与「加一个模块要改哪些文件」见 `docs/ENGINEERING.md` 的「客户端分层」一节 |
 | 改完 `lib/` 里的**宿主半区**必须重启 DSH | 宿主半区是进程启动时冻结的模块图。开发时可另起测试宿主 + `scripts/dev-overlay.yml` 拿 `patchReload` 热重载，见 ENGINEERING.md「开发时的宿主半区热重载」 |
 | 改完 `lib/client.js` 只需刷新浏览器 | 客户端束由宿主按请求从磁盘读，带 `rev` 指纹 |
 | **没有任何运行时依赖** | `zod` / `cordis` / dsh-typert-protocol 等一律从 DSH 自身安装树解析；`node_modules` 与 lock 文件不入库 |

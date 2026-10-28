@@ -33,7 +33,13 @@ const BASELINE = {
   /** 非 platform 客户端源码里的裸 fetch( 计数 */
   legacyFetch: 3,
   /** 非 platform 客户端源码里的 addEventListener 计数（走 lifecycle 之前允许存在） */
-  legacyListeners: 30
+  legacyListeners: 30,
+  /**
+   * feature 把根目录旧 `*-module.ts` 原样转发一层的数量（迁移期遗留）。
+   * 8 个模块里 sprite 已真正下沉，其余 7 个仍是壳；每迁一个就把这里减 1。
+   * 新增模块**不许**再加壳：新代码直接写在 feature 里。
+   */
+  legacyFeatureShellImports: 7
 };
 
 /** 体积预算。 */
@@ -84,7 +90,10 @@ if (exists(CLIENT)) clientFiles.push(...walk(CLIENT));
 
 // ── 1. 依赖规则 ─────────────────────────────────────────────────────────
 section("依赖规则");
+const FEATURE_PREFIX = "client/features/";
+const PLATFORM_PREFIX = "client/platform/";
 const featureImports = [];
+const legacyShellImports = [];
 const platformReverse = [];
 const platformFilesReverse = [];
 const thirdParty = [];
@@ -96,25 +105,42 @@ for (const file of clientFiles) {
       thirdParty.push(name + " → " + spec);
       continue;
     }
-    const normalized = name.startsWith("features/") ? spec : undefined;
-    if (normalized === undefined) continue;
-    const host = name.split("/")[1];
-    const target = spec.replace(/^\.\.?\//, "").replace(/^.*features\//, "").split("/")[0];
-    if (spec.includes("features/") && target !== host) featureImports.push(name + " → " + spec);
-    if (spec.startsWith("../../")) featureImports.push(name + " → " + spec);
+    if (!name.startsWith(FEATURE_PREFIX)) continue;
+    // registry 是 features 层的聚合点，职责就是收集各模块的 descriptor 元数据（不是实现）。
+    // 只放行这一种形状：features/registry.ts → ./<feature>/descriptor.js
+    if (name === FEATURE_PREFIX + "registry.ts" && /^\.\/[^/]+\/descriptor\.js$/.test(spec)) continue;
+    const host = name.slice(FEATURE_PREFIX.length).split("/")[0];
+    // 迁移期遗留：feature 把根目录旧 *-module.ts 原样转发一层。只许减少，不许新增。
+    if (spec === "../../" + host + "-module.js") {
+      legacyShellImports.push(name + " → " + spec);
+      continue;
+    }
+    // features → platform 是允许的方向（platform 在上一级，所以是 ../../platform/）。
+    if (spec.startsWith("../../platform/") || spec.startsWith("../platform/")) continue;
+    featureImports.push(name + " → " + spec);
   }
-  if (name.startsWith("platform/") && /from\s+["']\.\.\/(features|shell)\//.test(text)) {
+  if (name.startsWith(PLATFORM_PREFIX) && /from\s+["']\.\.\/(features|shell)\//.test(text)) {
     platformReverse.push(name);
   }
-  if (name.startsWith("platform/") && /from\s+["']\.\.\/shell\//.test(text)) {
+  if (name.startsWith(PLATFORM_PREFIX) && /from\s+["']\.\.\/shell\//.test(text)) {
     platformFilesReverse.push(name);
   }
 }
 check("客户端源码没有 import 第三方包", thirdParty.length === 0, thirdParty.slice(0, 3).join("; ") || undefined);
 if (exists(FEATURES)) {
-  check("features 之间零 import", featureImports.length === 0, featureImports.slice(0, 3).join("; ") || undefined);
+  check("features 之间零跨模块 import", featureImports.length === 0, featureImports.slice(0, 3).join("; ") || undefined);
+  check(
+    "feature 转发根目录旧模块 ≤ " + BASELINE.legacyFeatureShellImports + "（当前 " + legacyShellImports.length + "）",
+    legacyShellImports.length <= BASELINE.legacyFeatureShellImports,
+    legacyShellImports.length > BASELINE.legacyFeatureShellImports
+      ? "新增了「feature 只转发旧 module」的壳：" + legacyShellImports.slice(-3).join("; ")
+      : legacyShellImports.length === 0
+        ? undefined
+        : "迁移完成后可把 BASELINE 调到 " + legacyShellImports.length + " 以下：" + legacyShellImports.map(entry => entry.split(" → ")[0]).join(", ")
+  );
 } else {
-  skip("features 之间零 import", "features/ 还没建（P3 起生效）");
+  skip("features 之间零跨模块 import", "features/ 还没建（P3 起生效）");
+  skip("feature 转发根目录旧模块 ≤ 7", "features/ 还没建（P3 起生效）");
 }
 check("platform 不反向依赖 features / shell", platformReverse.length === 0, platformReverse.join(", ") || undefined);
 check("platform 不依赖 shell（依赖只能单向：shell → features → platform）", platformFilesReverse.length === 0);

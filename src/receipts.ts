@@ -10,7 +10,9 @@
  *   1. **提交前先建凭证**：`beginPaidCall` 用 `wx` 独占建文件，并发下同一个 key
  *      只有一个能赢；输了的那次不会发出任何远程请求。
  *   2. **同一 requestId 永不重复提交**：客户端带幂等键时，只要凭证存在就一律拒绝
- *      （终态也一样）——重试应当回已有任务，而不是再买一次。
+ *      （终态也一样）——重试应当回已有任务，而不是再买一次。由于 requestId 每次点击
+ *      都会重新生成，键必然不同，所以再加一道**按内容指纹**的兜底：同一指纹仍有
+ *      未决记录（submitting / submitted / uncertain）时同样拒绝。
  *   3. **凭证只加不删**：取消本地等待、进程重载、任务失败都不删记录；只有下一次
  *      不同的提交才会覆盖同一个 key 的旧记录（无幂等键、且旧记录已到终态时）。
  *
@@ -21,7 +23,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { mkdir, open, readdir } from "node:fs/promises";
+import { mkdir, open, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { dataRoot } from "./config.js";
 import { readJson, writeJsonAtomic } from "./jsonio.js";
@@ -174,6 +176,49 @@ async function readReceiptFile(key: string): Promise<ReceiptRecord | undefined> 
   return readJson<ReceiptRecord>(receiptFile(key));
 }
 
+/** 「还没有定论」的状态：这几态下重发都可能二次计费。 */
+const PENDING_STATES: ReadonlySet<ReceiptState> = new Set(["submitting", "submitted", "uncertain"]);
+
+/** 按指纹找未决凭证时只回看这么久的记录（更早的不会再触发同一次提交）。 */
+const PENDING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 按内容指纹找一笔「还没有定论」的凭证。
+ *
+ * 键里含 requestId，所以同一次用户意图重试时键会变，只能靠指纹找回上一次。
+ * 只扫最近 {@link PENDING_WINDOW_MS} 内改过的文件：未决记录必然很新，
+ * 避免票据积累之后每次付费提交都全量读一遍目录。
+ * @param fingerprint - 请求内容指纹（与建账时同一个）
+ * @returns 命中的凭证；没有则 undefined
+ */
+async function findPendingByFingerprint(fingerprint: string): Promise<ReceiptRecord | undefined> {
+  const dir = receiptsRoot();
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    // 目录还不存在 = 从来没有付费提交过。
+    return undefined;
+  }
+  const since = Date.now() - PENDING_WINDOW_MS;
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const file = join(dir, name);
+    try {
+      const info = await stat(file);
+      if (info.mtimeMs < since) continue;
+      const record = await readJson<ReceiptRecord>(file);
+      if (record === undefined || record.fingerprint !== fingerprint) continue;
+      if (!PENDING_STATES.has(record.state)) continue;
+      return record;
+    } catch {
+      // 单条读不出来不影响判定，继续看下一条。
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /** 读一条凭证。 */
 export async function readReceipt(key: string): Promise<ReceiptRecord | undefined> {
   return readReceiptFile(key);
@@ -246,6 +291,11 @@ export async function beginPaidCall(input: BeginPaidCallInput): Promise<PaidTick
     await writeJsonAtomic(receiptFile(key), record);
     return { key, method, module, provider: input.provider, requestId };
   }
+  // 键里含 requestId，而 requestId 每次点击都会重新生成，所以同一次意图的重试
+  // 拿到的是**另一个键**、查不到上面那条 existing。这里按内容指纹再兜一次：
+  // 上一笔还没定论（可能已被远端受理）时拒绝，避免「失败重试 = 二次扣费」。
+  const pending = await findPendingByFingerprint(fingerprint);
+  if (pending !== undefined) throw new PaidDuplicateError(pending);
   const created = await createReceiptExclusive(key, record);
   if (!created) {
     // 并发下被另一笔抢先创建：直接认对方的记录，绝不重发。

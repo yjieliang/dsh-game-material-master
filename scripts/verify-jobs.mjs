@@ -235,9 +235,19 @@ try {
 check("上一笔已定失败时允许重新生成（不会把用户永久锁死）", regeneration !== undefined);
 if (regeneration !== undefined) await receipts.markPaidResolved(regeneration.key, { detail: "重新生成成功" });
 
-// 不同 requestId = 新的付费提交，互不干扰
-const other = await receipts.beginPaidCall({ provider: "seed-audio", identity, intent: { ...intent, requestId: "req-99999999" } });
-check("换一个 requestId 是另一笔提交（不被误挡）", other.key !== ticket.key && (await receipts.readReceipt(other.key))?.state === "submitting");
+// 客户端每次点击都会换 requestId（平台层只为本次调用补一个新值），所以
+// 「同内容 + 上一笔还没定论」必须靠指纹拦住——键不同时 requestId 分支根本走不到。
+let sameContentError;
+try {
+  await receipts.beginPaidCall({ provider: "seed-audio", identity, intent: { ...intent, requestId: "req-99999999" } });
+} catch (error) {
+  sameContentError = error;
+}
+check("同内容 + 未决时换 requestId 仍被拦（重试不会二次计费）", sameContentError instanceof receipts.PaidDuplicateError);
+
+// 内容本身不同 = 另一笔提交，不能被上一条误挡
+const other = await receipts.beginPaidCall({ provider: "seed-audio", identity: { ...identity, take: 2 }, intent: { ...intent, requestId: "req-99999999" } });
+check("内容不同 + 换 requestId 是另一笔提交（不被误挡）", other.key !== ticket.key && (await receipts.readReceipt(other.key))?.state === "submitting");
 
 // 失败归类：4xx = 没接单；超时 / 网络中断 = 可能已计费
 check(

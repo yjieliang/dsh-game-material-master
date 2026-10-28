@@ -6,10 +6,11 @@
  * 编辑期间文档以内存为权威副本、防抖落盘；导出前强制 flush。
  */
 
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { appendJobLog, messageOf, readJson, sweepTempFiles, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
+import { assertSafeId } from "./safeid.js";
 import { dataRoot } from "./config.js";
 import { decodeFile, encodeBitmap, pngSize, probeImageSize, sniffImageExt, type Bitmap } from "./bitmap.js";
 import { keyGreen, DEFAULT_KEY_OPTIONS } from "./chroma.js";
@@ -144,7 +145,7 @@ export function isoJobsRoot(): string {
 }
 
 export function isoProjectDir(id: string): string {
-  return join(isoJobsRoot(), id);
+  return join(isoJobsRoot(), assertSafeId(id, "45° 项目 id"));
 }
 
 export function isoProjectFile(id: string): string {
@@ -247,13 +248,20 @@ export async function readIsoProject(id: string): Promise<IsoProject | undefined
   if (raw === undefined || typeof raw !== "object") return undefined;
   void sweepTempFiles(isoProjectDir(id));
   const stages = { ...freshStages(), ...(raw.stages ?? {}) };
+  const logs = Array.isArray(raw.logs) ? raw.logs : [];
+  const writeFailure = docWriteFailures.get(id);
+  if (writeFailure !== undefined) {
+    // 上次落盘失败只在内存里留过痕（磁盘上没写成），借这次读取告诉用户，随后清掉。
+    appendJobLog(logs, "error", `上次保存失败：${writeFailure}（那次改动可能没有写进磁盘）`);
+    docWriteFailures.delete(id);
+  }
   return {
     ...raw,
     cell: normalizeIsoCell(raw.cell),
     wrap: raw.wrap !== false,
     tilesets: Array.isArray(raw.tilesets) ? raw.tilesets.map(normalizeIsoTileset).filter((tileset): tileset is IsoTileset => tileset !== undefined) : [],
     stages,
-    logs: Array.isArray(raw.logs) ? raw.logs : []
+    logs
   };
 }
 
@@ -411,12 +419,52 @@ const docWrites = new Map<string, WriteState>();
 const WRITE_MAX_LATENCY_MS = 2000;
 const WRITE_IDLE_MS = 500;
 
+/** 项目 id → 最近一次落盘失败的原因（下一次读项目时并进项目日志，随后清掉）。 */
+const docWriteFailures = new Map<string, string>();
+
+/** 记录落盘失败：宿主日志留痕 + 下一次读项目时并进项目日志（界面可见）。 */
+function noteDocWriteFailure(projectId: string, error: unknown): void {
+  const message = messageOf(error);
+  docWriteFailures.set(projectId, message);
+  console.error(`[iso] 地图文档落盘失败（${projectId}）：${message}`);
+}
+
+/** 路径上是否已存在文件（读不到就当不存在，交给调用方的默认分支）。 */
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await stat(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 坏档改名留档：`<file>.corrupt-<时间戳>`。
+ * 留档本身失败只记日志，不改变调用方"读不到文档"的结果。
+ */
+async function quarantineDoc(file: string): Promise<void> {
+  const target = `${file}.corrupt-${Date.now().toString(36)}`;
+  try {
+    await rename(file, target);
+    console.error(`[iso] 地图文档解析失败，已留档为 ${target}`);
+  } catch (error) {
+    console.error(`[iso] 地图文档解析失败且无法留档（${file}）：${messageOf(error)}`);
+  }
+}
+
 export async function readTheDoc(projectId: string): Promise<IsoDoc | undefined> {
   const cached = docCache.get(projectId);
   if (cached !== undefined) return cached;
-  const raw = await readJson<IsoDoc>(isoDocFile(projectId));
+  const file = isoDocFile(projectId);
+  const raw = await readJson<IsoDoc>(file);
   const doc = normalizeIsoDoc(raw, projectId);
-  if (doc === undefined) return undefined;
+  if (doc === undefined) {
+    // 归不出来要区分两种情形：文件不存在 = 还没画过；文件存在 = 坏档。
+    // 坏档必须先改名留档，否则第一次绘制就会用空画布把它覆盖掉。
+    if (await fileExists(file)) await quarantineDoc(file);
+    return undefined;
+  }
   docCache.set(projectId, doc);
   return doc;
 }
@@ -442,14 +490,14 @@ function scheduleDocWrite(projectId: string, doc: IsoDoc): void {
   const elapsed = now - state.lastWrite;
   if (elapsed >= WRITE_MAX_LATENCY_MS) {
     state.lastWrite = now;
-    void writeTheDoc(projectId, doc).catch(() => undefined);
+    void writeTheDoc(projectId, doc).catch((error) => noteDocWriteFailure(projectId, error));
     return;
   }
   if (state.timer !== null) return;
   state.timer = setTimeout(() => {
     state.timer = null;
     state.lastWrite = Date.now();
-    void writeTheDoc(projectId, doc).catch(() => undefined);
+    void writeTheDoc(projectId, doc).catch((error) => noteDocWriteFailure(projectId, error));
   }, Math.max(WRITE_IDLE_MS, WRITE_MAX_LATENCY_MS - elapsed));
   if (typeof state.timer.unref === "function") state.timer.unref();
 }

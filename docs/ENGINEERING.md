@@ -2572,7 +2572,7 @@ running 落在下一次 `getProject` 里**：
 > 2026-10-27～28 的 P0–P10 重构把 **8,340 行**的 `src/client.ts` 拆成四层
 > （逐阶段实测见 [`客户端架构方案-性能与可用性.md`](客户端架构方案-性能与可用性.md)）。
 > **产物仍是单文件经典脚本**：分层买的是「可读、可 review、可并行」，不是运行时收益。
-> 不靠自觉的部分全部交给 `scripts/verify-arch.mjs`（17 项）与
+> 不靠自觉的部分全部交给 `scripts/verify-arch.mjs`（18 项）与
 > `verify-client` / `verify-feedback` / `verify-i18n`，下面只解释「为什么」。
 
 ### 1. 四层职责与硬边界
@@ -2654,45 +2654,50 @@ React → i18n（T）→ platform 运行时 → 轮询调度器 / perf
 > ⚠️ `descriptor.label` 目前**没有**接进页签渲染（页签读的是 `platform/meta.ts` 的 `MODULES`），
 > 所以第 1 与第 5 步都要写。这是已知缺口，见第 7 节末尾。
 
-### 5. 自检：`verify-arch` 的 17 项各自防什么
+### 5. 自检：`verify-arch` 的 18 项各自防什么
 
 `node scripts/verify-arch.mjs` 是**架构适配度自检**（fitness functions）。规则光写进文档一年后必然失效，能自动拦的全部做成门禁：
 
 | # | 检查 | 防什么 |
 |---|---|---|
 | 1 | 客户端源码没有 import 第三方包 | 产物里打进第二份 React / 依赖被内联 |
-| 2 | features 之间零 import | 8 个模块互相纠缠，改一个坏八个 |
-| 3 | platform 不反向依赖 features | 环形依赖 → 打包后 TDZ 白屏 |
-| 4 | platform 不依赖 shell（单向依赖） | 同上 |
-| 5 | `client.ts` 入口 ≤ 400 行（当前 19） | 装配代码又长回入口 |
-| 6 | platform 不在模块顶层 `import react` | 自检桩无法注入自己的假 React；也说明有隐性全局依赖 |
-| 7 | platform 顶层标识符避开通用名（`current` / `next` / `data` …） | esbuild 单文件打包把重名标识符改成 `xxx2`，而一批自检按**源码文本**钉调用点（实测：runtime 的 `current` 把 `mergeDrafts` 的参数改成了 `current2`） |
-| 8 | 非 platform 定时器 ≤ `BASELINE.legacyTimers`（当前 0） | 轮询散落在 features 里、绕过调度器 |
-| 9 | 非 platform 裸 `fetch(` ≤ 3 | 绕过 `platform/api` 的超时 / 重试 / 付费前置 |
-| 10 | 非 platform `addEventListener` ≤ 30 | 监听器泄漏（走 `platform/lifecycle` 的 `useResources()`） |
-| 11 | 每个 feature 有 `descriptor.ts` | 模块元数据散回 shell 里 |
-| 12 | `registry` 覆盖全部 features | 新增模块忘了注册（页签不出现） |
-| 13 | 每个 feature 根组件被 `FeatureBoundary` 包裹 | 一个模块渲染崩掉拖垮整个工作台 |
-| 14 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,120,339） | 体积回归 |
-| 15 | `lib/client.js` gzip ≤ 320 KB（当前 297,481） | 同上 |
-| 16 | 产物是经典脚本（没有 `import` / `export`） | 宿主按普通脚本加载，混入模块语法直接语法错 |
-| 17 | `lib/client.js` 存在 | 忘了 build 就提交 |
+| 2 | features 之间零跨模块 import（`registry` 的 descriptor 聚合除外） | 8 个模块互相纠缠，改一个坏八个 |
+| 3 | feature 转发根目录旧模块 ≤ `BASELINE.legacyFeatureShellImports`（当前 7） | 新增模块照抄「只转发旧 `*-module.ts`」的壳，迁移永远做不完 |
+| 4 | platform 不反向依赖 features | 环形依赖 → 打包后 TDZ 白屏 |
+| 5 | platform 不依赖 shell（单向依赖） | 同上 |
+| 6 | `client.ts` 入口 ≤ 400 行（当前 19） | 装配代码又长回入口 |
+| 7 | platform 不在模块顶层 `import react` | 自检桩无法注入自己的假 React；也说明有隐性全局依赖 |
+| 8 | platform 顶层标识符避开通用名（`current` / `next` / `data` …） | esbuild 单文件打包把重名标识符改成 `xxx2`，而一批自检按**源码文本**钉调用点（实测：runtime 的 `current` 把 `mergeDrafts` 的参数改成了 `current2`） |
+| 9 | 非 platform 定时器 ≤ `BASELINE.legacyTimers`（当前 0） | 轮询散落在 features 里、绕过调度器 |
+| 10 | 非 platform 裸 `fetch(` ≤ 3 | 绕过 `platform/api` 的超时 / 重试 / 付费前置 |
+| 11 | 非 platform `addEventListener` ≤ 30 | 监听器泄漏（走 `platform/lifecycle` 的 `useResources()`） |
+| 12 | 每个 feature 有 `descriptor.ts` | 模块元数据散回 shell 里 |
+| 13 | `registry` 覆盖全部 features | 新增模块忘了注册（页签不出现） |
+| 14 | 每个 feature 根组件被 `FeatureBoundary` 包裹 | 一个模块渲染崩掉拖垮整个工作台 |
+| 15 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,126,351） | 体积回归 |
+| 16 | `lib/client.js` gzip ≤ 320 KB（当前 299,739） | 同上 |
+| 17 | 产物是经典脚本（没有 `import` / `export`） | 宿主按普通脚本加载，混入模块语法直接语法错 |
+| 18 | `lib/client.js` 存在 | 忘了 build 就提交 |
 
 **棘轮（ratchet）**：`verify-arch.mjs` 顶部的 `BASELINE` 允许历史遗留先存在，但**只许降、不许涨**：
 
 ```js
-const BASELINE = { legacyTimers: 0, legacyFetch: 3, legacyListeners: 30 };
+const BASELINE = { legacyTimers: 0, legacyFetch: 3, legacyListeners: 30, legacyFeatureShellImports: 7 };
 ```
 
 每迁完一个模块就把数字调低；**不要为了变绿调高**（P10 已把裸定时器清零：新代码里出现 `setInterval` /
 `setTimeout` 直接红，注释里写一个也会被数到）。体积预算在同一文件的 `BUDGET`：
 `rawBytes: 1_200_000` / `gzipBytes: 320 * 1024`，超了只报「删死代码或收敛重复实现」。
 
+> 2026-10-28 之前，第 2~4 项用的是不带 `client/` 前缀的路径判断（`rel()` 实际返回 `client/features/...`），
+> 三条断言恒为真、从未检查过任何文件；同一时期 7 个 feature 都在 `import "../../<name>-module.js"`。
+> 现在第 3 项把这批历史遗留显式记为 7，其余越界引用一律红。
+
 ### 6. 自检命令（可直接复制）
 
 ```bash
-node scripts/verify-arch.mjs        # 架构 17 项：依赖方向 / 棘轮 / 体积 / 经典脚本
-node scripts/verify-client.mjs      # 浏览器半区契约 366 项
+node scripts/verify-arch.mjs        # 架构 18 项：依赖方向 / 棘轮 / 体积 / 经典脚本
+node scripts/verify-client.mjs      # 浏览器半区契约 368 项
 node scripts/verify-feedback.mjs    # 浏览器半区真渲染 218 项（含功能管理、草稿合并、切语言后页签标题）
 node scripts/verify-i18n.mjs        # 中英词条表 9 项（含产物与源分词条表一致）
 node scripts/perf-baseline.mjs      # 挂载期渲染计数基线

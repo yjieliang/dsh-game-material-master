@@ -17,6 +17,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeJsonAtomic } from "./jsonio.js";
+import { assertSafeId } from "./safeid.js";
 import {
   DEFAULT_TURN_PROMPT,
   DEFAULT_VIDEO_PROMPT,
@@ -327,7 +328,7 @@ export interface ProjectSummary {
 }
 
 export function projectDir(id: string): string {
-  return join(projectsRoot(), id);
+  return join(projectsRoot(), assertSafeId(id, "项目 id"));
 }
 
 export function projectFile(id: string): string {

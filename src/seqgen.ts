@@ -23,6 +23,7 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadConfig, sequenceJobsRoot } from "./config.js";
+import { assertSafeId } from "./safeid.js";
 import { normalizeDuration, normalizeResolution } from "./minimax.js";
 import { assertVideoBackendReady, downloadVideoTask, queryVideoTask, submitVideoTask, videoFailureReason } from "./videogen.js";
 import { extractFrames, fileSize, mimeOf, toJpegDataUri } from "./media.js";
@@ -150,7 +151,7 @@ export interface SequenceJobSummary {
 const JOB_ID_PATTERN = /^s[a-z0-9]{4,40}$/;
 
 export function sequenceJobDir(id: string): string {
-  return join(sequenceJobsRoot(), id);
+  return join(sequenceJobsRoot(), assertSafeId(id, "序列帧任务 id"));
 }
 
 function jobFile(id: string): string {

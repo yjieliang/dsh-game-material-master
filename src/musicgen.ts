@@ -30,6 +30,7 @@ import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { loadConfig, musicJobsRoot } from "./config.js";
+import { assertSafeId } from "./safeid.js";
 import { appendJobLog, messageOf, readJson, sweepTempFiles, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
   busyOf,
@@ -284,7 +285,7 @@ const JOB_ID_PATTERN = /^a[a-z0-9]{4,40}$/;
 export const SERVABLE_MUSIC_DIRS = new Set(["songs", "versions", "peaks", "tools", "out", "scores"]);
 
 export function musicJobDir(id: string): string {
-  return join(musicJobsRoot(), id);
+  return join(musicJobsRoot(), assertSafeId(id, "音乐任务 id"));
 }
 
 export function musicJobFile(id: string): string {

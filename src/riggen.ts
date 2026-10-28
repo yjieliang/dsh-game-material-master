@@ -29,6 +29,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { loadConfig, rigJobsRoot } from "./config.js";
+import { assertSafeId } from "./safeid.js";
 import {
   assertImageProviderReady,
   generateImageWithProvider,
@@ -508,7 +509,7 @@ export interface RigJobSummary {
 const JOB_ID_PATTERN = /^r[a-z0-9]{4,40}$/;
 
 export function rigJobDir(id: string): string {
-  return join(rigJobsRoot(), id);
+  return join(rigJobsRoot(), assertSafeId(id, "骨骼任务 id"));
 }
 
 function jobFile(id: string): string {

@@ -17,6 +17,7 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { imageJobsRoot, loadConfig } from "./config.js";
+import { assertSafeId } from "./safeid.js";
 import { generateImageWithProvider, imageModelOf, imageSizeOf, imageWatermarkOf, assertImageProviderReady, imageUsesConfiguredSize } from "./imageprovider.js";
 import { decodeToRgba, mimeOf, toDataUri } from "./media.js";
 import { keyGreen } from "./chroma.js";
@@ -85,7 +86,7 @@ export interface ImageJobSummary {
 const JOB_ID_PATTERN = /^i[a-z0-9]{4,40}$/;
 
 export function imageJobDir(id: string): string {
-  return join(imageJobsRoot(), id);
+  return join(imageJobsRoot(), assertSafeId(id, "图片任务 id"));
 }
 
 function jobFile(id: string): string {
