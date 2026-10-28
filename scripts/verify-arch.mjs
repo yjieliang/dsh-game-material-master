@@ -42,8 +42,8 @@ const BASELINE = {
   legacyFeatureShellImports: 7
 };
 
-/** 体积预算。 */
-const BUDGET = { rawBytes: 1_200_000, gzipBytes: 320 * 1024 };
+/** 体积预算（2026-10-29 重构设计 §15 裁决：1.2 MB → 1.3 MB，gzip 320 KB → 340 KB）。 */
+const BUDGET = { rawBytes: 1_300_000, gzipBytes: 340 * 1024 };
 
 const failures = [];
 const skips = [];

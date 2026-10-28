@@ -55,7 +55,7 @@
 ### 1.3 现有硬约束清单（设计必须逐条满足）
 
 1. **零运行时依赖**：不新增 npm 依赖；一切外呼走 `fetch`/`spawn`。
-2. **客户端单文件经典脚本**：`lib/client.js` 由 esbuild 内联，无 `import/export`；React 元素用 `h()`；体积预算 1.2 MB（gzip 320 KB）。
+2. **客户端单文件经典脚本**：`lib/client.js` 由 esbuild 内联，无 `import/export`；React 元素用 `h()`；体积预算 1.3 MB（gzip 340 KB，2026-10-29 §15 裁决上调）。
 3. **客户端四层依赖单向**：`shell → features → platform`，features 之间零 import。
 4. **wire 增量**：不改既有方法名/字段语义；新 payload 键必须写进 `src/wire.ts` 的 schema。
 5. **付费三处清单一致**：`src/index.ts` `PAID_METHODS`、`src/wire.ts` `withPaidFields`、`src/client/platform/api.ts` `PAID_METHODS`。**本地能力不进付费清单**。

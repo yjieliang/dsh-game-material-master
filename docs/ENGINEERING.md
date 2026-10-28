@@ -2680,8 +2680,8 @@ React → i18n（T）→ platform 运行时 → 轮询调度器 / perf
 | 12 | 每个 feature 有 `descriptor.ts` | 模块元数据散回 shell 里 |
 | 13 | `registry` 覆盖全部 features | 新增模块忘了注册（页签不出现） |
 | 14 | 每个 feature 根组件被 `FeatureBoundary` 包裹 | 一个模块渲染崩掉拖垮整个工作台 |
-| 15 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,126,351） | 体积回归 |
-| 16 | `lib/client.js` gzip ≤ 320 KB（当前 299,739） | 同上 |
+| 15 | `lib/client.js` raw ≤ 1,300,000 B（2026-10-29 由 1,200,000 上调，当前 1,187,280） | 体积回归 |
+| 16 | `lib/client.js` gzip ≤ 340 KB（2026-10-29 由 320 KB 上调，当前 ~298 KB） | 同上 |
 | 17 | 产物是经典脚本（没有 `import` / `export`） | 宿主按普通脚本加载，混入模块语法直接语法错 |
 | 18 | `lib/client.js` 存在 | 忘了 build 就提交 |
 
@@ -2693,7 +2693,7 @@ const BASELINE = { legacyTimers: 0, legacyFetch: 3, legacyListeners: 30, legacyF
 
 每迁完一个模块就把数字调低；**不要为了变绿调高**（P10 已把裸定时器清零：新代码里出现 `setInterval` /
 `setTimeout` 直接红，注释里写一个也会被数到）。体积预算在同一文件的 `BUDGET`：
-`rawBytes: 1_200_000` / `gzipBytes: 320 * 1024`，超了只报「删死代码或收敛重复实现」。
+`rawBytes: 1_300_000` / `gzipBytes: 340 * 1024`（2026-10-29 重构设计 §15 裁决上调），超了只报「删死代码或收敛重复实现」。
 
 > 2026-10-28 之前，第 2~4 项用的是不带 `client/` 前缀的路径判断（`rel()` 实际返回 `client/features/...`），
 > 三条断言恒为真、从未检查过任何文件；同一时期 7 个 feature 都在 `import "../../<name>-module.js"`。

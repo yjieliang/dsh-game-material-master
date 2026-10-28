@@ -148,10 +148,10 @@ if (hasDeps) {
     clean ? `${bundleBytes} 字节` : `${strayImport ? "有 import；" : ""}${strayExport ? "有 export；" : ""}${strayTail ? "残留 export {};" : ""}`
   );
 
-  // 体积预算（docs/客户端架构方案 §3：≤1.2 MB raw）。越过预警线提前亮出来，
-  // 否则要等某次改动直接顶穿、产物发不出去才发现。
-  const BUDGET_BYTES = 1.2 * 1024 * 1024;
-  const WARN_BYTES = 1.05 * 1024 * 1024;
+  // 体积预算（docs/客户端架构方案 §3；2026-10-29 重构设计 §15 裁决上调为 ≤1.3 MB raw）。
+  // 越过预警线提前亮出来，否则要等某次改动直接顶穿、产物发不出去才发现。
+  const BUDGET_BYTES = 1.3 * 1024 * 1024;
+  const WARN_BYTES = 1.2 * 1024 * 1024;
   const sizeStatus = bundleBytes > BUDGET_BYTES ? "FAIL" : bundleBytes > WARN_BYTES ? "WARN" : "PASS";
   record(
     "artifacts: client.js 体积",

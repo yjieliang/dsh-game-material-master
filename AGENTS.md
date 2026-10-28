@@ -247,7 +247,7 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 - 轮询全部收编到 `platform/scheduler`（P3b / P10）：非 platform 裸定时器 **16 → 0**，棘轮同步降到 0。
 - 项目快照搬进 `platform/store` 按 selector 订阅（P9）：一次轮询重渲染的产品组件从「整棵树」降到 **3 个**；
   轮询回包内容没变时不 `setState`。
-- 产物 `lib/client.js` **1,120,339 B / gzip 297,481 B**（预算 1.2 MB / 320 KB 内），仍是经典脚本。
+- 产物 `lib/client.js` **1,187,280 B / gzip ~298 KB**（预算 2026-10-29 上调为 1.3 MB / 340 KB），仍是经典脚本。
 - 文档：`docs/ENGINEERING.md` 新增「客户端分层」一节（四层职责、依赖方向、装配顺序、加模块清单、
   verify-arch 17 项、棘轮与体积预算、**2026-10-28 真机验收记录**）；`AGENTS.md` 增一条分层硬约束；
   `README.md` / `README.en.md` 的「加一条界面文案」与生效表改到新路径
