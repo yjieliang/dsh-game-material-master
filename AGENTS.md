@@ -25,10 +25,11 @@ DSH 插件「墨盒」：从一张角色设定图出发批量产出游戏素材�
 | 音乐生成编辑 | `music` | 正式（谱乐 AI：灵感/歌词 → 不挂靠项目的新对话 → agent 读内置指南、选引擎/模式生成 → 回界面裁剪/音量/淡入淡出/标准化/导出；**生成按平台积分计费**。另有**谱曲模式**：对话里先给方案 → scoremill 本地写 MIDI → 宿主渲染试听 → 逐版修改 → 可选交 Suno；**谱曲/试听/导出本地免费**） |
 | 音效生成 | `sfx` | 正式（火山引擎豆包语音 **Seed-Audio**：一句话描述 → 音效 / 环境音 / UI 声 / 生物吼叫 / 角色配音；可带 1 张参考图或最多 3 条参考音频（互斥）；每次生成一条 take、永不覆盖；单次 ≤120 秒；**每次生成真实计费**。界面上直接生成，不派给对话；工具面同样可调） |
 
-生图后端是可切换的：默认火山方舟 Seedream，也可以换成用户自己的服务
-（OpenAI 兼容 / ComfyUI / Stable Diffusion WebUI 三种协议；
-`src/imageprovider.ts` 分发、`src/customimage.ts` 实现三种协议）。
-所有生图调用点都必须走 `imageprovider.generateImageWithProvider`，**不要在模块里自己判 `imageProvider`**。
+生图后端是可切换的：默认火山方舟 Seedream，也可以换成**本机 ComfyUI 工作流库**（9 条目录、任务级选择、
+参数注入与自检；`src/imagebackend.ts` + `src/workflowlib.ts` + `src/workflowbuiltin.ts`，本地免费）、
+用户自己的服务（OpenAI 兼容 / ComfyUI / Stable Diffusion WebUI；`src/customimage.ts`）或 ToAPIs。
+所有生图调用点都必须走 `imageprovider.generateImageWithProvider`（内部按 `resolveImageBackend` 分派，
+支持 `manual` / `local-first` 策略），**不要在模块里自己判 `imageProvider`**。
 
 图生视频默认走 MiniMax，也可以改走本机 / 远端 ComfyUI（`src/videogen.ts` 按**节点上记的** `backend`
 分派，`src/comfy.ts` 是 ComfyUI 客户端）。
@@ -50,6 +51,11 @@ DSH 插件「墨盒」：从一张角色设定图出发批量产出游戏素材�
 | **后台轮询刷新项目 / 任务时，不许用宿主的值整份覆盖编辑草稿** | 有任务在跑时每 2.5~5 秒拉一次 `getProject` / `getImageJob` / `getSequenceJob` / `getRigJob`；无条件覆盖草稿会让用户正在长文本框里替换的提示词一两秒后被打回原形（真机：「我替换的时候它一秒钟又换回来」）。所有 load 走 `mergeDrafts()`：只有「草稿 === 上一次宿主值」的字段才跟着宿主更新；换项目 / 换任务 / 点「重置为默认」才 `force`。`verify-feedback.mjs` 有合并用例，`verify-client.mjs` 逐模块钉住调用点 |
 | 本地自选视频必须与远端生成的产物**同形**，且导入时作废该槽位已有的下游产物 | 两条路只差 `origin` / `originalName` 两个字段，阶段③④才不用改。不作废（尤其是 `frames/<方向>/raw.bin`）就会拿上一段视频的帧去合成——界面看着完全正常，只是动作 / 朝向对不上；同理，导入时要摘掉在跑的远端 `taskId`，否则它稍后会把本地视频覆盖掉。`verify-host.mjs` 的 9d 段逐条钉住这几条 |
 | 生图一律走 `imageprovider.generateImageWithProvider`，模块里不许自己判 `imageProvider` | 分发只在一个地方，漏掉的那一处**不报错**，只是偷偷继续用另一家模型（用户以为换成了自己的服务，其实还在扣火山方舟的钱）。`verify-custom-image.mjs` 会打一台本地假服务端核对端点真的换了 |
+| **工作流注入必须走 `resolveWorkflowBindings` + `assertWorkflowBindings`**：缺关键绑定（提示词 / 图像）要抛错并给出候选节点，不许静默忽略；界面格式转换只在 `workflowlib.parseWorkflowText` 里做一份 | 缺绑定不报错 = 提示词没写进去、模型按默认值跑，用户看到「生成成功」但图完全不对且计费照扣。`verify-workflow-lib.mjs` 有缺绑定的反向用例 |
+| 本地 ComfyUI 生图走 `local` 通道、**不建 receipt**；`imageProvider = "comfy"` 与 `imageBackendPolicy` / `imageWorkflowId` / `imageProviderFallback` 四个配置项必须同时进 `saveConfig` 的 `directKeys`，`imageBackendStatus` 要带 `fallbackReason` | 漏进白名单的字段「保存成功」但没写盘；本地生图如果也走 paid 通道，会凭空生成 receipt（本地免费却记成付费） |
+| **引擎导出必须逐帧对齐校验**（数量 / 顺序 / 矩形越界与重叠 / cell / 整图尺寸 / 方向数 / fps），不一致直接报错；新增格式只能在 `exportman.ts` 里扩 | 静默切歪的 manifest 在引擎里表现为「帧序错乱 / 角色抖动」，前端完全正常；`verify-export.mjs` 有 11 类反例逐 code 断言 |
+| **自动选帧只写既有 picks 通道**（`candidates.picks` / `frames.picks`），失败必须回退等分并给 `reason`；不许新建一套选帧数据 | 另开一套 picks 会让「手动选帧 / 自动选帧 / 合成」各读各的；失败静默回退等于用户不知道这帧序是等分来的。`verify-selection.mjs` 有回退与原因码用例 |
+| **素材互操作只读显式给出的路径**（不隐式扫描、目录不递归、按文件头嗅探、图片 30MB / 视频 100MB / 工作流 2MB 上限），导入复用既有 upload* 入口 | 绕过文件头校验会把改后缀的任意文件写进项目；隐式扫描会把用户没选的文件也读进来；`verify-interop.mjs` 有安全边界用例 |
 | 音乐模块：**Key 是凭据**，不进 `saveConfig` 的 `directKeys` | `musicApiKey` 与 `arkApiKey` / `minimaxApiKey` 同一档：`saveConfig` 函数体里 trim 后写入、`maskConfig` 只回 `musicApiKeySet` / hint。加进白名单会原样透传、绕过归一化，而且看起来「保存成功」 |
 | 音乐模块：**新增 payload 字段必须写进 `src/wire.ts`** | typert 会把 schema 外的键静默丢掉。`renderMusicEdit.ops.*` / `runMusicGeneration.params.*` / `saveMusicJob.source.adapted*` / `getMusicJob.lang` 都踩得到；`verify-music-gateway.mjs` 逐键比对 schema 解析结果 |
 | 音乐模块：**下载音频必须按文件头校验，不能只信 `Content-Type`** | Suno 的音频 URL 偶尔会先返回未完成 / 加密的临时对象，`Content-Type` 仍可能是 `audio/mpeg`；只信它会把随机字节落成 `.mp3`，表现是「有歌名但第一首放不了」。`downloadToFile({requireAudio:true})` 用 `sniffBinary` 校验；`ensureLocalSong` 对坏本地文件删除重下（一次重试）；`musicSnapshot` 对坏文件回退远端 URL 并提示刷新。`verify-music` 有「伪音频 + 坏文件修复」两条回归 |
@@ -133,6 +139,10 @@ node scripts/verify-custom-image.mjs  # 自定义生图后端三协议（68 项�
 node scripts/verify-toapis.mjs       # ToAPIs 可选异步图片 / 视频后端（43 项，mock HTTP、零付费调用）
 node scripts/verify-jobs.mjs         # 宿主加固：统一任务表 / 全局并发池 / 付费 receipt / 三处清单一致（54 项，纯本地、零付费调用）
 node scripts/verify-qa.mjs           # 产物体检（QA）：黄金 fixture / 阈值边界 / 降采样 / PNG 解码 / 落盘 / 网关 / fail-closed（102 项，纯本地、零付费调用）
+node scripts/verify-workflow-lib.mjs  # 本地 ComfyUI 工作流库：目录 / CRUD / 三级绑定 / 缺绑定报错 / 自检 / 真实注入 / 界面格式转换（126 项，自起 mock ComfyUI、零付费）
+node scripts/verify-export.mjs        # 引擎导出：manifest / Godot .tres / Aseprite JSON / 逐帧对齐 11 类反例 / zip 真解包（125 项，纯本地）
+node scripts/verify-selection.mjs     # 自动选帧：周期 / 半周期自证 / 八度折半 / 失败回退 / 真实素材与 make_cycle.py 逐帧对比（108 项，纯本地）
+node scripts/verify-interop.mjs       # 素材互操作：文件头嗅探 / 路径校验 / 目录批量 / 工作流解析 / 网关导入 / 安全边界（55 项，纯本地）
 node scripts/verify-music.mjs      # 音乐生成编辑：mock 谱乐 AI 的生成/轮询/下载/编辑/导出/工具/路由（86 项）
 node scripts/verify-music-score.mjs   # 谱曲模式：方案 / 假 Python / 内置试听 / 乐谱包 / Suno 上传+cover mock（46 项，纯本地）
 node scripts/verify-music-gateway.mjs  # 音乐走真实网关：wire schema 不丢键、工具面、深链接、隐藏模块、谱曲字段（52 项）
@@ -230,7 +240,7 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 
 ### 下一版发布说明（0.12.0 · 未发布）
 
-> 版本号按 **`0.12.0`** 准备，截至 **2026-10-28 04:25 UTC 尚未发布到 npm**（`package.json` 仍是 `0.11.0`）。
+> 版本号按 **`0.12.0`** 准备（`package.json` 已提到 0.12.0），截至 **2026-10-29 尚未发布到 npm**。
 > 真正发布时：把 `package.json` 提到 0.12.0 → 发布到**新包名 `dsh-inkbox`**（npm 上 `dsh-inkbox` 已验证未被占用）
 > → 在「已发布版本」表里追加一行（补真实 UTC 时间）→ 删掉本提示。
 > 内容如需细分，照下面的 0.11.0 小节格式另起小节。
@@ -332,6 +342,33 @@ bbox / 色值 / 圆角。设计基线写在 [docs/设计基线-UI重设计.md](d
 - **环境侧（本机）**：`~/.dsh/profiles/web` 的 `link:` 依赖名与 `dsh.profile.bundles` 条目要一起改成
   `dsh-inkbox`（`node_modules/dsh-inkbox` junction 指向本仓库），否则重启后插件加载不到；DSH 必须重启。
 
+#### ⑤ 生图与处理链路合并（`feat(skill-merge)`，req_dfd6949fc0 的 6 个子需求）
+
+把 `G:\image` 三套本机 skill 里被实测证明有效的能力用 TypeScript 重实现并挂进墨盒骨架（设计见
+[docs/墨盒-skill能力合并-重构设计.md](docs/墨盒-skill能力合并-重构设计.md) §15 裁决）：
+
+- **本地 ComfyUI 升为一等生图后端**（`feat(image)`）：`src/imagebackend.ts`（四后端适配器 + capabilities +
+  manual/local-first 策略与显式回退原因）、`src/workflowlib.ts`（工作流目录 CRUD + 三级绑定解析 +
+  `/object_info` 精确转换 + 注入 + 自检）、`src/workflowbuiltin.ts`（9 条目录、内置 3 份正文：透明精灵 Turbo /
+  像素风 SDXL / BiRefNet 去背）；设置页「本地 ComfyUI · 工作流库」卡片 + 模块② 任务级工作流下拉；
+  本地走 local 通道不建 receipt。**真实 8188 出图**：1024×1024 RGBA、透明比例 80.44%、63.2 s、receipts 0 条。
+- **BiRefNet 模型去背**（`feat(matte)`）：`src/matte.ts`（keygreen / birefnet / auto、尺寸校验、120s 超时、
+  内容哈希缓存、失败回退带 `fallbackReason`）；①②③ 三条抠像链路全部改走 matte 抽象，默认 keygreen 行为不变。
+  真实联调：源图透明 0% → 83.83%；洋红彩边 0.481% vs 绿幕 1.455%。
+- **产物体检 QA**（`feat(qa)`）：`src/qa.ts`（透明比例 / 彩边 / bbox·身高·头宽 CV / 循环缝 IoU+RGB 差 /
+  质心抖动，长边降采样）；报告落 `<目标>/qa/report.json`，界面徽标+指标表+导出 JSON+重新体检；
+  `qaFailClosed` 默认关。真实产物报告见 `docs/qa-live-20261029/`。
+- **引擎导出**（`feat(export)`）：`src/exportman.ts`（manifest v1 + 逐帧对齐校验 + Godot SpriteFrames
+  `.tres` + Aseprite JSON + 逐帧 PNG + zip）；模块①阶段④与模块③共用导出卡。
+- **自动选帧**（`feat(sprite)`）：`src/cycle.ts`（alpha 轮廓 → 步幅 → contact/passing → 自相关 + 相位 IoU +
+  半周期自证 + 八度折半 → 均匀取帧 + 置信度）；只写既有 picks 通道，失败回退等分并给原因；
+  三项真实素材与 `make_cycle.py --select-only` **逐帧一致（±0 帧）**。
+- **素材互操作**（`feat(interop)`）：`src/interop.ts`（按文件头嗅探 / 显式路径校验 / 目录批量 /
+  工作流文件解析）+ 设置页「素材互操作」组，宿主直接读盘、不经过浏览器 base64。
+
+协议增量：wire 方法 188 → **201**（+工作流库 6 / +互操作 2 / +去背 1 / +QA 1 / +导出 1 / +选帧 2，全部本地、
+不进 PAID_METHODS）；新增配置字段全部进 `directKeys`；`lib/client.js` 1,263,177 B / 93%（预算 1.3 MB）。
+
 #### 本次复跑的自检（UI 重设计 + 改名这一批）
 
 `verify-arch` **18** · `verify-client` **368** · `verify-feedback` **218** · `verify-i18n` **9** ·
@@ -345,6 +382,13 @@ bbox / 色值 / 圆角。设计基线写在 [docs/设计基线-UI重设计.md](d
 `verify-map-agent` **35** · `verify-map-pipeline` **429** · `verify-iso` **42** · `verify-iso-gateway` **64** ·
 `verify-rename` **23** · `verify-project-windows-lock`，全部通过（宿主链路里路由前缀 `/dsh-inkbox/…`、
 plugin `name = dsh-inkbox`、数据目录 `inkbox/` 与旧目录迁移都已实测）。
+
+skill 能力合并的复跑自检（2026-10-29）：`verify-host` **387** · `verify-tools` **197** · `verify-client` **368** ·
+`verify-feedback` **233** · `verify-i18n` **9** · `verify-pipeline` **35** · `verify-arch` **18** ·
+`verify-workflow-lib` **126** · `verify-matte` **80** · `verify-qa` **102** · `verify-export` **125** ·
+`verify-selection` **108** · `verify-interop` **55** · `verify-jobs` **55** · `verify-comfy` **124** ·
+`verify-custom-image` **68** · `verify-toapis` **43** · `verify-rename` **23**（真机联调证据见
+[docs/墨盒-skill能力合并-联调与回滚.md](docs/墨盒-skill能力合并-联调与回滚.md)）。
 
 本机仍然过不了、**与改名无关**的既有红（留待环境/后续处理）：`verify-music-score` / `verify-music-gateway`
 （缺 Python 3、`verify-music-gateway` 的 `runMusicGeneration` 还停在 P8 付费 confirm 之前的写法）、

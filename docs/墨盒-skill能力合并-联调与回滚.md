@@ -25,26 +25,46 @@
   `5.TextEncodeQwenImage21.prompt / negative_prompt`、`6.EmptyLatentImage.width / height / batch_size`、
   `7.ManualSigmas.sigmas`、`8.KSamplerSelect.sampler_name`、`9.RandomNoise.noise_seed`、
   `10.CFGGuider.cfg` 全部正确。
-- **真实出图**（工作流库同一条链路，本地免费）：用转换后的「透明精灵 Turbo」注入提示词并提交 8188 →
-  成功产出 `sprite_00006_.png`：**1024×1024，pix_fmt = rgba**（1,102,322 B）。证据文件：
-  `.verify/comfy-real-sprite.png`（本机临时证据，不入库）。
+- **真实出图**（插件网关 → imageprovider → workflowlib → ComfyUI，本地免费）：透明精灵 Turbo 注入
+  `5.prompt` / `6.width` / `9.noise_seed` 提交 8188 → 产出 `transparent-qwen-real.png`：
+  **1024×1024 RGBA**、473,846 B、透明比例 **80.44%**、63.2 s（含模型加载）；本地后端 receipts **0 条**。
+  证据：`docs/assets/workflow-lib/transparent-qwen-real.png`（入库）。
 - **自检**：`/system_stats` + `/object_info` 节点类型与模型文件存在性检查；本机 9 个工作流无缺节点。
 
 ### 1.2 BiRefNet 模型去背（req_59a3b50652）
 
-（实施后补：真实去背前后透明比例、回退证据）
+- 三条链路（① 阶段①/③/④ 抠像、② 图片生成抠像、③ 序列帧抠像）各真实跑一次（256×384 洋红背景立绘）：
+  源图透明 **0% → 83.83%**；洋红边缘彩边 **0.481%（BiRefNet）vs 1.455%（绿幕）**，对比图肉眼可辨。
+- 单帧 ~1.9 s（首次含模型加载 5.49 s），内容哈希缓存命中后 2 帧 147 ms / 3 帧 78 ms；
+  ComfyUI 死端口实测**自动回退绿幕并带 `fallbackReason`**，与纯绿幕结果逐像素一致。
+- 证据：`docs/去背-BiRefNet.md`、`research/matte-birefnet/`（报告 + 真实产物 + 对比图）。
 
 ### 1.3 产物 QA（req_aee289460b）
 
-（实施后补：合格 / 不合格两套产物的报告读数）
+- 用真实交付精灵表（只读复制到临时 DSH_HOME）跑 `runProjectQA`：
+  - p3-walk_v11（8 帧走循环）→ warn：heightCv 0%、缝 IoU 0.619、缝 RGB 差 22.4、bboxCv 13.0（摆臂）；
+  - noblewoman-walk_v1 → warn：heightCv 0%、缝 IoU 0.846；
+  - knight-attack_v1（12 帧一次性攻击）→ warn：headWidthCv 42.3%、缝 RGB 差 60.6 —— **正确地暴露「不是循环」**。
+- 指标读数与人工判断一致；报告落 `<目标>/qa/report.json`。证据：`docs/qa-live-20261029/`（README + 3 份报告 JSON）。
 
 ### 1.4 引擎导出（req_b70a5d20bb）
 
-（实施后补：真实整图导出的 manifest / Godot / Aseprite / zip 内容，逐帧对齐校验正反用例）
+- 临时 DSH_HOME 里用真 `chroma.composeSheet` 合成 8 方向 × 4 帧整图 → 导出全部格式：
+  37 条 zip 条目逐字节核对、32 张帧 PNG 与整图矩形逐字节一致；逐帧对齐校验有 11 类反例逐 code 断言。
+- 另用对话工具面 `game_material({action:'call',method:'exportSprite'})` 真走「插件 apply → 工具面 → 网关 →
+  exportman」，导出 30 个文件、`assetBase=/dsh-inkbox/assets/<projectId>/` 正确。
+- 本机 `~/.dsh/inkbox/projects` 当前没有已合成整图的真实项目，已在格式文档写明口径。
+- 证据：`docs/引擎导出-格式说明.md`。
 
 ### 1.5 自动选帧（req_2e421741df）
 
-（实施后补：G:\image 真实走循环素材的 picks 与 make_cycle.py 对比）
+- 算法对照（本机现跑 `make_cycle.py --select-only`）：p1 周期 26 / c0=23 / picks [23,26,29,33,36,39,43,46]；
+  p3 周期 33 / c0=36 / picks [36,40,44,48,53,57,61,65]；八度样本 p3s42 周期 29（自相关主峰 59 折半）/
+  c0=34 / picks [34,38,41,45,49,52,56,59] —— 三者与参考实现**逐帧一致（±0 帧）**，置信度 0.8133/0.8155/0.6005。
+- 真实链路：p1 的 90 张真实 cut 帧合成绿幕 mp4 → 插件「导入本地视频 → 抽 90 张候选帧 → 自动选帧 →
+  写 picks → 切 8 帧」全通：周期 26 / 置信度 0.8677 / picks 61,64,68,71,74,77,80,84 / 8 张帧文件都在；
+  手动 `applyAutoPicks` 写等分也走同一条 picks 通道。
+- 证据：`docs/自动选帧-算法与阈值.md`。
 
 ### 1.6 素材互操作（req_7180b0d06a）
 
@@ -64,8 +84,16 @@ node scripts/gate.mjs --full  # 全部 verify-*（本机既有红见 §4）
 
 - 新增脚本：`verify-workflow-lib` / `verify-matte` / `verify-qa` / `verify-export` /
   `verify-selection` / `verify-interop`；`e2e-interop-real` 为真机素材验收（缺素材 SKIP）。
-- 体积预算：`lib/client.js` ≤ 1.3 MB / gzip 340 KB（§15 裁决，`verify-arch` 与 `gate.mjs` 同步上调）。
-- wire 方法数：188 → **201**（工作流库 6 + 互操作 2 + 去背 1 + QA 1 + 导出 1 + 选帧 2）。
+- **2026-10-29 合并后复跑结果**：`gate.mjs` **PASS 14 / FAIL 0**；`verify-host` **387** ·
+  `verify-tools` **197** · `verify-client` **368** · `verify-feedback` **233** · `verify-i18n` **9** ·
+  `verify-pipeline` **35** · `verify-arch` **18** · `verify-workflow-lib` **126** · `verify-matte` **80** ·
+  `verify-qa` **102** · `verify-export` **125** · `verify-selection` **108** · `verify-interop` **55** ·
+  `verify-jobs` **55** · `verify-comfy` **124** · `verify-custom-image` **68** · `verify-toapis` **43** ·
+  `verify-rename` **23**，全部通过。
+- 体积预算：`lib/client.js` **1,263,177 B（93% / 1.3 MB）**、gzip ≤ 340 KB（§15 裁决，`verify-arch` 与
+  `gate.mjs` 同步上调；`gate.mjs` 预警线按硬线的 96% 设为 1.25 MB）。
+- wire 方法数：188 → **201**（工作流库 6 + 互操作 2 + 去背 1 + QA 1 + 导出 1 + 选帧 2），全部本地方法、
+  不进 `PAID_METHODS`、不建 receipt。
 
 ## 3. 回滚
 
