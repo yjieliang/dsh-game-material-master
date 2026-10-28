@@ -76,12 +76,25 @@ import {
   freshPicks,
   log,
   patchProject,
+  projectDir,
   readProject,
   referenceFiles,
   type Project,
   type ProjectSettings,
   type VideoBackend
 } from "./store.js";
+import {
+  decodePngRgba,
+  qaCellFrames,
+  qaComposedSheet,
+  qaFrames,
+  qaLoopGroups,
+  qaVerdictText,
+  summarizeQA,
+  writeQAReportFile,
+  type QAReport,
+  type QASummary
+} from "./qa.js";
 
 /** 生图的依赖分层：同一层内可并发，层与层之间必须按序。 */
 const IMAGE_STAGES: string[][] = [
@@ -1766,6 +1779,31 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
     await writeFile(assetPath(projectId, relative), encodePng(sheet.rgba, sheet.width, sheet.height));
 
     const matteInfo = combineMatteInfos(Object.values(matteByDirection));
+    // 产物 QA：整图合成完立刻体检（纯本地、零计费）。
+    // 默认 warning-only（qaFailClosed=false），体检失败绝不影响合成本身——
+    // 报告落 <project>/qa/report.json，摘要挂 sheet.qa 给界面上徽标。
+    let qaReport: QAReport | undefined;
+    if (config.qaEnabled) {
+      try {
+        qaReport = qaComposedSheet({
+          scope: "sprite",
+          rgba: sheet.rgba,
+          width: sheet.width,
+          columns: sheet.columns,
+          rows: sheet.rows,
+          cellWidth: settings.cellWidth,
+          cellHeight: settings.cellHeight,
+          thresholds: config.qaThresholds
+        });
+        await writeQAReportFile(projectDir(projectId), qaReport);
+      } catch (error) {
+        qaReport = undefined;
+        await patchProject(projectId, (current) => {
+          log(current, "warn", "产物体检失败（不影响整图）：" + messageOf(error));
+        });
+      }
+    }
+
     await patchProject(projectId, (current) => {
       const backgroundFraction = keyedSamples > 0 ? backgroundSum / keyedSamples : undefined;
       current.sheet = {
@@ -1783,8 +1821,16 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
         backgroundFraction,
         borderSamples,
         borderSamplesDropped,
-        matte: matteInfo
+        matte: matteInfo,
+        qa: qaReport
       };
+      if (qaReport !== undefined) {
+        log(
+          current,
+          qaReport.verdict === "fail" ? "error" : qaReport.verdict === "warn" ? "warn" : "info",
+          "产物体检：" + qaVerdictText(qaReport) + (qaReport.sampled > 1 ? "（长边降采样 ×" + qaReport.sampled + "）" : "") + "；明细见 qa/report.json"
+        );
+      }
       const droppedNote =
         borderSamplesDropped > 0
           ? `；边框采样 ${borderSamples} 个里排除了 ${borderSamplesDropped} 个不属于背景主色的点（通常是角色贴到了画面边缘，已自动排除）`
@@ -1804,6 +1850,38 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
     });
     throw error;
   }
+}
+
+/**
+ * 按已落盘的整图**复算**一次体检（wire 方法 runQA 的八方向图分支）。
+ *
+ * 走 PNG 解码而不是重跑抠像 + 合成：报告针对的是「用户看到的那张产物」，
+ * 重算一遍合成只会得到同一张图，白白多花几十秒。
+ */
+export async function runProjectQA(projectId: string): Promise<{ report: QAReport; qa: QASummary | undefined }> {
+  const project = await readProject(projectId);
+  if (project === undefined) throw new Error("项目不存在：" + projectId);
+  const sheet = project.sheet;
+  if (sheet.status !== "ready" || sheet.file === undefined) throw new Error("还没有合成整图，请先在第 ④ 步合成整图");
+  const bytes = await readFile(assetPath(projectId, sheet.file));
+  const decoded = decodePngRgba(bytes);
+  if (decoded === undefined) throw new Error("整图不是可解析的 RGBA8 PNG，无法体检（可能被外部工具改写过了）");
+  const config = await loadConfig();
+  const rowOrder = Array.isArray(sheet.rowOrder) && sheet.rowOrder.length > 0 ? sheet.rowOrder : project.settings.rowOrder;
+  const columns = Math.max(1, Number.isFinite(sheet.frameCount) ? (sheet.frameCount as number) : project.settings.frameCount);
+  const cellWidth = Number.isFinite(sheet.cellWidth) ? (sheet.cellWidth as number) : project.settings.cellWidth;
+  const cellHeight = Number.isFinite(sheet.cellHeight) ? (sheet.cellHeight as number) : project.settings.cellHeight;
+  const rows = Math.max(1, rowOrder.length);
+  const report = qaFrames(
+    qaCellFrames({ rgba: decoded.rgba, sheetWidth: decoded.width, columns, rows, cellWidth, cellHeight }),
+    { scope: "sprite", thresholds: config.qaThresholds, loops: qaLoopGroups(rows, columns) }
+  );
+  await writeQAReportFile(projectDir(projectId), report);
+  await patchProject(projectId, (current) => {
+    current.sheet = { ...current.sheet, qa: report };
+    log(current, report.verdict === "fail" ? "error" : report.verdict === "warn" ? "warn" : "info", "已重新体检整图：" + qaVerdictText(report));
+  });
+  return { report, qa: summarizeQA(report, { failClosed: config.qaFailClosed }) };
 }
 
 export async function clearVideos(projectId: string, keys?: string[]): Promise<void> {

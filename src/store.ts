@@ -33,6 +33,7 @@ import {
   type TurnDirection
 } from "./directions.js";
 import { DEFAULT_CONFIG, ROW_ORDER_VERSION, isLegacyRowOrder, loadConfig, projectsRoot, type Config } from "./config.js";
+import type { QAReport } from "./qa.js";
 
 export type NodeStatus = "empty" | "running" | "ready" | "error";
 export type StageKey = "images" | "videos" | "frames" | "sheet";
@@ -176,6 +177,12 @@ export interface SheetState {
   borderSamples?: number;
   /** 这次去背用的后端 / 回退原因 / 耗时（见 src/matte.ts 的 MatteJobInfo）。 */
   matte?: MatteJobInfo;
+  /**
+   * 产物 QA 报告（整图合成后自动算；完整内容同时落 <项目>/qa/report.json）。
+   *
+   * 存在节点上而不是全局：整图重合成一次就换一份报告，旧报告不该继续被引用。
+   */
+  qa?: QAReport;
 }
 
 export interface LogEntry {
@@ -716,7 +723,8 @@ function normalizeProject(raw: any): Project {
       backgroundFraction: typeof raw?.sheet?.backgroundFraction === "number" ? raw.sheet.backgroundFraction : undefined,
       borderSamplesDropped: typeof raw?.sheet?.borderSamplesDropped === "number" ? raw.sheet.borderSamplesDropped : undefined,
       borderSamples: typeof raw?.sheet?.borderSamples === "number" ? raw.sheet.borderSamples : undefined,
-      matte: matteJobInfoFrom(raw?.sheet?.matte)
+      matte: matteJobInfoFrom(raw?.sheet?.matte),
+      qa: normalizeQAReport(raw?.sheet?.qa)
     },
     settings: merged,
     imageMode,
@@ -732,6 +740,17 @@ function normalizeProject(raw: any): Project {
           }
         : undefined
   };
+}
+
+/**
+ * 读回历史 QA 报告：只做「形状对得上」的最小校验，坏数据一律当作没有，
+ * 免得界面上出现一个字段全 undefined 的徽标。
+ */
+function normalizeQAReport(raw: any): QAReport | undefined {
+  if (raw === null || typeof raw !== "object" || raw.version !== 1) return undefined;
+  if (raw.verdict !== "pass" && raw.verdict !== "warn" && raw.verdict !== "fail") return undefined;
+  if (!Array.isArray(raw.metrics) || !Array.isArray(raw.issues)) return undefined;
+  return raw as QAReport;
 }
 
 function num(value: unknown, fallback: number): number {

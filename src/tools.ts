@@ -278,7 +278,9 @@ export const SHARED_TOOL_METHODS: ReadonlySet<string> = new Set([
   "importLocalPath",
   "importWorkflowFile",
   // 去背重跑（模块①②③ 共用，目标在 payload 里）。
-  "rematte"
+  "rematte",
+  // 产物体检（QA）：三个模块共用（projectId 或 jobId），归共享类。
+  "runQA"
 ]);
 
 /**

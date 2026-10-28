@@ -49,10 +49,12 @@ export interface SequenceRuntime {
   RefRow: any;
   SequencePlayer: any;
   JobLogPanel: any;
+  /** 产物体检（QA）卡片：feature 里实现、注入进来（模块③ 与① 共用同一套展示）。 */
+  QACard: any;
 }
 
 export function createSequenceModule(rt: SequenceRuntime) {
-  const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel } = rt;
+  const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel, QACard } = rt;
 
   /** 引擎导出卡（与模块① 阶段④ 共用同一份实现，这里传 jobId）。 */
   const EngineExportCard = createEngineExportCard({ React, h, T, Btn, BusyBtn, msg });
@@ -532,6 +534,15 @@ function SequenceModule(props) {
                       h(LoadingOverlay, { show: composing, text: composeText })
                     )
                   : null,
+                job.qa === undefined || job.qa === null
+                  ? null
+                  : h(QACard, {
+                      qa: job.qa,
+                      api,
+                      owner: { jobId: job.id },
+                      assetBase: job.assetBase,
+                      onReload: () => load(job.id)
+                    }),
                 frameUrls.length === 0
                   ? null
                   : h(

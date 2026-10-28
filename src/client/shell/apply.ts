@@ -146,6 +146,8 @@ export function createApply(deps: ApplyDeps) {
         // 素材互操作（跨模块）：本机路径导入 + ComfyUI 工作流文件导入。
         importLocalPath: (payload) => call("importLocalPath", payload),
         importWorkflowFile: (payload) => call("importWorkflowFile", payload),
+        // 产物体检：本地同步计算，返回报告 + 摘要（界面的「重新体检」按钮走它）。
+        runQA: (payload) => call("runQA", payload),
 
         listImageJobs: () => call("listImageJobs"),
         createImageJob: (payload) => call("createImageJob", payload),

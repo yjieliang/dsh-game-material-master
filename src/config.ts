@@ -45,6 +45,7 @@ export function isLegacyRowOrder(order: unknown): boolean {
 }
 import { COMP_SHARE_MODEL_ID, normalizeDuration, normalizeResolution, rootOf } from "./minimax.js";
 import { DEFAULT_COMFY_WORKFLOW_TEXT, normalizeComfyBaseUrl, normalizeComfyCookies } from "./comfy.js";
+import { normalizeQaThresholds } from "./qa.js";
 
 export function dshHome(): string {
   const raw = process.env.DSH_HOME?.trim();
@@ -375,6 +376,25 @@ export interface Config {
   /** 前景边缘收缩（像素），用于去掉残留绿边。 */
   edgeShrink: number;
 
+  /**
+   * **产物自动体检（QA）**。默认开：合图 / 条图 / 抠像之后自动算一份报告，
+   * 落 <目标目录>/qa/report.json，界面上以徽标 + 指标表展示。
+   */
+  qaEnabled: boolean;
+  /**
+   * QA 判定 fail 时是否**阻断**验收 / 下一步（默认 false = 只警告）。
+   *
+   * 设计 §15 裁决：默认 warning-only；只有用户显式打开这个开关才阻断。
+   */
+  qaFailClosed: boolean;
+  /**
+   * QA 阈值覆盖（键见 src/qa.ts 的 DEFAULT_QA_THRESHOLDS）。
+   *
+   * 读配置时会被 normalizeQaThresholds 收敛成**完整的一份生效阈值**，
+   * 所以这里存的是「当前生效值」，不是「只写了改动的那些键」。
+   */
+  qaThresholds: Record<string, number>;
+
   /** 整图行序。 */
   rowOrder: string[];
   rowOrderVersion: number;
@@ -570,6 +590,11 @@ export const DEFAULT_CONFIG: Config = {
   bgTolerance: 90,
   edgeShrink: 0,
 
+  qaEnabled: true,
+  qaFailClosed: false,
+  // 直接放「完整的一份生效阈值」：配置视图（maskConfig）与设置页都读它，
+  // 空对象会让界面无从显示当前阈值。
+  qaThresholds: normalizeQaThresholds(undefined),
   rowOrder: [...DEFAULT_ROW_ORDER],
   rowOrderVersion: ROW_ORDER_VERSION,
   hiddenModules: [],
@@ -766,6 +791,10 @@ export function normalizeConfig(input: unknown): Config {
     despill: asNumber(raw.despill, DEFAULT_CONFIG.despill, 0, 1),
     bgTolerance: asInt(raw.bgTolerance, DEFAULT_CONFIG.bgTolerance, 0, 160),
     edgeShrink: asInt(raw.edgeShrink, DEFAULT_CONFIG.edgeShrink, 0, 8),
+
+    qaEnabled: asBool(raw.qaEnabled, DEFAULT_CONFIG.qaEnabled),
+    qaFailClosed: asBool(raw.qaFailClosed, DEFAULT_CONFIG.qaFailClosed),
+    qaThresholds: normalizeQaThresholds(raw.qaThresholds),
 
     rowOrder,
     rowOrderVersion: ROW_ORDER_VERSION,

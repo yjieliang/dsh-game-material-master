@@ -56,6 +56,8 @@ export function createRemote(deps: any) {
       ["rekey", true],
       ["rematte", true],
       ["compose", true],
+      // 产物 QA：本地同步体检（零计费，不建 receipt；默认 write 分类 = 不自动重试）。
+      ["runQA", true],
 
       // 模块②（图片生成）—— 这一段只是远程方法清单，和下面的组件区无关
       ["listImageJobs", false],
