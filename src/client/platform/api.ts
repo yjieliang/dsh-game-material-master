@@ -81,7 +81,12 @@ export const READ_METHODS: readonly string[] = [
   "listMusicJobs",
   "listMusicHistory",
   "listMusicStemInstruments",
-  "listSfxJobs"
+  "listSfxJobs",
+  // 本地 ComfyUI 工作流库：目录 / 正文 / 分栏视图都是纯读。
+  // saveWorkflow / removeWorkflow / testWorkflow 有副作用（落盘 / 真出图），按 write 处理。
+  "listWorkflows",
+  "getWorkflow",
+  "getWorkflowCatalog"
 ];
 
 /**

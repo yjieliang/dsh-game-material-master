@@ -185,6 +185,18 @@ function convertUiWorkflow(
     const widgets: unknown[] = Array.isArray(node.widgets_values) ? [...node.widgets_values] : [];
     let widgetIndex = 0;
     const inputs: Record<string, unknown> = {};
+    /**
+     * 新版 ComfyUI 导出会额外写一份 `widgets_values_named`（名字 → 值）。
+     *
+     * 有它就不用再按顺序猜控件名了：**这份工作流目录里的 11 份 JSON 全是这种格式**
+     * （`widgets_values` + `widgets_values_named`，而 `inputs` 只保留真正连线过的输入）。
+     * 不读它的话，界面格式导入会丢掉提示词 / 尺寸 / 种子等全部控件值 —— 转换"成功"、
+     * 提交后被 ComfyUI 用默认值跑一遍，提示词静默失效。
+     */
+    const namedWidgets =
+      node.widgets_values_named !== null && typeof node.widgets_values_named === "object" && !Array.isArray(node.widgets_values_named)
+        ? (node.widgets_values_named as Record<string, unknown>)
+        : undefined;
     const declared = Array.isArray(node.inputs) ? node.inputs : [];
     for (const slot of declared) {
       if (slot === null || typeof slot !== "object" || Array.isArray(slot)) continue;
@@ -205,7 +217,14 @@ function convertUiWorkflow(
       widgetIndex += 1;
       if (UI_CONTROL_WORDS.has(String(widgets[widgetIndex]))) widgetIndex += 1;
     }
+    if (namedWidgets !== undefined) {
+      for (const [name, value] of Object.entries(namedWidgets)) {
+        // 同名输入已经被连线占住时不覆盖（连线优先于控件值，与 ComfyUI 本身一致）。
+        if (inputs[name] === undefined) inputs[name] = value;
+      }
+    }
     droppedWidgets += Math.max(0, widgets.length - widgetIndex);
+    if (namedWidgets !== undefined) droppedWidgets = 0;
     const entry: ComfyNode = { class_type: classType, inputs };
     if (typeof node.title === "string" && node.title !== "") entry._meta = { title: node.title };
     workflow[String(id)] = entry;
@@ -676,7 +695,8 @@ export async function testComfy(request: ComfyRequest): Promise<ComfyStatus> {
   return { ok: true, version, device, queueRunning: running, queuePending: pending };
 }
 
-export async function submitComfyVideo(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
+/** 提交任意 API 格式工作流（生图与视频共用同一条 POST /prompt）。 */
+export async function submitComfyPrompt(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
   const payload = await comfyJson(request, "/prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -694,6 +714,11 @@ export async function submitComfyVideo(request: ComfyRequest & { workflow: Comfy
     throw new ComfyError("ComfyUI 没有返回 prompt_id：" + JSON.stringify(payload).slice(0, 300));
   }
   return promptId;
+}
+
+/** 视频入口保持原签名（历史调用点零改动）。 */
+export async function submitComfyVideo(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
+  return submitComfyPrompt(request);
 }
 
 export type ComfyPhase = "pending" | "running" | "succeeded" | "failed";
@@ -804,6 +829,120 @@ export async function queryComfyVideo(request: ComfyRequest & { promptId: string
   const index = pending.findIndex((item: unknown) => Array.isArray(item) && item[1] === request.promptId);
   if (index >= 0) return { status: "pending", remoteStatus: "排队中（前面还有 " + index + " 个任务）" };
   return { status: "pending", remoteStatus: "等待 ComfyUI 接收" };
+}
+
+/* ---------------------------------------------------------------- 图片输出（生图） */
+
+export interface ComfyImageQuery {
+  status: ComfyPhase;
+  remoteStatus: string;
+  file?: ComfyFileRef;
+  imageUrl?: string;
+  error?: string;
+  raw?: unknown;
+}
+
+/**
+ * 从 history 的 outputs 里挑一张**图**。
+ *
+ * 与视频那条打分逻辑分开：视频要的是 mp4/webm，图片要的是 png/jpg/webp，
+ * 而且 `PreviewImage` 的产物在 `temp/` 下（随时会被清），优先取 `output` 里的文件。
+ */
+function pickImageFile(outputs: unknown, baseUrl: string): ComfyFileRef | undefined {
+  if (outputs === null || typeof outputs !== "object") return undefined;
+  let best: { score: number; file: ComfyFileRef } | undefined;
+  for (const nodeId of Object.keys(outputs as Record<string, unknown>)) {
+    const nodeOut = (outputs as Record<string, unknown>)[nodeId];
+    if (nodeOut === null || typeof nodeOut !== "object") continue;
+    const images = (nodeOut as Record<string, unknown>).images;
+    if (!Array.isArray(images)) continue;
+    for (const raw of images) {
+      if (raw === null || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      const filename = typeof item.filename === "string" ? item.filename : "";
+      if (filename === "") continue;
+      const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
+      const isImage = ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" || ext === "bmp";
+      if (!isImage) continue;
+      const type = typeof item.type === "string" ? item.type : "output";
+      // output（已保存）> temp（预览，可能被清）；png 优先（无损、保 alpha）。
+      const score = (type === "output" ? 2 : 0) + (ext === "png" ? 1 : 0);
+      if (best === undefined || score > best.score) {
+        const subfolder = typeof item.subfolder === "string" ? item.subfolder : "";
+        best = { score, file: { filename, subfolder, type, url: comfyViewUrl(baseUrl, { filename, subfolder, type }) } };
+      }
+    }
+  }
+  return best?.file;
+}
+
+/** 查一次生图任务：与 video 同形，只是取的是图片文件。 */
+export async function queryComfyImage(request: ComfyRequest & { promptId: string }): Promise<ComfyImageQuery> {
+  const history = await comfyJson(request, "/history/" + encodeURIComponent(request.promptId));
+  const entry = history === null || typeof history !== "object" ? undefined : (history as Record<string, unknown>)[request.promptId];
+  if (entry !== undefined && entry !== null && typeof entry === "object") {
+    const record = entry as any;
+    const statusStr = typeof record?.status?.status_str === "string" ? record.status.status_str : "";
+    if (statusStr === "error") return { status: "failed", remoteStatus: "error", error: extractHistoryError(record), raw: record };
+    if (record?.status?.completed === true || statusStr === "success") {
+      const file = pickImageFile(record?.outputs, request.baseUrl);
+      if (file === undefined) {
+        return {
+          status: "failed",
+          remoteStatus: "empty",
+          error: "ComfyUI 执行完成，但输出里没有图片文件（检查工作流终点是不是 SaveImage 之类的图片输出节点）。",
+          raw: record
+        };
+      }
+      return { status: "succeeded", remoteStatus: "success", file, imageUrl: file.url, raw: record };
+    }
+    return { status: "running", remoteStatus: statusStr === "" ? "running" : statusStr, raw: record };
+  }
+  const queue = await comfyJson(request, "/queue").catch(() => undefined);
+  const running = Array.isArray(queue?.queue_running) ? queue.queue_running : [];
+  const pending = Array.isArray(queue?.queue_pending) ? queue.queue_pending : [];
+  const inRunning = running.some((item: unknown) => Array.isArray(item) && item[1] === request.promptId);
+  if (inRunning) return { status: "running", remoteStatus: "running" };
+  const index = pending.findIndex((item: unknown) => Array.isArray(item) && item[1] === request.promptId);
+  if (index >= 0) return { status: "pending", remoteStatus: "排队中（前面还有 " + index + " 个任务）" };
+  return { status: "pending", remoteStatus: "等待 ComfyUI 接收" };
+}
+
+/**
+ * 取回一个输出文件（`/view`）。
+ *
+ * 必须走这个函数而不是直接 `fetch(file.url)`：藏鉴权反代后面时 /view 也要带 Cookie，
+ * 而 Cookie 只存在宿主配置里（不回传浏览器）。
+ */
+export async function downloadComfyFile(request: ComfyRequest, file: ComfyFileRef): Promise<{ bytes: Buffer; ext: string; mime: string }> {
+  const base = normalizeComfyBaseUrl(request.baseUrl);
+  const timeoutMs = Math.max(5000, Math.round(request.timeoutMs));
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const cookies = normalizeComfyCookies(request.cookies);
+  const headers = new Headers();
+  if (cookies !== "") headers.set("Cookie", cookies);
+  let response: Response;
+  try {
+    response = await fetch(base + "/view?" + new URLSearchParams({
+      filename: file.filename,
+      ...(file.subfolder !== "" ? { subfolder: file.subfolder } : {}),
+      type: file.type === "" ? "output" : file.type
+    }).toString(), { headers, signal: timeout });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    if (timeout.aborted === true) throw new ComfyError("下载 ComfyUI 产物超时（" + Math.round(timeoutMs / 1000) + " 秒）");
+    throw new ComfyError("下载 ComfyUI 产物失败：" + reason + "。请确认工作流真的产出了文件。");
+  }
+  if (response.ok !== true) {
+    const text = await response.text().catch(() => "");
+    throw new ComfyError("ComfyUI /view 返回 HTTP " + response.status + "：" + text.slice(0, 300), response.status);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length === 0) throw new ComfyError("ComfyUI 返回的文件是空的：" + file.filename);
+  const mime = (response.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  const extMatch = /\.([A-Za-z0-9]{2,5})$/.exec(file.filename);
+  const ext = extMatch === null ? extForMime(mime) : extMatch[1].toLowerCase();
+  return { bytes, ext: ext === "jpeg" ? "jpg" : ext, mime };
 }
 
 function extForMime(mime: string): string {

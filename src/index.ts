@@ -40,7 +40,24 @@ import {
 } from "./directions.js";
 import { checkFfmpeg } from "./media.js";
 import { testArk } from "./ark.js";
-import { customImageBlocker, imageModelOf, imageSizeOf, imageProviderBlocker, imageProviderSummary, imageUsesConfiguredSize, testCustomImage } from "./imageprovider.js";
+import {
+  customImageBlocker,
+  imageBackendStatus,
+  imageModelOf,
+  imageProviderBlocker,
+  imageProviderSummary,
+  imageSizeOf,
+  imageUsesConfiguredSize,
+  testCustomImage
+} from "./imageprovider.js";
+import { builtinWorkflowName, comfyImageBlocker, listImageBackends, resetComfyProbe, resolveWorkflowId, selfTestComfyWorkflow } from "./imagebackend.js";
+import {
+  getWorkflowCatalog as readWorkflowCatalog,
+  getWorkflowEntry,
+  listWorkflowMetas,
+  removeWorkflow as removeWorkflowEntry,
+  saveWorkflow as saveWorkflowEntry
+} from "./workflowlib.js";
 import {
   detectComfyBindings,
   fetchComfyObjectInfo,
@@ -334,6 +351,15 @@ export class GameStudioGateway extends TypertRemoteService {
       videoProviderBlocker: (()=>{try {assertVideoBackendReady(config);return null;}catch(error){return (error as Error).message;}})(),
       imageProviderBlocker: imageProviderBlocker(config) ?? null,
       customImageBlocker: customImageBlocker(config) ?? null,
+      /**
+       * 生图后端的能力与策略快照（本地 ComfyUI 工作流库）。
+       *
+       * `imageBackends` 让设置页画「本地 / 云端 / 是否付费」的能力表；
+       * `imageBackend.fallbackReason` 是 local-first 回退后的原因（设计 §3.3 的硬要求：
+       * 界面必须显示回退原因，否则用户以为用的是本地免费模型）。
+       */
+      imageBackends: listImageBackends(),
+      imageBackend: imageBackendStatus(config),
       minimaxModels: MINIMAX_MODEL_PRESETS,
       minimaxHosts: MINIMAX_HOST_PRESETS,
       // 「优云智算版 H3」由用户在模型下拉里显式选择，选中后网关地址/路径/档位全部跟着它走。
@@ -487,6 +513,68 @@ export class GameStudioGateway extends TypertRemoteService {
       bindings,
       notes
     };
+  }
+  // ── 本地 ComfyUI 工作流库（req_e395dcba0d）─────────────────────────────
+  /** 目录：内置 9 条 + 用户导入的（不含正文，界面下拉与设置页列表用）。 */
+  async listWorkflows() {
+    return { workflows: await listWorkflowMetas() };
+  }
+  /** 设置页 / 导入对话框旁的两种分栏视图。 */
+  async getWorkflowCatalog() {
+    return readWorkflowCatalog();
+  }
+  /** 取一条完整工作流（含 API 格式正文）。 */
+  async getWorkflow(payload) {
+    const workflow = await getWorkflowEntry(asString(asRecord(payload).id));
+    return { workflow };
+  }
+  /**
+   * 导入 / 编辑工作流。
+   *
+   * 界面格式在**宿主侧**转成 API 格式：有 ComfyUI 时按 /object_info 精确映射控件值，
+   * 连不上时退化成离线近似转换并在 notes 里明确警告（控件值可能丢失）。
+   */
+  async saveWorkflow(payload) {
+    const input = asRecord(payload);
+    const config = await loadConfig();
+    const result = await saveWorkflowEntry({
+      id: typeof input.id === "string" ? input.id : undefined,
+      name: asString(input.name),
+      purpose: asString(input.purpose, ""),
+      kind: input.kind === "post" ? "post" : "generate",
+      protocol: input.protocol === "ui" ? "ui" : "api",
+      json: asString(input.json),
+      bindings: input.bindings !== undefined && input.bindings !== null ? (input.bindings as Record<string, unknown>) : undefined,
+      requiredModels: Array.isArray(input.requiredModels) ? (input.requiredModels as string[]) : undefined,
+      defaults: input.defaults !== undefined && input.defaults !== null ? (input.defaults as Record<string, any>) : undefined,
+      notes: typeof input.notes === "string" ? input.notes : undefined,
+      // 内部参数：有 ComfyUI 才能精确转换界面格式。
+      request: { baseUrl: config.comfyBaseUrl, timeoutMs: config.comfyTimeoutMs, cookies: config.comfyCookies }
+    });
+    resetComfyProbe();
+    return result;
+  }
+  /** 删除用户导入的工作流（内置条目不可删）。 */
+  async removeWorkflow(payload) {
+    const result = await removeWorkflowEntry(asString(asRecord(payload).id));
+    resetComfyProbe();
+    return { ok: true, message: "已删除工作流 " + result.id };
+  }
+  /**
+   * 工作流自检：可达性 + 节点类型 + 模型文件 + 绑定识别（+ 可选真出图）。
+   * 纯本地免费，不进 PAID_METHODS、不建 receipt。
+   */
+  async testWorkflow(payload) {
+    const input = asRecord(payload);
+    const config = await loadConfig();
+    const result = await selfTestComfyWorkflow(config, {
+      id: typeof input.id === "string" ? input.id : undefined,
+      json: typeof input.json === "string" ? input.json : undefined,
+      generate: input.generate === true,
+      prompt: typeof input.prompt === "string" ? input.prompt : undefined
+    });
+    resetComfyProbe();
+    return result;
   }
   /**
    * 【谱乐 AI】连接自检：读一页历史，不生成、不排队、不扣生成积分。
@@ -1601,12 +1689,28 @@ export class GameStudioGateway extends TypertRemoteService {
     const jobId = asString(asRecord(payload).jobId);
     const job = await imagegen.readImageJob(jobId);
     if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+    const config = await loadConfig();
+    const workflowId = resolveWorkflowId(config, job.settings.workflowId);
     /**
      * `dir` 是**本机绝对目录**：对话里的 agent 要把生成结果交给别的模块
      * （例如 `composeMapAsset` 整理地图素材），而 `assetBase` 是给浏览器用的 URL。
      * 产物绝对路径 = `dir + "/" + item.file`（`out/img-00.png`）。
+     *
+     * `workflowId` / `workflowStatus` 只在本地 ComfyUI 后端有意义：界面据此显示
+     * 「本任务实际会用哪个工作流」与自检徽标。这里只做**同步**判断（不探测网络），
+     * 真自检走 `testWorkflow`。
      */
-    return { ...job, dir: imagegen.imageJobDir(jobId), assetBase: assetBasePath(`${ROUTE_PREFIX}/image-assets/${jobId}/`) };
+    return {
+      ...job,
+      dir: imagegen.imageJobDir(jobId),
+      assetBase: assetBasePath(`${ROUTE_PREFIX}/image-assets/${jobId}/`),
+      workflowId,
+      workflowStatus: {
+        id: workflowId,
+        name: builtinWorkflowName(workflowId) ?? workflowId,
+        blocker: comfyImageBlocker(config) ?? null
+      }
+    };
   }
 
   async deleteImageJob(payload) {
@@ -1631,6 +1735,8 @@ export class GameStudioGateway extends TypertRemoteService {
       job.settings.size = imageUsesConfiguredSize(current) ? imageSizeOf(current) : asString(raw.size, job.settings.size);
       job.settings.count = clampInt(raw.count, job.settings.count, 1, 8);
       job.settings.watermark = raw.watermark === true;
+      // 任务级工作流选择（仅本地 ComfyUI 有意义；空串 = 跟随配置默认）。
+      if (typeof raw.workflowId === "string") job.settings.workflowId = raw.workflowId.trim();
     }
     if (input.keying !== undefined) applyKeying(job.keying, asRecord(input.keying));
     // 验收打标：不带 index 就是整个任务，带 index 只改那一张。和界面上的「通过」是同一份数据。

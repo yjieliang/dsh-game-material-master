@@ -1199,6 +1199,44 @@ const exportSfxSchema = z.object({
   zip: z.boolean().optional()
 });
 
+/* ── 本地 ComfyUI 工作流库（req_e395dcba0d）────────────────────────────── */
+
+const workflowIdSchema = z.object({ id: z.string() });
+/** 导入 / 编辑：正文只收 JSON 文本（界面格式与 API 格式都收，宿主负责转换）。 */
+const saveWorkflowSchema = z.object({
+  /** 省略 = 新建（id 由内容哈希得出，重复导入同一份 JSON 会更新同一条）。 */
+  id: z.string().optional(),
+  name: z.string(),
+  purpose: z.string().optional(),
+  kind: z.enum(["generate", "post"]).optional(),
+  protocol: z.enum(["api", "ui"]).optional(),
+  /** 工作流 JSON 正文（整段文本）。 */
+  json: z.string(),
+  /** 注入绑定：键 = prompt / image …，值 = "节点ID.输入名"。 */
+  bindings: z.record(z.string(), z.string()).optional(),
+  requiredModels: z.array(z.string()).optional(),
+  defaults: z
+    .object({
+      width: z.number().optional(),
+      height: z.number().optional(),
+      steps: z.number().optional(),
+      cfg: z.number().optional(),
+      sampler: z.string().optional()
+    })
+    .optional(),
+  notes: z.string().optional()
+});
+/**
+ * 工作流自检：id 与 json 二选一（json = 还没入库、先试试）。
+ * generate 打开才真出图（本地免费，默认关闭）。
+ */
+const testWorkflowSchema = z.object({
+  id: z.string().optional(),
+  json: z.string().optional(),
+  generate: z.boolean().optional(),
+  prompt: z.string().optional()
+});
+
 export const METHODS: MethodSpec[] = [  { method: "getConfig", result: configViewSchema },
   { method: "saveConfig", payload: saveConfigSchema, result: configViewSchema },
   { method: "testArk", payload: withPaidFields(z.object({})), result: jsonObject },
@@ -1206,6 +1244,15 @@ export const METHODS: MethodSpec[] = [  { method: "getConfig", result: configVie
   { method: "testMinimax", result: jsonObject },
   // 本地 ComfyUI 后端自检（读 /system_stats + /queue，不排队生图）。
   { method: "testComfy", result: jsonObject },
+  // ── 本地 ComfyUI 工作流库（本地免费：不进 PAID_METHODS、不建 receipt）──
+  // 目录 / 正文 / 导入 / 删除 / 自检。每个 payload 键都必须在这里声明，
+  // typert 会把 schema 外的键静默丢掉（历史高频坑）。
+  { method: "listWorkflows", result: z.object({ workflows: z.array(jsonObject) }) },
+  { method: "getWorkflow", payload: workflowIdSchema, result: jsonObject },
+  { method: "saveWorkflow", payload: saveWorkflowSchema, result: jsonObject },
+  { method: "removeWorkflow", payload: workflowIdSchema, result: okSchema },
+  { method: "testWorkflow", payload: testWorkflowSchema, result: jsonObject },
+  { method: "getWorkflowCatalog", result: jsonObject },
   // 谱乐 AI 连接自检（读一页历史，不生成、不扣生成积分）。
   { method: "testMusic", result: jsonObject },
   // 火山引擎音效生成自检（★会真实生成一条极短音效，产生少量费用）。

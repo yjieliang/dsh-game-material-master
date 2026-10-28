@@ -155,8 +155,22 @@ export function migrateLegacyDataRootSync(): string | null {
  * `custom` = 用户自己的生图服务，协议再分 OpenAI / ComfyUI / Stable Diffusion WebUI。
  * 换后端只改这一个字段：所有生图调用点都走 `imageprovider.generateImageWithProvider`。
  */
-export const IMAGE_PROVIDERS = ["ark", "custom", "toapis"] as const;
+export const IMAGE_PROVIDERS = ["ark", "custom", "toapis", "comfy"] as const;
 export type ImageProvider = (typeof IMAGE_PROVIDERS)[number];
+
+/**
+ * 本地 / 云端的默认选择策略。
+ *
+ * `manual`（默认）= 完全按 `imageProvider`，行为与升级前一致；
+ * `local-first` = 先探测本机 ComfyUI，可用就用本地免费，不可用按 `imageProviderFallback` 回退云端
+ * （回退原因必须显示在界面上，见 `imageprovider.imageBackendStatus`）。
+ */
+export const IMAGE_BACKEND_POLICIES = ["manual", "local-first"] as const;
+export type ImageBackendPolicy = (typeof IMAGE_BACKEND_POLICIES)[number];
+
+/** local-first 失败时的回退目标：`none` = 明确不回退（宁可报错也不悄悄花钱）。 */
+export const IMAGE_PROVIDER_FALLBACKS = ["ark", "custom", "none"] as const;
+export type ImageProviderFallback = (typeof IMAGE_PROVIDER_FALLBACKS)[number];
 
 /** 自定义生图服务的协议。 */
 export const CUSTOM_PROTOCOLS = ["openai", "comfyui", "sdwebui"] as const;
@@ -202,11 +216,17 @@ export interface Config {
   toapisTimeoutMs: number;
 
   /**
-   * 生图后端：`ark`（默认）或 `custom`。
+   * 生图后端：`ark`（默认）/ `toapis` / `custom` / `comfy`（本地工作流库）。
    *
-   * ⚠️ 这个开关只影响**生图**。图生视频仍然只走 MiniMax。
+   * ⚠️ 这个开关只影响**生图**。图生视频仍然只走 MiniMax / ComfyUI 视频开关。
    */
   imageProvider: ImageProvider;
+  /** 默认选择策略（manual = 只看 imageProvider；local-first = 本地优先，失败回退）。 */
+  imageBackendPolicy: ImageBackendPolicy;
+  /** 默认工作流（本地 ComfyUI 后端用）；空 = 按用途推荐。 */
+  imageWorkflowId: string;
+  /** local-first 探测失败时的回退目标。 */
+  imageProviderFallback: ImageProviderFallback;
   /** 自定义后端协议。 */
   customProtocol: CustomProtocol;
   customBaseUrl: string;
@@ -436,6 +456,9 @@ export const DEFAULT_CONFIG: Config = {
   toapisVideoAspectRatio: "16:9",
   toapisTimeoutMs: 600000,
   imageProvider: "ark",
+  imageBackendPolicy: "manual",
+  imageWorkflowId: "",
+  imageProviderFallback: "ark",
   customProtocol: "openai",
   customBaseUrl: CUSTOM_PROTOCOL_DEFAULTS.openai.baseUrl,
   customApiKey: "",
@@ -635,7 +658,18 @@ export function normalizeConfig(input: unknown): Config {
     toapisVideoResolution: asString(raw.toapisVideoResolution, DEFAULT_CONFIG.toapisVideoResolution).trim(),
     toapisVideoAspectRatio: ["16:9","9:16","1:1","4:3","3:4","21:9"].includes(asString(raw.toapisVideoAspectRatio, "16:9")) ? asString(raw.toapisVideoAspectRatio, "16:9") : "16:9",
     toapisTimeoutMs: asInt(raw.toapisTimeoutMs, DEFAULT_CONFIG.toapisTimeoutMs, 10000, 3600000),
-    imageProvider: raw.imageProvider === "toapis" ? "toapis" : raw.imageProvider === "custom" ? "custom" : "ark",
+    imageProvider:
+      raw.imageProvider === "toapis"
+        ? "toapis"
+        : raw.imageProvider === "custom"
+          ? "custom"
+          : raw.imageProvider === "comfy"
+            ? "comfy"
+            : "ark",
+    imageBackendPolicy: raw.imageBackendPolicy === "local-first" ? "local-first" : "manual",
+    imageWorkflowId: asString(raw.imageWorkflowId, DEFAULT_CONFIG.imageWorkflowId).trim(),
+    imageProviderFallback:
+      raw.imageProviderFallback === "custom" ? "custom" : raw.imageProviderFallback === "none" ? "none" : "ark",
     customProtocol: (CUSTOM_PROTOCOLS as readonly string[]).includes(String(raw.customProtocol))
       ? (raw.customProtocol as CustomProtocol)
       : DEFAULT_CONFIG.customProtocol,

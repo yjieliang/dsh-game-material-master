@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { imageJobsRoot, loadConfig } from "./config.js";
 import { assertSafeId } from "./safeid.js";
 import { generateImageWithProvider, imageModelOf, imageSizeOf, imageWatermarkOf, assertImageProviderReady, imageUsesConfiguredSize } from "./imageprovider.js";
+import { resolveWorkflowId } from "./imagebackend.js";
 import { decodeToRgba, mimeOf, toDataUri } from "./media.js";
 import { keyGreen } from "./chroma.js";
 import { encodePng } from "./png.js";
@@ -65,6 +66,13 @@ export interface ImageJob {
     size: string;
     count: number;
     watermark: boolean;
+    /**
+     * 任务级工作流选择（仅本地 ComfyUI 后端有意义）。
+     *
+     * 空 / 缺省 = 跟随配置默认（`imageWorkflowId`），再缺省 = 按用途推荐
+     * （见 `workflowlib.defaultWorkflowIdFor`）。旧任务没有这个字段，读取侧补 undefined。
+     */
+    workflowId?: string;
   };
   keying: KeyingSettings;
   items: ImageItem[];
@@ -125,7 +133,8 @@ export async function createImageJob(name: string): Promise<ImageJob> {
       model: imageModelOf(config),
       size: imageSizeOf(config),
       count: 1,
-      watermark: imageWatermarkOf(config)
+      watermark: imageWatermarkOf(config),
+      workflowId: config.imageWorkflowId.trim()
     },
     keying: {
       enabled: false,
@@ -218,7 +227,9 @@ function normalizeImageJob(raw: any): ImageJob {
       model: typeof raw?.settings?.model === "string" ? raw.settings.model : "",
       size: typeof raw?.settings?.size === "string" ? raw.settings.size : "2K",
       count: Math.min(8, Math.max(1, Number(raw?.settings?.count) || 1)),
-      watermark: raw?.settings?.watermark === true
+      watermark: raw?.settings?.watermark === true,
+      // 旧任务没有这个字段：保持 undefined = 跟随配置默认，不迁移、不改写。
+      workflowId: typeof raw?.settings?.workflowId === "string" ? raw.settings.workflowId : undefined
     },
     keying: {
       enabled: raw?.keying?.enabled === true,
@@ -293,6 +304,8 @@ export async function generateImageItem(jobId: string, index: number): Promise<v
       prompt,
       images: refs,
       size: job.settings.size || imageSizeOf(config),
+      // 任务级工作流选择（选不到就用配置默认 / 用途推荐）。
+      workflowId: resolveWorkflowId(config, job.settings.workflowId),
       // 水印是火山方舟特有的参数（自定义后端忽略它）。任务上那份是旧版本留下的
       // 覆盖位，仍然尊重；与全局设置取或，两种写法都不会让水印「突然消失」。
       watermark: imageWatermarkOf(config) || job.settings.watermark === true
