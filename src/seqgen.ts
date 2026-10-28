@@ -89,6 +89,8 @@ export interface SequenceFramesState {
   /** 验收打标。 */
   approved?: boolean;
   updatedAt?: number;
+  /** 这次抠像用的后端 / 回退原因 / 耗时（见 src/matte.ts 的 MatteJobInfo）。 */
+  matte?: MatteJobInfo;
 }
 
 export interface SequenceSheetState {
@@ -345,7 +347,8 @@ function normalizeSequenceJob(raw: any): SequenceJob {
       error: typeof raw?.frames?.error === "string" ? raw.frames.error : undefined,
       stale: raw?.frames?.stale === true,
       approved: raw?.frames?.approved === true,
-      updatedAt: typeof raw?.frames?.updatedAt === "number" ? raw.frames.updatedAt : undefined
+      updatedAt: typeof raw?.frames?.updatedAt === "number" ? raw.frames.updatedAt : undefined,
+      matte: matteJobInfoFrom(raw?.frames?.matte)
     },
     sheet: {
       status: (raw?.sheet?.status ?? "empty") as NodeStatus,
@@ -754,8 +757,11 @@ export async function keySequenceFrames(jobId: string, matteBackend?: MatteBacke
   const matteInfo = summarizeMatte(results);
   const fresh = await readSequenceJob(jobId);
   if (fresh === undefined) return;
-  fresh.frames = { ...fresh.frames, keyed, stale: false };
+  fresh.frames = { ...fresh.frames, keyed, stale: false, matte: matteInfo };
   appendJobLog(fresh.log, "info", `抠像完成：${keyed.length} 帧`);
+  if (matteInfo !== undefined) {
+    appendJobLog(fresh.log, matteInfo.fallbackCount > 0 ? "warn" : "info", describeMatte(matteInfo));
+  }
   await writeSequenceJob(fresh);
 }
 
