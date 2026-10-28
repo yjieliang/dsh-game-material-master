@@ -51,6 +51,40 @@ export function isPaidMethod(method: string): boolean {
 }
 
 /**
+ * 只读方法清单（允许自动重试与并发去重）。
+ *
+ * 只收纯查询：`get*` 与 `list*`。三个名字像读、实际有副作用的方法刻意排除——
+ * `getMusicWav` / `getMusicLrc` 会立刻本地化音频并生成歌词文件，
+ * `pollVideos` / `pollSequenceVideo` 在轮询的同时会写盘。
+ *
+ * 清单之外的方法一律按 write 处理：不自动重试、不做并发去重。
+ */
+export const READ_METHODS: readonly string[] = [
+  "getConfig",
+  "getProject",
+  "getImageJob",
+  "getSequenceJob",
+  "getRigJob",
+  "getRigAnimation",
+  "getIsoProject",
+  "getMapProject",
+  "getMusicJob",
+  "getMusicGuide",
+  "getMusicScoreGuide",
+  "getSfxJob",
+  "listProjects",
+  "listImageJobs",
+  "listSequenceJobs",
+  "listRigJobs",
+  "listIsoProjects",
+  "listMapProjects",
+  "listMusicJobs",
+  "listMusicHistory",
+  "listMusicStemInstruments",
+  "listSfxJobs"
+];
+
+/**
  * 生成一次幂等键。
  *
  * 浏览器优先用 `crypto.randomUUID()`（去掉连字符，字符集与宿主校验一致）；
@@ -136,6 +170,19 @@ export interface ApiClientOptions {
   /** 只读方法默认重试次数 */
   readRetries?: number;
   now?: () => number;
+}
+
+/**
+ * 合成方法元数据表：只读清单 → read，付费清单 → paid。
+ *
+ * 未列入两张清单的方法按 write 处理（`createApiClient` 的默认类别），因此这里
+ * 不需要列出全部 188 个方法。付费写在只读之后，同一方法两处都出现时以付费为准。
+ */
+export function createMethodSpecs(): Record<string, MethodSpec> {
+  const specs: Record<string, MethodSpec> = {};
+  for (const method of READ_METHODS) specs[method] = { kind: "read" };
+  for (const method of PAID_METHODS) specs[method] = { kind: "paid" };
+  return specs;
 }
 
 /**

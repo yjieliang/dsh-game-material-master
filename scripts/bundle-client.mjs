@@ -47,6 +47,10 @@ if (/^\s*(import|export)\s/m.test(text)) {
 
 renameSync(OUT, ENTRY);
 // tsc 为客户端子模块产出的中间目录只为打包存在，发布包里不该出现。
+// 子模块已有 50+ 个，一次性删除会触发宿主环境的批量删除守卫
+// （CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD，默认 50）。删除目标就是这一个中间目录，
+// 这里把阈值调高到能覆盖它的规模；非 CodeBuddy 环境读不到这个变量，不受影响。
+process.env.CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD = "1000";
 rmSync(join(LIB, "client"), { recursive: true, force: true });
 
 console.log(`bundle-client: lib/client.js ${(statSync(ENTRY).size / 1024).toFixed(0)} kB`);

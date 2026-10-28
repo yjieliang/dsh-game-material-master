@@ -13,8 +13,9 @@
 
 import { createFeatureBoundary } from "../../platform/errors.js";
 import { markRender } from "../../platform/perf.js";
+import type { FeatureDeps } from "../../platform/deps.js";
 
-export function createSprite(deps: any) {
+export function createSprite(deps: FeatureDeps) {
   // 依赖：组合根注入（P3a 纯搬运阶段先按需展开；P3b 再收窄签名）
   const {
     T,

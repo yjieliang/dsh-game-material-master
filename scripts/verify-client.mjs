@@ -570,6 +570,31 @@ for (const { label, text } of targets) {
   }
 }
 
+// ── 只读清单与远程方法表的一致性 ─────────────────────────────────────────
+// READ_METHODS 决定哪些方法允许自动重试与并发去重。漏一个、或名字打错一个，
+// 该方法会静默按 write 处理（不重试、不去重），只有网络抖动时才看得出差异。
+{
+  const apiSource = readFileSync(join(ROOT, "src", "client", "platform", "api.ts"), "utf8");
+  const wireSource = readFileSync(join(ROOT, "src", "wire.ts"), "utf8");
+  const methodNames = new Set([...wireSource.matchAll(/method:\s*"([A-Za-z]+)"/g)].map((match) => match[1]));
+  const listOf = (name) => {
+    const start = apiSource.indexOf(`export const ${name}`);
+    const end = apiSource.indexOf("];", start);
+    if (start < 0 || end < 0) return [];
+    return [...apiSource.slice(start, end).matchAll(/"([A-Za-z]+)"/g)].map((match) => match[1]);
+  };
+  const readMethods = listOf("READ_METHODS");
+  const paidMethods = listOf("PAID_METHODS");
+  const unknownRead = readMethods.filter((method) => !methodNames.has(method));
+  check(
+    `只读清单都存在于远程方法表（${readMethods.length} 个）`,
+    readMethods.length > 0 && unknownRead.length === 0,
+    unknownRead.length > 0 ? `方法表里没有：${unknownRead.join("、")}` : "READ_METHODS 没解析到"
+  );
+  const overlap = readMethods.filter((method) => paidMethods.includes(method));
+  check("只读方法与付费方法不重叠", overlap.length === 0, overlap.join("、"));
+}
+
 console.log("");
 if (failures.length > 0) {
   console.error(`失败 ${failures.length} 项：${failures.join("、")}`);

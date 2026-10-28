@@ -9,8 +9,9 @@
 
 import { createRigModule } from "../../rig-module.js";
 import { createFeatureBoundary } from "../../platform/errors.js";
+import type { FeatureDeps } from "../../platform/deps.js";
 
-export function createRig(deps: any) {
+export function createRig(deps: FeatureDeps) {
   // 依赖：组合根注入（P4a 纯搬运阶段先按需展开）
   const {
     store, // P9：组合根注入的共享 store；本模块内部暂未直接使用，不再往下透传。

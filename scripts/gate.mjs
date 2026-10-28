@@ -45,7 +45,7 @@ const CORE_SCRIPTS = [
 const results = [];
 const record = (name, status, detail) => {
   results.push({ name, status, detail: detail ?? "" });
-  const mark = status === "PASS" ? "✓" : status === "FAIL" ? "✗" : "–";
+  const mark = status === "PASS" ? "✓" : status === "FAIL" ? "✗" : status === "WARN" ? "!" : "–";
   console.log(`${mark} ${name}${detail === "" ? "" : `  ${detail}`}`);
 };
 
@@ -135,6 +135,8 @@ if (hasDeps) {
   );
 
   const bundle = readFileSync(join(ROOT, "lib", "client.js"), "utf8");
+  // 体积按字节算，不能用字符串长度：产物里中文注释多，字符数比字节数小一成以上。
+  const bundleBytes = Buffer.byteLength(bundle);
   // 经典脚本：浏览器拿到的必须是普通脚本，不能有模块语法残留。
   const strayImport = /^\s*import\s/m.test(bundle);
   const strayExport = /^\s*export\s/m.test(bundle);
@@ -143,7 +145,18 @@ if (hasDeps) {
   record(
     "artifacts: client.js 是经典脚本",
     clean ? "PASS" : "FAIL",
-    clean ? `${bundle.length} 字节` : `${strayImport ? "有 import；" : ""}${strayExport ? "有 export；" : ""}${strayTail ? "残留 export {};" : ""}`
+    clean ? `${bundleBytes} 字节` : `${strayImport ? "有 import；" : ""}${strayExport ? "有 export；" : ""}${strayTail ? "残留 export {};" : ""}`
+  );
+
+  // 体积预算（docs/客户端架构方案 §3：≤1.2 MB raw）。越过预警线提前亮出来，
+  // 否则要等某次改动直接顶穿、产物发不出去才发现。
+  const BUDGET_BYTES = 1.2 * 1024 * 1024;
+  const WARN_BYTES = 1.05 * 1024 * 1024;
+  const sizeStatus = bundleBytes > BUDGET_BYTES ? "FAIL" : bundleBytes > WARN_BYTES ? "WARN" : "PASS";
+  record(
+    "artifacts: client.js 体积",
+    sizeStatus,
+    `${bundleBytes} 字节 · 已用 ${Math.round((bundleBytes / BUDGET_BYTES) * 100)}% / ${(BUDGET_BYTES / 1024 / 1024).toFixed(1)} MB`
   );
 
   const entry = readFileSync(join(ROOT, "lib", "index.js"), "utf8");
@@ -194,10 +207,12 @@ if (RELEASE) {
 
 // ── 汇总 ─────────────────────────────────────────────────────────────────
 const failed = results.filter((row) => row.status === "FAIL");
+const warned = results.filter((row) => row.status === "WARN");
 const passed = results.filter((row) => row.status === "PASS").length;
 const skipped = results.filter((row) => row.status === "SKIP").length;
 const excluded = results.filter((row) => row.status === "EXCLUDED");
-console.log(`\n== 结果：PASS ${passed} / SKIP ${skipped} / EXCLUDED ${excluded.length} / FAIL ${failed.length}`);
+const warnPart = warned.length > 0 ? ` / WARN ${warned.length}` : "";
+console.log(`\n== 结果：PASS ${passed}${warnPart} / SKIP ${skipped} / EXCLUDED ${excluded.length} / FAIL ${failed.length}`);
 if (excluded.length > 0) console.log(`== 未验证（换环境或去掉 --except 后需补跑）：${excluded.map((row) => row.name).join("、")}`);
 
 if (RECORD) {
@@ -222,8 +237,10 @@ if (COMPARE) {
   }
 }
 
-if (failed.length > 0) {
-  console.error(`\n失败项：${failed.map((row) => row.name).join("、")}`);
+// WARN 与 FAIL 一样让本次体检失败：预警项不处理，下一次改动就会直接顶穿。
+if (failed.length > 0 || warned.length > 0) {
+  if (failed.length > 0) console.error(`\n失败项：${failed.map((row) => row.name).join("、")}`);
+  if (warned.length > 0) console.error(`\n需处理（WARN）：${warned.map((row) => row.name).join("、")}`);
   process.exit(1);
 }
 console.log("\n体检通过（不含未跑项）。");

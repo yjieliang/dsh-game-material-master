@@ -5,10 +5,12 @@
  * 这里只管「和宿主接线」，界面本身在 shell/composition.ts 里装好之后传进来。
  */
 
-import { preparePaidPayload } from "../platform/api.js";
+import { createApiClient, createMethodSpecs, preparePaidPayload } from "../platform/api.js";
+import { provideRuntime } from "../platform/runtime.js";
+import type { ApplyDeps } from "../platform/deps.js";
 
-export function createApply(deps: any) {
-  // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
+export function createApply(deps: ApplyDeps) {
+  // 依赖：组合根注入的键由 platform/deps 的 ApplyDeps 钉住，解构这里按需展开。
   const {
     attachI18n,
     attachSessionBridge,
@@ -49,29 +51,54 @@ export function createApply(deps: any) {
 
       const mount = ctx.remote.$mount(CONTRIBUTION);
 
-      const call = async (method, payload?: any) => {
+      /**
+       * 发一次远程调用：等挂载完成 → 取远程服务 → 校验返回壳。
+       *
+       * 只管「怎么把请求发出去」。超时、重试、并发去重、错误归一化由
+       * `platform/api` 的 ApiClient 负责。
+       */
+      const invoke = async (method: string, payload: unknown): Promise<unknown> => {
         await mount;
         const remote = ctx.get(`remote.${SERVICE}`);
         if (remote === undefined) throw new Error(T("gameStudio 远程服务不可用，请确认插件已启用"));
-        // 付费方法必须带 confirm + requestId（平台层会校验并补幂等键；非付费方法原样透传）。
+        // 付费方法必须带 confirm + requestId（confirm 已由 ApiClient 校验，这里补幂等键；非付费方法原样透传）。
         const prepared = preparePaidPayload(method, payload);
         const result = prepared === undefined ? await remote[method]() : await remote[method](prepared);
         if (result === null || typeof result !== "object" || result.ok !== true) {
           const detail = result?.error;
-          throw new Error(detail === undefined ? T("{n0} 调用失败", { n0: method }) : `${detail.code ?? "ERROR"}: ${detail.message ?? ""}`);
+          const failure = new Error(
+            detail === undefined ? T("{n0} 调用失败", { n0: method }) : `${detail.code ?? "ERROR"}: ${detail.message ?? ""}`
+          ) as Error & { code?: string; retriable?: boolean };
+          failure.code = detail?.code ?? "unknown-error";
+          failure.retriable = detail?.retriable === true;
+          throw failure;
         }
         return result.value;
       };
+
+      const apiClient = createApiClient({
+        invoke,
+        methods: createMethodSpecs(),
+        // 抽帧 / 合图 / 导出是同步 await 的长任务，默认超时会把它们误判成失败。
+        defaultTimeoutMs: 0
+      });
+
+      // 运行时可取到同一个客户端：模块里 `studio().api` 与组件里的 `props.api` 同源。
+      provideRuntime({ api: apiClient });
+
+      /** 普通调用：只读方法自动重试与并发去重，写方法原样发一次。 */
+      const call = (method: string, payload?: any): Promise<any> => apiClient.call<any>(method, payload);
 
       /**
        * 付费方法的唯一通道。
        *
        * 用户点的那次按钮本身已经写明「计费 / 会消耗积分」，这里替它打上
-       * `confirm: true`（平台层还会再校验一次，绕过就没有请求）；幂等键 `requestId`
-       * 由平台层自动生成——同一笔提交的重试要靠宿主 receipt 按指纹挡住，
-       * 不是靠这里复用 key（界面没有「重试上一次」的入口，重复点击走的是模块自己的闸门）。
+       * `confirm: true`（平台层还会再校验一次）；幂等键 `requestId` 由
+       * `preparePaidPayload` 在 invoke 里补齐——同一笔提交的重试要靠宿主 receipt
+       * 按指纹挡住，不是靠这里复用 key。
        */
-      const callPaid = (method: string, payload: any = {}) => call(method, { confirm: true, ...payload });
+      const callPaid = (method: string, payload: any = {}): Promise<any> =>
+        apiClient.call<any>(method, { confirm: true, ...payload }, { kind: "paid", confirm: true });
 
       const api = {
         getConfig: () => call("getConfig"),

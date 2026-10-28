@@ -23,7 +23,7 @@ export interface StudioRuntime {
   h: (type: any, props?: any, ...children: any[]) => any;
   /** 词条翻译：中文原文 → 当前语言 */
   T: (key: string, params?: Record<string, unknown>) => string;
-  /** 远程调用句柄（platform/api 的客户端）；P1 阶段先不接 */
+  /** 远程调用句柄（platform/api 的 ApiClient）；apply() 里装入，与组件拿到的 props.api 同源 */
   api?: any;
   /** 基础组件表（platform/ui）；P2 阶段接入 */
   ui?: any;

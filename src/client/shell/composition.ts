@@ -20,9 +20,10 @@ import { createRig } from "../features/rig/index.js";
 import { createConfigSection } from "../config-section.js";
 import { createModuleIcon } from "../module-icon.js";
 import { createStudioPanel } from "../studio-panel.js";
+import type { CompositionDeps } from "../platform/deps.js";
 
-export function createComposition(deps: any) {
-  // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
+export function createComposition(deps: CompositionDeps) {
+  // 依赖：组合根注入的键由 platform/deps 的 CompositionDeps 钉住，解构这里按需展开。
   const {
     h,
     React,

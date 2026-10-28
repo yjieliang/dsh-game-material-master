@@ -6,8 +6,9 @@
 
 import { createIsoModule } from "../../iso-module.js";
 import { createFeatureBoundary } from "../../platform/errors.js";
+import type { FeatureDeps } from "../../platform/deps.js";
 
-export function createIso(deps: any) {
+export function createIso(deps: FeatureDeps) {
   // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
   const {
     store, // P9：组合根注入的共享 store；本模块内部暂未直接使用，不再往下透传。

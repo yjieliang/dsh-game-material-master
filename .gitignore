@@ -44,3 +44,6 @@ desktop.ini
 # Python 缓存（research/tools 下的脚本）
 __pycache__/
 *.pyc
+
+# WorkBuddy / agent 的本地工作数据（记忆、会话缓存），不入库
+.workbuddy/

@@ -277,7 +277,7 @@ export function createBootstrap(input: BootstrapInput): any {
       GAME_STUDIO_PANEL_ID,
           T,
     });
-    const { subscribeIntent, useStudioIntent, parseIntents, openStudioIntent, installIntentInterceptor, consumeUrlIntent, reportClientOrigin, clearPendingIntent, pendingIntent, OPEN_SHAPES, OPEN_QUERY_KEY, intentListeners } = intents;
+    const { subscribeIntent, useStudioIntent, parseIntents, openStudioIntent, installIntentInterceptor, consumeUrlIntent, reportClientOrigin, clearPendingIntent, OPEN_SHAPES, OPEN_QUERY_KEY, intentListeners } = intents;
 
     /**
      * 切到工作台面板并广播意图。
@@ -653,7 +653,6 @@ export function createBootstrap(input: BootstrapInput): any {
       activeLang,
       installIntentInterceptor,
       intentListeners,
-      pendingIntent,
       reportClientOrigin,
       consumeUrlIntent,
       GAME_STUDIO_PANEL_ID,
