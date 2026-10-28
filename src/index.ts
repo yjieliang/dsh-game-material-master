@@ -94,6 +94,7 @@ import * as isogen from "./isogen.js";
 import * as mapgen from "./mapgen.js";
 import * as musicgen from "./musicgen.js";
 import * as sfxgen from "./sfxgen.js";
+import * as interop from "./interop.js";
 import { musicGuidePayload } from "./musicguide.js";
 import { musicScoreGuidePayload } from "./musicscoreguide.js";
 import { clearScoreDepsCache, detectScoreDeps } from "./musicscore.js";
@@ -636,6 +637,107 @@ export class GameStudioGateway extends TypertRemoteService {
       asString(input.data)
     );
   }
+
+  /**
+   * 素材互操作：从**本机绝对路径**导入（宿主读盘）。
+   *
+   * 与 uploadSource / uploadVideo 等方法的区别只在「字节从哪来」：这里不经过浏览器
+   * base64（100MB 的视频 base64 之后是 133MB 的 JSON，既慢又容易顶到 RPC 上限），
+   * 落盘、作废、记录来路的逻辑全部复用既有入口，所以产物与远端生成完全同形。
+   *
+   * 支持目录批量（最多 200 个文件，不可识别的跳过并回报原因）；只读调用方显式给出的
+   * 路径，不做任何隐式扫描。
+   */
+  async importLocalPath(payload) {
+    const input = asRecord(payload);
+    const target = asString(input.target);
+    const rawPath = asString(input.path);
+    const projectId = typeof input.projectId === "string" ? input.projectId : undefined;
+    const jobId = typeof input.jobId === "string" ? input.jobId : undefined;
+    const key = typeof input.key === "string" ? input.key : undefined;
+    const kind = typeof input.kind === "string" ? input.kind : "referenceImage";
+    const nameOverride = typeof input.name === "string" && input.name.trim() !== "" ? input.name : undefined;
+    const after = input.after === "key" ? "key" : input.after === "extract" ? "extract" : "none";
+    const described = await interop.describeLocalPath(rawPath);
+    const files = described.kind === "file" ? [described.file] : described.files;
+    const skipped = described.kind === "directory" ? [...described.skipped] : [];
+    const multi = described.kind === "directory";
+    // 单槽位（项目源图 / 某方向视频 / 首尾帧）不能批量——批量会把前一个覆盖掉。
+    if (multi && (target === "project-source" || target === "project-video" || (target === "sequence-ref" && (kind === "firstFrame" || kind === "lastFrame")))) {
+      throw new Error("这个槽位一次只能导入一个文件，目录批量只支持参考图 / 参考视频 / 图片任务产物");
+    }
+    if (files.length === 0) {
+      throw new Error(`这个目录里没有可导入的图片 / 视频：${described.kind === "directory" ? described.dir : rawPath}`);
+    }
+    const imported = [];
+    for (const file of files) {
+      const name = nameOverride ?? file.name;
+      try {
+        if (target === "project-source") {
+          if (file.kind !== "image") throw new Error("项目源图只接受图片（PNG / JPEG / WebP / GIF / BMP）");
+          const media = await interop.readLocalMediaFile(file.path, "image");
+          await this.uploadSource({ projectId, name, data: media.bytes.toString("base64") });
+        } else if (target === "project-video") {
+          if (file.kind !== "video") throw new Error("这个槽位只接受视频（MP4 / MOV / WebM / AVI）");
+          const media = await interop.readLocalMediaFile(file.path, "video");
+          await this.uploadVideo({ projectId, key: key ?? "turn", name, data: media.bytes.toString("base64") });
+        } else if (target === "image-ref") {
+          if (file.kind !== "image") throw new Error("参考图只接受图片");
+          const media = await interop.readLocalMediaFile(file.path, "image");
+          await imagegen.addImageRef(asString(jobId), name, media.bytes.toString("base64"));
+        } else if (target === "image-item") {
+          if (file.kind !== "image") throw new Error("图片任务产物只接受图片");
+          const media = await interop.readLocalMediaFile(file.path, "image");
+          await imagegen.addImageToJob(asString(jobId), name, media.bytes.toString("base64"));
+        } else if (target === "sequence-ref") {
+          const isVideo = kind === "referenceVideo";
+          if (isVideo && file.kind !== "video") throw new Error("参考视频只接受视频");
+          if (!isVideo && file.kind !== "image") throw new Error("这个槽位只接受图片");
+          const media = await interop.readLocalMediaFile(file.path, isVideo ? "video" : "image");
+          await seqgen.uploadSequenceRef(asString(jobId), kind as seqgen.SequenceRefKind, name, media.bytes.toString("base64"));
+        } else {
+          throw new Error(`未知导入目标：${target}`);
+        }
+        imported.push({ path: file.path, name, bytes: file.bytes, kind: file.kind });
+      } catch (error) {
+        skipped.push({ path: file.path, reason: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    if (imported.length === 0) {
+      const first = skipped[0];
+      throw new Error(`一个文件都没导入成功${first === undefined ? "" : "：" + first.reason}`);
+    }
+    // 导入后可选动作：复用现有阶段，本地免费。
+    let afterResult;
+    if (after === "extract" && target === "project-video" && projectId !== undefined) {
+      afterResult = { step: "extract", ...startExtract(projectId, key === undefined || key === "turn" ? undefined : [key]) };
+    } else if (after === "key" && (target === "image-ref" || target === "image-item") && jobId !== undefined) {
+      afterResult = { step: "key", started: kickImageKey(jobId) };
+    }
+    return { imported, skipped, kind: described.kind, after: afterResult };
+  }
+  /**
+   * 解析本机 ComfyUI 工作流文件（API / 界面两种格式），返回可保存的正文与绑定。
+   *
+   * 默认会读一次 ComfyUI 的 /object_info 做**精确**转换与节点校验（读接口免费、不排队）；
+   * ComfyUI 不可达时自动退回离线近似转换。传 `offline: true` 可强制离线。
+   */
+  async importWorkflowFile(payload) {
+    const input = asRecord(payload);
+    const offline = input.offline === true;
+    const config = await loadConfig();
+    const workflow = await interop.readWorkflowFile(asString(input.path), {
+      request: offline
+        ? undefined
+        : {
+            baseUrl: config.comfyBaseUrl,
+            timeoutMs: Math.min(config.comfyTimeoutMs, 20_000),
+            cookies: config.comfyCookies
+          }
+    });
+    return { ok: true, workflow };
+  }
+
   /** 把项目里所有中间图片打成一个 zip（落在 `out/` 下，返回相对路径给界面下载）。 */
   async exportImages(payload) {
     const projectId = asString(asRecord(payload).projectId);

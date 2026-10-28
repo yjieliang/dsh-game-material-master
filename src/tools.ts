@@ -271,7 +271,10 @@ export const SHARED_TOOL_METHODS: ReadonlySet<string> = new Set([
   "testMusic",
   "testMusicScore",
   "testSfx",
-  "setReviewMode"
+  "setReviewMode",
+  // 素材互操作（跨模块）：目标模块在 payload 里（target / 路径导入），不分模块。
+  "importLocalPath",
+  "importWorkflowFile"
 ]);
 
 /**

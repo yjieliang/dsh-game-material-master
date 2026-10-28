@@ -217,7 +217,10 @@ export function createRemote(deps: any) {
       ["cancelSfxGeneration", true],
       ["setSfxApproved", true],
       ["revealSfxJob", true],
-      ["exportSfx", true]
+      ["exportSfx", true],
+      // 素材互操作（跨模块）：本机路径导入 + ComfyUI 工作流文件导入。
+      ["importLocalPath", true],
+      ["importWorkflowFile", true]
     ];
 
     const CONTRIBUTION = {
