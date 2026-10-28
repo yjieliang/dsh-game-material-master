@@ -94,6 +94,17 @@ export function createMap(deps: any) {
       return out;
     }
 
+    // MAP_GUIDE_ART:BEGIN
+    /**
+     * 「素材说明」窗口里的三张示例图（普通图块 / 整格自动连接 / 拼块自动连接）。
+     *
+     * ⚠️ **整块由 `node scripts/make-map-guide-art.mjs` 生成**（`--check` 会断言它是新的）。
+     * 手改这里没有意义：下次生成会被整块覆盖。
+     *
+     * 图全部来自本机的内置示例素材生成器：普通 / 整格两张是现画的，拼块那张就是内置草地
+     * —— 说明与用户真能拿到的东西同源。界面按 `cols` / `rows` / `sub` 现算网格线的位置，
+     * 所以不存在「图改了、网格线还在老位置」这种错位。
+     */
     const MAP_GUIDE_ART = {
       "plain": {
         // 128×64：4 列 × 2 行，每块 32px
@@ -233,6 +244,7 @@ export function createMap(deps: any) {
         sub: 2
       }
     };
+    // MAP_GUIDE_ART:END
 
     function MapToolIcon(props) {
       const name = props.name;

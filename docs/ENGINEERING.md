@@ -1331,12 +1331,11 @@ AsLib 自带的 `Picture/MapChip/*_pipo.png` 是**第三方版权素材，不打
   「随便给个静态文件」的路由（`/plugins/<包>/<文件>` 一律 404，束走带 `rev` 的模块图 URL）。
   三张图合计约 3 KB，base64 之后约 4 KB —— 比为它开一条宿主路由（改 wire / 网关 / 重启 DSH）便宜得多。
   生成器是 `scripts/make-map-guide-art.mjs`，它整块改写 `MAP_GUIDE_ART` 标记块
-  （拆分后那段在 `src/client/map-module.ts`）。⚠️ **已知问题：拆分后这个生成器跑不起来**——
-  ① 它用 `await import(join(REPO, "lib", …))` 加载绝对路径，ESM 要求 `file://` URL，本机直接报
-  `Only URLs with a scheme in: file, data, and node are supported … Received protocol 'c:'`
-  （`lib/` 是有的，提示「先跑一次 build」是误报）；② 路径常量 `CLIENT` 还指着旧入口 `src/client.ts`，
-  而 `MAP_GUIDE_ART` 已经搬到 `src/client/map-module.ts`，就算修好①也会报「找不到标记块」。
-  改说明图之前先把这两处一起修掉。
+  （拆分后在 `src/client/features/map/index.ts`：入口只做注册、面板在 `map-module.ts`，
+  数据跟着模块六的 feature 工厂走 —— 别再去 `src/client.ts` / `map-module.ts` 找它）。
+  `lib/` 里的模块用 `file://` URL 动态 import（Windows 绝对路径会被 ESM 当成协议 `c:` 拒掉）；
+  `--check` 里「方向位序 / 每块互不相同」两项要把 PNG 解回来量，**需要本机有 `ffmpeg`**
+  （没有的话会在 spawn 处失败，与生成器本身无关）。
 - **网格线的位置由生成器给的数字现算**（`100 / cols`、`100 / rows`、再按 `sub` 细分），
   不写死在 CSS 里：图从 4×2 改成别的排法，网格跟着走，不会出现「图变了、网格还在老位置」。
 - **方向位序是契约，靠自检把 PNG 解回来量**：说明窗口照它教用户排图，所以 `--check` 会把整格那张图

@@ -156,12 +156,12 @@ node scripts/verify-map-client.mjs     # 地图编辑器界面真渲染 + 黄金
 火山引擎生成纹理再本地合成，**这一步真实计费**，别顺手跑。
 
 `scripts/make-map-guide-art.mjs` 是模块六**「素材说明」窗口那三张示例图**的生成器：
-它把图写进 `src/client.ts` 的标记块 `MAP_GUIDE_ART`（base64 内联 —— 浏览器半区不能 import，
-宿主也没有「随便给个静态文件」的路由）。`--check` 断言确定性、`src/client.ts` 里那一份是最新的、
-已构建进 `lib/client.js`，并**把整格那张图解回来量一遍方向位序**（行优先第 i 块必须是
-「上=1 / 右=2 / 下=4 / 左=8 加起来等于 i」的那种接法 —— 说明窗口就照它教用户排图，画错了
-只会让照做的人排出一张连不上的图，不报任何错）。改了 `src/mapsamplegen.ts` 里的说明图就把
-它重跑一次、再 `npm run build`。
+它把图写进 `src/client/features/map/index.ts` 的标记块 `MAP_GUIDE_ART`（base64 内联 ——
+浏览器半区不能 import，宿主也没有「随便给个静态文件」的路由）。`--check` 断言确定性、
+源码里那一份是最新的、已构建进 `lib/client.js`，并**把整格那张图解回来量一遍方向位序**
+（行优先第 i 块必须是「上=1 / 右=2 / 下=4 / 左=8 加起来等于 i」的那种接法 —— 说明窗口就照它
+教用户排图，画错了只会让照做的人排出一张连不上的图，不报任何错）。解码那两项要本机有
+`ffmpeg`；改了 `src/mapsamplegen.ts` 里的说明图就把它重跑一次、再 `npm run build`。
 
 其余脚本（`verify-rig*.mjs`、`e2e-*.mjs` 等）的覆盖范围见 ENGINEERING.md 的「自检脚本」表。
 `e2e-map.mjs` 是模块六的**真实链路端到端**（不联网、不花钱）：它会**故意把产物留在**
@@ -601,8 +601,8 @@ ffmpeg / ffprobe 的路径查找（Windows 上读注册表与常见安装位置�
 拼块自动连接」这三种素材图**该怎么排**（示例图、几列几行、第几块是哪一种接法），图上的网格按示例图
 真实的 cols / rows / sub **现算百分比**、两层网格错开半拍循环隐现。示例图不是手画的：普通 / 整格两张由
 `src/mapsamplegen.ts` 的 `renderGuideSheets()` 现画，拼块那张就是内置草地；生成器
-`scripts/make-map-guide-art.mjs` 把三张图 base64 内联进 `src/client.ts` 的 `MAP_GUIDE_ART` 标记块
-（**只改客户端，不用重启 DSH**），`--check` 会把整格那张图解回来量一遍方向位序。
+`scripts/make-map-guide-art.mjs` 把三张图 base64 内联进 `src/client/features/map/index.ts` 的
+`MAP_GUIDE_ART` 标记块（**只改客户端，不用重启 DSH**），`--check` 会把整格那张图解回来量一遍方向位序。
 另有一处 `fix(map)`：**新建地图后调色板里一堆重复的块** —— 内置道具图（8 列 × 5 帧）的 5 行
 是按列取名字画出来的、逐像素相同，又声明成 `animRows: false` 的普通网格，于是 40 个小格全成了
 独立图块（调色板 44 条里 32 条重复）。现在道具图按相位画成**真帧**、声明 `animRows: true`，

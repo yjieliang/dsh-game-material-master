@@ -2,16 +2,16 @@
 /**
  * 地图编辑器（模块六）「素材说明」窗口的**三张示例图生成器**。
  *
- *   node scripts/make-map-guide-art.mjs            # 生成并写回 src/client.ts 的标记块
+ *   node scripts/make-map-guide-art.mjs            # 生成并写回 src/client/features/map/index.ts 的标记块
  *   node scripts/make-map-guide-art.mjs --check    # 自检：确定性 + 「写进去的那一份是最新的」
  *   node scripts/make-map-guide-art.mjs --out=DIR  # 顺带把三张 PNG 落到 DIR（人眼验收用）
  *
- * ## 为什么要把 PNG 变成 base64 塞进 `src/client.ts`
+ * ## 为什么要把 PNG 变成 base64 塞进 `src/client/features/map/index.ts`
  *
- * 浏览器半区（`src/client.ts`）必须是**经典脚本**（不能有 import / export），宿主也没有
- * 「随便给个静态文件」的路由 —— 所以说明图只能以内联 data URI 的形式跟着束走。
- * 三张图合计约 3 KB，base64 之后约 4 KB，比再开一条宿主路由（改 wire / 网关 / 重启 DSH）
- * 便宜得多。
+ * 浏览器半区（`src/client.ts` + `src/client/**`）最终会被打成**经典脚本**（不能有
+ * import / export），宿主也没有「随便给个静态文件」的路由 —— 所以说明图只能以内联
+ * data URI 的形式跟着束走。三张图合计约 3 KB，base64 之后约 4 KB，比再开一条宿主路由
+ * （改 wire / 网关 / 重启 DSH）便宜得多。
  *
  * ## 两个必须钉住的不变量
  *
@@ -24,25 +24,48 @@
  * 位置和图注里的数字，所以「图是几列几行、一格多少像素」只有一个来源（这里）。
  *
  * ⚠️ 这个脚本 import 的是 `lib/`，所以改了 `src/mapsamplegen.ts` 要先 `npm run build`。
+ *    `lib/` 里的模块一律用 `file://` URL 动态 import —— Windows 绝对路径会被 ESM 默认
+ *    加载器当成协议 `c:` 直接拒掉（拆分后这里一度就是这么坏的）。
  *
- * ⚠️ 还有一条**只在模块六才成立**的约束：写进 `src/client.ts` 的那段文字会被自检的
- * 术语黑名单扫到（`chunk` / `Tiled` 这类词按文本命中）。base64 是随机字母，理论上可能
- * 碰巧拼出这些词，所以生成前**显式断言一次**，碰到了就直接失败、换一张图重来 ——
- * 让它在生成时炸，而不是在半年后的自检里莫名其妙地红。
+ * ⚠️ 还有一条**只在模块六才成立**的约束：`chunk` / `Tiled` 这类旧术语在模块六源码里属
+ * 黑名单（`verify-map.mjs` 按文本扫入口切片与 `map-module.ts`；这段生成块本身目前不在
+ * 扫描范围内，断言保留作防御 —— 拆分前它在入口文件里，是会被扫到的）。base64 是随机
+ * 字母，理论上可能碰巧拼出这些词，所以生成前**显式断言一次**，碰到了就直接失败、换一张
+ * 图重来 —— 让它在生成时炸，而不是在半年后的自检里莫名其妙地红。
  */
 
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..");
-const CLIENT = join(REPO, "src", "client.ts");
 
-/** 标记块（`src/client.ts` 里那一段被生成器整块覆盖的内容；缩进跟着模块六那一层）。 */
+/**
+ * 标记块所在的源码（生成器整块覆盖的那一段）。
+ *
+ * 拆分前在 `src/client.ts`；P5c 把模块六搬进 `src/client/features/map/index.ts`，
+ * P6a 抽 `shell/composition.ts` 时入口只留了一个只有注释、没有 `const` 的**空壳标记块**，
+ * 这里的常量却还指着旧入口 —— 于是修好 import 之后会接着报「找不到标记块」。
+ * 以仓库里**真正存放 `MAP_GUIDE_ART` 数据**的那份为准，`--check` 才有意义。
+ */
+const SOURCE_REL = "src/client/features/map/index.ts";
+const SOURCE = join(REPO, ...SOURCE_REL.split("/"));
+
+/** 标记块（`SOURCE` 里那一段被生成器整块覆盖的内容；缩进跟着模块六 feature 工厂那一层）。 */
 const BEGIN = "    // MAP_GUIDE_ART:BEGIN";
 const END = "    // MAP_GUIDE_ART:END";
+
+/**
+ * `lib/` 里的模块用 `file://` URL 动态 import。
+ *
+ * Windows 绝对路径（`C:\…`）会被 ESM 默认加载器当成协议 `c:` 拒掉：
+ * `Only URLs with a scheme in: file, data, and node are supported…`。
+ */
+function libUrl(name) {
+  return pathToFileURL(join(REPO, "lib", name)).href;
+}
 
 /** 每行 base64 的字符数（太长的一行读不动，也太容易让编辑器卡）。 */
 const WRAP = 108;
@@ -63,12 +86,12 @@ function fail(message) {
 // 1. 生成（并证明它是确定性的）
 // ---------------------------------------------------------------------------
 
-let mapsamplegen;
-try {
-  mapsamplegen = await import(join(REPO, "lib", "mapsamplegen.js"));
-} catch (error) {
-  fail(`无法加载 lib/mapsamplegen.js：${error instanceof Error ? error.message : String(error)}\n  先跑一次 \`npm run build\`。`);
+if (!existsSync(join(REPO, "lib", "mapsamplegen.js"))) {
+  fail("找不到 lib/mapsamplegen.js —— lib/ 还没构建，先跑一次 `npm run build`。");
 }
+const mapsamplegen = await import(libUrl("mapsamplegen.js")).catch((error) => {
+  fail(`无法加载 lib/mapsamplegen.js：${error instanceof Error ? error.message : String(error)}`);
+});
 if (typeof mapsamplegen.renderGuideSheets !== "function") {
   fail("lib/mapsamplegen.js 里没有 renderGuideSheets —— lib/ 与 src/ 不同步（跑 `npm run build`）。");
 }
@@ -168,7 +191,7 @@ function alphaAt(bitmap, x, y) {
  * 这个脚本产出的虽然是本机 PNG，也没必要再养一份解码实现。
  */
 async function checkCorner16Bits(sheet) {
-  const { decodeFile } = await import(join(REPO, "lib", "bitmap.js"));
+  const { decodeFile } = await import(libUrl("bitmap.js"));
   const cell = sheet.width / sheet.cols;
   const dir = mkdtempSync(join(tmpdir(), "dsh-guide-"));
   const file = join(dir, "corner16.png");
@@ -208,7 +231,7 @@ async function checkCorner16Bits(sheet) {
 
 /** 普通那张图里的每一块都得是**不一样的**（八个道具各不相同，重复了说明画错了）。 */
 async function checkPlainTiles(sheet) {
-  const { decodeFile } = await import(join(REPO, "lib", "bitmap.js"));
+  const { decodeFile } = await import(libUrl("bitmap.js"));
   const cell = sheet.width / sheet.cols;
   const dir = mkdtempSync(join(tmpdir(), "dsh-guide-"));
   const file = join(dir, "plain.png");
@@ -242,11 +265,11 @@ async function checkPlainTiles(sheet) {
 // 4. 写回 / 比对
 // ---------------------------------------------------------------------------
 
-const source = readFileSync(CLIENT, "utf8");
+const source = readFileSync(SOURCE, "utf8");
 const from = source.indexOf(BEGIN);
 const to = source.indexOf(END, from === -1 ? 0 : from);
-if (from === -1 || to === -1) fail(`src/client.ts 里找不到标记块（${BEGIN} … ${END}）`);
-if (source.indexOf(BEGIN, from + 1) !== -1) fail(`${BEGIN} 出现了不止一次，不敢动`);
+if (from === -1 || to === -1) fail(`${SOURCE_REL} 里找不到标记块（${BEGIN} … ${END}）`);
+if (source.indexOf(BEGIN, from + 1) !== -1) fail(`${BEGIN} 在 ${SOURCE_REL} 里出现了不止一次，不敢动`);
 const current = source.slice(from, to + END.length);
 
 if (outDir !== null) {
@@ -266,7 +289,7 @@ if (check) {
   console.log(`  · ${await checkCorner16Bits(sheets.find((sheet) => sheet.shape === "corner16"))}`);
   console.log(`  · 普通那张图：${await checkPlainTiles(sheets.find((sheet) => sheet.shape === "plain"))}`);
   if (!ok) {
-    fail("src/client.ts 里的说明图不是最新的：跑 `node scripts/make-map-guide-art.mjs` 重新生成（再 `npm run build`）");
+    fail(`${SOURCE_REL} 里的说明图不是最新的：跑 \`node scripts/make-map-guide-art.mjs\` 重新生成（再 \`npm run build\`）`);
   }
   // 顺带盯一眼「构建过了没有」：束里应当找得到同一段 base64（否则界面还是旧的）。
   // ⚠️ 逐**折行块**比，不能拿整串去 `includes`：base64 在源码里是折行 + 字符串相加的，
@@ -285,6 +308,6 @@ if (check) {
   }
   console.log("✓ 说明图是最新的（且已经构建进 lib/client.js）");
 } else {
-  writeFileSync(CLIENT, source.slice(0, from) + block + source.slice(to + END.length));
-  console.log(`✓ 已写入 src/client.ts（${sheets.map((sheet) => `${sheet.shape} ${sheet.png.length}B`).join(" / ")}），接着跑 npm run build`);
+  writeFileSync(SOURCE, source.slice(0, from) + block + source.slice(to + END.length));
+  console.log(`✓ 已写入 ${SOURCE_REL}（${sheets.map((sheet) => `${sheet.shape} ${sheet.png.length}B`).join(" / ")}），接着跑 npm run build`);
 }
