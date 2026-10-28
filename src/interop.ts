@@ -16,12 +16,11 @@ import { basename, extname, resolve } from "node:path";
 import {
   detectComfyBindings,
   fetchComfyObjectInfo,
-  parseComfyWorkflow,
-  type ComfyNodeSpec,
   type ComfyObjectInfo,
   type ComfyRequest,
   type ComfyWorkflow
 } from "./comfy.js";
+import { parseWorkflowText } from "./workflowlib.js";
 
 /** 单个文件的硬上限（与既有上传通道一致；超了给人话，不要静默截断）。 */
 export const LOCAL_IMAGE_MAX_BYTES = 30 * 1024 * 1024;
@@ -281,140 +280,20 @@ export function detectStaticBindings(workflow: ComfyWorkflow): {
   return { bindings, requiredModels: Array.from(requiredModels).sort(), classTypes: classTypes.sort() };
 }
 
-// ── 界面格式 → API 格式（联网精确版）────────────────────────────────────
+// ── 工作流文件（ComfyUI JSON）解析 ───────────────────────────────────────
+//
+// 转换（界面格式 → API 格式）**只在 src/workflowlib.ts 里实现一份**：
+//   · 连得上 ComfyUI 时按 /object_info 精确转换（控件值全部保留）；
+//   · 工作流 JSON 自带 `widgets_values_named` 时 parseComfyWorkflow 直接按名字映射（本机 9 个都带）；
+//   · 离线且没有 named 字段时退回近似转换，并把「可能丢控件值」写进 notes。
+// 这里只负责：读文件 → 调 parseWorkflowText → 静态绑定识别 / 缺节点校验 / 预览结构。
 
-/** ComfyUI 界面格式的连线表：链接 id → 来源节点 + 槽位（新版对象、旧版数组，两种都读）。 */
-function uiLinkTable(record: Record<string, unknown>): Map<number, { originId: string; originSlot: number }> {
-  const table = new Map<number, { originId: string; originSlot: number }>();
-  if (!Array.isArray(record.links)) return table;
-  for (const item of record.links) {
-    if (Array.isArray(item)) {
-      const id = Number(item[0]);
-      if (Number.isFinite(id)) table.set(id, { originId: String(item[1] ?? ""), originSlot: Number(item[2] ?? 0) || 0 });
-      continue;
-    }
-    if (item !== null && typeof item === "object") {
-      const entry = item as Record<string, unknown>;
-      const id = Number(entry.id);
-      if (Number.isFinite(id)) table.set(id, { originId: String(entry.origin_id ?? ""), originSlot: Number(entry.origin_slot ?? 0) || 0 });
-    }
-  }
-  return table;
-}
-
-/** 界面格式里 seed 后面跟的控件名（fixed / randomize…），不是节点输入。 */
-const UI_CONTROL_WORDS = new Set(["fixed", "increment", "decrement", "randomize"]);
-
-/** 这个输入定义是「控件」还是会话连线槽位：INT / FLOAT / STRING / BOOLEAN / 枚举数组 = 控件。 */
-function isWidgetDef(def: unknown[] | undefined): boolean {
-  if (!Array.isArray(def)) return false;
-  const type = def[0];
-  if (Array.isArray(type)) return true;
-  return ["INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"].includes(String(type));
-}
-
-/** 节点定义里的输入表（required 在前、optional 在后，**顺序就是 widgets_values 的顺序**）。 */
-function nodeSpecInputs(spec: ComfyNodeSpec | undefined): Record<string, unknown[]> {
-  if (spec === undefined) return {};
-  const group = spec.input ?? spec;
-  return { ...(group.required ?? {}), ...(group.optional ?? {}) };
-}
-
-/** 收集界面格式里出现的全部节点类型（便签与静音 / 旁路节点不算）。 */
-export function collectUiClassTypes(record: Record<string, unknown>): string[] {
-  const rawNodes = Array.isArray(record.nodes) ? record.nodes : [];
-  const types = new Set<string>();
-  for (const item of rawNodes) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
-    const node = item as Record<string, unknown>;
-    const classType = typeof node.type === "string" ? node.type.trim() : "";
-    if (classType === "" || classType === "Note" || classType === "MarkdownNote") continue;
-    const mode = Number(node.mode);
-    if (mode === 2 || mode === 4) continue;
-    types.add(classType);
-  }
-  return Array.from(types).sort();
-}
-
-/**
- * 用 /object_info 把界面格式**精确**转成 API 格式。
- *
- * 为什么不能只靠工作流里的 `inputs`：ComfyUI 导出的界面 JSON 往往不把控件写进
- * `inputs`，只留下 `widgets_values` 数组。离线转换只能按声明的 widget 槽位猜名字，
- * 实测本机 9 个工作流（透明精灵 Turbo 13 节点）会丢掉 20 个控件值——提示词、
- * 模型文件名、尺寸整段消失，而且不报错。这里按 ComfyUI 前端自己的口径来：
- * 按节点定义顺序消费 widgets_values，有连线的输入直接用连线。
- */
-export function convertUiWorkflowWithObjectInfo(
-  record: Record<string, unknown>,
-  objectInfo: ComfyObjectInfo
-): { workflow: ComfyWorkflow; notes: string[]; unknownNodes: Array<{ node: string; classType: string; reason: string }> } {
-  const rawNodes = Array.isArray(record.nodes) ? record.nodes : [];
-  const links = uiLinkTable(record);
-  const workflow: ComfyWorkflow = {};
-  const notes: string[] = [];
-  const unknownNodes: Array<{ node: string; classType: string; reason: string }> = [];
-  for (const item of rawNodes) {
-    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
-    const node = item as Record<string, unknown>;
-    const id = node.id;
-    if (id === undefined || id === null || String(id) === "") continue;
-    const classType = typeof node.type === "string" ? node.type.trim() : "";
-    if (classType === "" || classType === "Note" || classType === "MarkdownNote") continue;
-    const mode = Number(node.mode);
-    if (mode === 2 || mode === 4) continue;
-    const spec = objectInfo[classType];
-    if (spec === undefined) {
-      unknownNodes.push({ node: String(id), classType, reason: "ComfyUI 的 /object_info 里没有这个节点类型（多半是缺自定义节点）" });
-    }
-    /** 声明里的连线输入：name → [来源节点, 来源槽位]。 */
-    const linked = new Map<string, [string, number]>();
-    const declaredInputs = Array.isArray(node.inputs) ? node.inputs : [];
-    for (const slot of declaredInputs) {
-      if (slot === null || typeof slot !== "object" || Array.isArray(slot)) continue;
-      const entry = slot as Record<string, unknown>;
-      const name = typeof entry.name === "string" ? entry.name : "";
-      if (name === "" || entry.link === null || entry.link === undefined) continue;
-      const end = links.get(Number(entry.link));
-      if (end !== undefined) linked.set(name, [end.originId, end.originSlot]);
-    }
-    const values: unknown[] = Array.isArray(node.widgets_values) ? [...node.widgets_values] : [];
-    let widgetIndex = 0;
-    const inputs: Record<string, unknown> = {};
-    for (const [name, def] of Object.entries(nodeSpecInputs(spec))) {
-      const link = linked.get(name);
-      if (link !== undefined) {
-        inputs[name] = link;
-        continue;
-      }
-      if (!isWidgetDef(def)) continue;
-      if (widgetIndex >= values.length) {
-        notes.push(`节点 ${id}（${classType}）缺控件值「${name}」：该工作流可能来自更复杂的自定义节点，请用 ComfyUI 的 Save (API Format) 重新导出`);
-        continue;
-      }
-      inputs[name] = values[widgetIndex];
-      widgetIndex += 1;
-      if (widgetIndex < values.length && UI_CONTROL_WORDS.has(String(values[widgetIndex]))) widgetIndex += 1;
-    }
-    // 声明里没写、但连线表里有的输入，也照实接上（少数自定义节点会这样）。
-    for (const [name, link] of linked) if (inputs[name] === undefined) inputs[name] = link;
-    const entry: ComfyWorkflow[string] = { class_type: classType, inputs };
-    if (typeof node.title === "string" && node.title !== "") entry._meta = { title: node.title };
-    workflow[String(id)] = entry;
-  }
-  return { workflow, notes, unknownNodes };
-}
-
-/** JSON.parse 的错误信息在 Node 24 里可能很长，截到能定位的一句就够。 */
 function jsonError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.length > 200 ? message.slice(0, 197) + "…" : message;
 }
 
-function isUiWorkflowRecord(parsed: unknown): parsed is Record<string, unknown> {
-  return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) && Array.isArray((parsed as Record<string, unknown>).nodes);
-}
-
+/** 工作流里出现的全部节点类型（用于一次 /object_info 查询）。 */
 function workflowClassTypes(workflow: ComfyWorkflow): string[] {
   const types = new Set<string>();
   for (const node of Object.values(workflow)) {
@@ -424,14 +303,46 @@ function workflowClassTypes(workflow: ComfyWorkflow): string[] {
   return Array.from(types).sort();
 }
 
+/** 从原始 JSON 里找出 ComfyUI 没有的节点类型（带节点 id，错误可定位）。 */
+function collectUnknownNodes(raw: string, objectInfo: ComfyObjectInfo): Array<{ node: string; classType: string; reason: string }> {
+  const out: Array<{ node: string; classType: string; reason: string }> = [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return out;
+  }
+  if (parsed === null || typeof parsed !== "object") return out;
+  const record = parsed as Record<string, unknown>;
+  const visit = (id: string, classType: string): void => {
+    if (classType === "" || classType === "Note" || classType === "MarkdownNote") return;
+    if (objectInfo[classType] === undefined) {
+      out.push({ node: id, classType, reason: "ComfyUI 的 /object_info 里没有这个节点类型（多半是缺自定义节点）" });
+    }
+  };
+  if (Array.isArray(record.nodes)) {
+    for (const item of record.nodes) {
+      if (item === null || typeof item !== "object") continue;
+      const node = item as Record<string, unknown>;
+      const mode = Number(node.mode);
+      if (mode === 2 || mode === 4) continue;
+      visit(String(node.id ?? ""), typeof node.type === "string" ? node.type.trim() : "");
+    }
+    return out;
+  }
+  for (const [id, value] of Object.entries(record)) {
+    if (value === null || typeof value !== "object") continue;
+    const node = value as Record<string, unknown>;
+    visit(id, typeof node.class_type === "string" ? node.class_type : "");
+  }
+  return out;
+}
+
 /**
  * 读并解析一个 ComfyUI 工作流文件（API / 界面两种格式都收）。
  *
- * - 传了 `request`（ComfyUI 地址）→ 用 /object_info 做**精确**转换 + 节点类型校验
- *   （缺自定义节点会逐节点列出来，带节点 id）；
- * - 没传 / ComfyUI 不可达 → 退回离线近似转换，并把「可能丢控件值」写进 warnings。
- *
- * 报错必须能定位：JSON 不合法时给位置信息；格式不对时把 `parseComfyWorkflow` 的原因原样带出来。
+ * - 传了 `request`（ComfyUI 地址）→ 精确转换 + 节点类型校验（缺自定义节点逐节点列出）；
+ * - 没传 / ComfyUI 不可达 → 离线转换，并把「可能丢控件值」写进 notes / warnings。
  */
 export async function readWorkflowFile(
   rawPath: string,
@@ -446,60 +357,25 @@ export async function readWorkflowFile(
     throw new Error(`工作流文件 ${(info.size / 1024 / 1024).toFixed(1)}MB 超过上限 2MB：${absolute}`);
   }
   const raw = await readFile(absolute, "utf8");
-  let parsedJson: unknown;
+  let parsed;
   try {
-    parsedJson = JSON.parse(raw);
+    parsed = await parseWorkflowText(raw, { request: options.request });
   } catch (error) {
-    throw new Error(`工作流解析失败（${basename(absolute)}）：不是合法 JSON：${jsonError(error)}`);
+    throw new Error(`工作流解析失败（${basename(absolute)}）：${jsonError(error)}`);
   }
+  const workflow = parsed.workflow;
+  const notes = [...parsed.notes];
   const warnings: string[] = [];
-  const notes: string[] = [];
-  let workflow: ComfyWorkflow;
-  let protocol: "api" | "ui";
-  let unknownNodes: Array<{ node: string; classType: string; reason: string }> = [];
   let objectInfo: ComfyObjectInfo | undefined;
-  if (isUiWorkflowRecord(parsedJson)) {
-    protocol = "ui";
-    const uiTypes = collectUiClassTypes(parsedJson);
-    if (options.request !== undefined) {
-      const fetched = await fetchComfyObjectInfo(options.request, uiTypes);
-      // 一个类型都查不到 = ComfyUI 不可达（fetchComfyObjectInfo 失败时静默返回空表）：
-      // 这时不能假装「节点全缺」，退回离线近似转换并说明原因。
-      const reachable = uiTypes.length > 0 && uiTypes.some((type) => fetched[type] !== undefined);
-      if (reachable) {
-        objectInfo = fetched;
-        const converted = convertUiWorkflowWithObjectInfo(parsedJson, fetched);
-        workflow = converted.workflow;
-        unknownNodes = converted.unknownNodes;
-        notes.push(...converted.notes);
-        const missing = uiTypes.filter((type) => fetched[type] === undefined);
-        if (missing.length > 0) warnings.push(`ComfyUI 缺少这些节点类型（缺自定义节点）：${missing.join("、")}`);
-        warnings.push(`界面格式已按 ComfyUI /object_info 精确转成 API 格式（${Object.keys(workflow).length} 节点）`);
-      } else {
-        const offline = parseComfyWorkflow(raw);
-        if (offline.ok !== true) throw new Error(`工作流解析失败（${basename(absolute)}）：${offline.error}`);
-        workflow = offline.workflow;
-        warnings.push(`ComfyUI 不可达（${options.request.baseUrl}），已退回离线近似转换（丢弃未命名控件值 ${offline.droppedWidgets ?? 0} 个）`);
-      }
-    } else {
-      const offline = parseComfyWorkflow(raw);
-      if (offline.ok !== true) throw new Error(`工作流解析失败（${basename(absolute)}）：${offline.error}`);
-      workflow = offline.workflow;
-      warnings.push(`界面格式已离线转成 API 格式（丢弃未命名控件值 ${offline.droppedWidgets ?? 0} 个；连上 ComfyUI 后重新导入可精确转换）`);
-    }
-  } else {
-    const parsed = parseComfyWorkflow(raw);
-    if (parsed.ok !== true) throw new Error(`工作流解析失败（${basename(absolute)}）：${parsed.error}`);
-    workflow = parsed.workflow;
-    protocol = parsed.converted === true ? "ui" : "api";
-    if (options.request !== undefined) {
-      const types = workflowClassTypes(workflow);
-      const fetched = await fetchComfyObjectInfo(options.request, types);
-      if (types.some((type) => fetched[type] !== undefined)) {
-        objectInfo = fetched;
-        const missing = types.filter((type) => fetched[type] === undefined);
-        if (missing.length > 0) warnings.push(`ComfyUI 缺少这些节点类型（缺自定义节点）：${missing.join("、")}`);
-      }
+  const unknownNodes: Array<{ node: string; classType: string; reason: string }> = [];
+  if (options.request !== undefined) {
+    const types = workflowClassTypes(workflow);
+    const fetched = await fetchComfyObjectInfo(options.request, types);
+    if (types.some((type) => fetched[type] !== undefined)) {
+      objectInfo = fetched;
+      const missing = types.filter((type) => fetched[type] === undefined);
+      if (missing.length > 0) warnings.push(`ComfyUI 缺少这些节点类型（缺自定义节点）：${missing.join("、")}`);
+      unknownNodes.push(...collectUnknownNodes(raw, fetched));
     }
   }
   const staticDetect = detectStaticBindings(workflow);
@@ -522,9 +398,9 @@ export async function readWorkflowFile(
   if (requiredModels.length === 0) warnings.push("没有识别到模型文件名：自检时无法提示缺哪个模型，请人工确认");
   return {
     name: basename(absolute).replace(/\.json$/i, ""),
-    protocol,
+    protocol: parsed.protocol,
     json: workflow,
-    nodeCount: Object.keys(workflow).length,
+    nodeCount: parsed.nodes,
     classTypes,
     bindings,
     requiredModels,

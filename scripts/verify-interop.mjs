@@ -150,7 +150,10 @@ async function main() {
   check("界面格式被自动转成 API（protocol=ui）", uiPreview.protocol === "ui", uiPreview.protocol);
   check("转换后节点数与源一致", uiPreview.nodeCount === 4, String(uiPreview.nodeCount));
   check("界面格式也识别到提示词", uiPreview.bindings.prompt === "2.text", String(uiPreview.bindings.prompt));
-  check("离线转换带「丢弃未命名控件值」说明", uiPreview.warnings.some((w) => w.includes("界面格式已离线转成 API 格式")));
+  check(
+    "离线转换带「控件值可能丢失」说明（转换质量不静默）",
+    uiPreview.notes.some((note) => note.includes("离线") && note.includes("控件值")) || uiPreview.warnings.some((w) => w.includes("离线"))
+  );
 
   const brokenPath = join(WORK, "broken.json");
   await writeFile(brokenPath, "{ not json ");
