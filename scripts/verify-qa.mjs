@@ -469,7 +469,7 @@ async function main() {
     check("runQA payload 保留 projectId", projectPayload.projectId === "p1");
     const jobPayload = spec.payload.parse({ jobId: "i1" });
     check("runQA payload 保留 jobId", jobPayload.jobId === "i1");
-    check("wire 方法总数为 195（合并后全量：互操作 2 + 导出 1 + 去背 1 + QA 1 + 选帧 2 + 工作流库 6）", WIRE.METHODS.length === 195, String(WIRE.METHODS.length));
+    check("wire 方法总数为 201（合并后全量：互操作 2 + 导出 1 + 去背 1 + QA 1 + 选帧 2 + 工作流库 6，188 + 13）", WIRE.METHODS.length === 201, String(WIRE.METHODS.length));
   }
 
   // 资源路由：qa/report.json 必须能直接下载（白名单少一条就是「徽章有、导出 403」）。
