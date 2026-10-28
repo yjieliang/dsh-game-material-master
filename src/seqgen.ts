@@ -27,7 +27,16 @@ import { assertSafeId } from "./safeid.js";
 import { normalizeDuration, normalizeResolution } from "./minimax.js";
 import { assertVideoBackendReady, downloadVideoTask, queryVideoTask, submitVideoTask, videoFailureReason } from "./videogen.js";
 import { extractFrames, fileSize, mimeOf, toJpegDataUri } from "./media.js";
-import { composeSheet, keyGreen, type SheetRow } from "./chroma.js";
+import { composeSheet, type SheetRow } from "./chroma.js";
+import {
+  describeMatte,
+  matteBatch,
+  summarizeMatte,
+  type MatteBackend,
+  type MatteInput,
+  type MatteJobInfo,
+  type MatteResult
+} from "./matte.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
@@ -38,6 +47,7 @@ import {
   tasksOf
 } from "./jobs.js";
 import { safeName, sniffImage } from "./imagegen.js";
+import { matteJobInfoFrom } from "./matte.js";
 import type { NodeStatus, VideoBackend } from "./store.js";
 
 export type SequenceMode = "frames" | "reference";
@@ -685,21 +695,30 @@ export async function extractSequenceFrames(jobId: string, count?: number): Prom
   }
 }
 
-export function startSequenceKey(jobId: string): { started: boolean; reason?: string } {
+/**
+ * 重跑抠像 + 合成条图。
+ *
+ * matteBackend 是一次性覆盖（rematte 的任务级切换用），不写回配置。
+ */
+export function startSequenceKey(jobId: string, matteBackend?: MatteBackend): { started: boolean; reason?: string } {
   try {
     assertIdle(jobId, "key", "抠像");
   } catch (error) {
     return { started: false, reason: messageOf(error) };
   }
   const started = kick(jobId, "key", async () => {
-    await keySequenceFrames(jobId);
-    await composeSequenceSheet(jobId);
+    await keySequenceFrames(jobId, matteBackend);
+    await composeSequenceSheet(jobId, matteBackend);
   });
   return started ? { started: true } : { started: false, reason: "抠像已在进行中" };
 }
 
-/** 按当前参数对全部帧跑一遍抠像，写出透明 PNG。 */
-export async function keySequenceFrames(jobId: string): Promise<void> {
+/**
+ * 按当前参数对全部帧跑一遍抠像，写出透明 PNG。
+ *
+ * matteBackend 是一次性覆盖（rematte 的任务级切换用），不写回配置。
+ */
+export async function keySequenceFrames(jobId: string, matteBackend?: MatteBackend): Promise<void> {
   const job = await readSequenceJob(jobId);
   if (job === undefined) throw new Error(`任务不存在：${jobId}`);
   if (job.frames.raw === undefined || job.frames.width === undefined || job.frames.height === undefined) {
@@ -712,21 +731,27 @@ export async function keySequenceFrames(jobId: string): Promise<void> {
   const frameBytes = width * height * 4;
   const total = Math.max(0, Math.floor(raw.length / frameBytes));
   const keyed: string[] = [];
-
+  const config = await loadConfig();
+  const inputs: MatteInput[] = [];
   for (let i = 0; i < total; i++) {
-    const slice = Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes));
-    const result = keyGreen(slice, width, height, {
+    inputs.push({ rgba: Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes)), width, height });
+  }
+  const results: MatteResult[] = await matteBatch(config, inputs, {
+    keying: {
       keyLow: job.keying.keyLow,
       keyHigh: job.keying.keyHigh,
       despill: job.keying.despill,
       edgeShrink: job.keying.edgeShrink,
       bgTolerance: job.keying.bgTolerance
-    });
+    },
+    backend: matteBackend
+  });
+  for (let i = 0; i < results.length; i++) {
     const relative = `keyed/f${String(i).padStart(2, "0")}.png`;
-    await writeFile(sequenceAssetPath(jobId, relative), encodePng(result.rgba, width, height));
+    await writeFile(sequenceAssetPath(jobId, relative), encodePng(results[i].rgba, width, height));
     keyed.push(relative);
   }
-
+  const matteInfo = summarizeMatte(results);
   const fresh = await readSequenceJob(jobId);
   if (fresh === undefined) return;
   fresh.frames = { ...fresh.frames, keyed, stale: false };
@@ -735,7 +760,7 @@ export async function keySequenceFrames(jobId: string): Promise<void> {
 }
 
 /** 把所有抠好的帧横向拼成一张条图。 */
-export async function composeSequenceSheet(jobId: string): Promise<void> {
+export async function composeSequenceSheet(jobId: string, matteBackend?: MatteBackend): Promise<void> {
   const job = await readSequenceJob(jobId);
   if (job === undefined) throw new Error(`任务不存在：${jobId}`);
   if (job.frames.raw === undefined || job.frames.width === undefined || job.frames.height === undefined) {
@@ -747,18 +772,24 @@ export async function composeSequenceSheet(jobId: string): Promise<void> {
   const height = job.frames.height;
   const frameBytes = width * height * 4;
   const total = Math.max(0, Math.floor(raw.length / frameBytes));
-  const frames: Buffer[] = [];
+  const config = await loadConfig();
+  const inputs: MatteInput[] = [];
   for (let i = 0; i < total; i++) {
-    const slice = Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes));
-    const result = keyGreen(slice, width, height, {
+    inputs.push({ rgba: Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes)), width, height });
+  }
+  // 这里必须和 keySequenceFrames 用同一套参数 / 后端，否则「预览」与「条图」不一致。
+  // birefnet 结果有内容哈希缓存，所以第二次跑几乎是白拿。
+  const results = await matteBatch(config, inputs, {
+    keying: {
       keyLow: job.keying.keyLow,
       keyHigh: job.keying.keyHigh,
       despill: job.keying.despill,
       edgeShrink: job.keying.edgeShrink,
       bgTolerance: job.keying.bgTolerance
-    });
-    frames.push(result.rgba);
-  }
+    },
+    backend: matteBackend
+  });
+  const frames: Buffer[] = results.map((result) => result.rgba);
   if (frames.length === 0) throw new Error("没有可合成的帧");
 
   const row: SheetRow = { key: "sequence", frames, width, height };

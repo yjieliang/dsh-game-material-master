@@ -20,7 +20,7 @@ import { imageJobsRoot, loadConfig } from "./config.js";
 import { assertSafeId } from "./safeid.js";
 import { generateImageWithProvider, imageModelOf, imageSizeOf, imageWatermarkOf, assertImageProviderReady, imageUsesConfiguredSize } from "./imageprovider.js";
 import { decodeToRgba, mimeOf, toDataUri } from "./media.js";
-import { keyGreen } from "./chroma.js";
+import { describeMatte, matteJobInfoFrom, matteOne, summarizeMatte, type MatteBackend, type MatteJobInfo } from "./matte.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 
@@ -35,6 +35,8 @@ export interface ImageItem {
   keyedFile?: string;
   /** 判定为背景的像素占比，用来判断抠像是否可信。 */
   backgroundFraction?: number;
+  /** 这次抠像用的后端 / 回退原因 / 耗时（见 src/matte.ts 的 MatteJobInfo）。 */
+  matte?: MatteJobInfo;
   source: "generated" | "uploaded";
   /** 验收打标：用户（或 agent 按用户指示）确认这一张可用。 */
   approved?: boolean;
@@ -198,6 +200,7 @@ function normalizeImageJob(raw: any): ImageJob {
         file: typeof item?.file === "string" ? item.file : undefined,
         keyedFile: typeof item?.keyedFile === "string" ? item.keyedFile : undefined,
         backgroundFraction: typeof item?.backgroundFraction === "number" ? item.backgroundFraction : undefined,
+        matte: matteJobInfoFrom(item?.matte),
         source: item?.source === "uploaded" ? "uploaded" : "generated",
         approved: item?.approved === true,
         error: typeof item?.error === "string" ? item.error : undefined,
@@ -330,40 +333,73 @@ export async function generateImageItem(jobId: string, index: number): Promise<v
   }
 }
 
-/** 对某一张跑绿幕抠像并写出透明 PNG。就地修改传入的 job（不落盘）。 */
-export async function keyItem(job: ImageJob, index: number): Promise<void> {
+/**
+ * 对某一张跑去背并写出透明 PNG。就地修改传入的 job（不落盘）。
+ *
+ * 去背走 src/matte.ts 的统一抽象：默认仍是绿幕（行为不变），设置里选了
+ * birefnet / auto 才换 BiRefNet；失败按 matteFallback 回退并把原因记在 item.matte。
+ * matteBackend 是一次性覆盖（rematte 的任务级切换用）。
+ */
+export async function keyItem(job: ImageJob, index: number, matteBackend?: MatteBackend): Promise<void> {
   const item = job.items[index];
   if (item?.file === undefined) return;
   const decoded = await decodeToRgba(imageAssetPath(job.id, item.file), 2048);
-  const result = keyGreen(decoded.rgba, decoded.width, decoded.height, {
-    keyLow: job.keying.keyLow,
-    keyHigh: job.keying.keyHigh,
-    despill: job.keying.despill,
-    edgeShrink: job.keying.edgeShrink,
-    bgTolerance: job.keying.bgTolerance
-  });
+  const config = await loadConfig();
+  const result = await matteOne(
+    config,
+    { rgba: decoded.rgba, width: decoded.width, height: decoded.height },
+    {
+      keying: {
+        keyLow: job.keying.keyLow,
+        keyHigh: job.keying.keyHigh,
+        despill: job.keying.despill,
+        edgeShrink: job.keying.edgeShrink,
+        bgTolerance: job.keying.bgTolerance
+      },
+      backend: matteBackend
+    }
+  );
   const relative = `keyed/img-${String(index).padStart(2, "0")}.png`;
   await writeFile(imageAssetPath(job.id, relative), encodePng(result.rgba, decoded.width, decoded.height));
   item.keyedFile = relative;
   item.backgroundFraction = result.backgroundFraction;
+  item.matte = summarizeMatte([result]);
 }
-
-/** 重新对全部已生成的图跑一遍抠像（改参数后调用）。 */
-export async function rekeyImageJob(jobId: string): Promise<ImageJob> {
+/**
+ * 重新对全部已生成的图跑一遍抠像（改参数后调用）。
+ *
+ * matteBackend 是一次性覆盖（rematte 的任务级切换用），不写回配置。
+ */
+export async function rekeyImageJob(jobId: string, matteBackend?: MatteBackend): Promise<ImageJob> {
   const job = await readImageJob(jobId);
   if (job === undefined) throw new Error(`任务不存在：${jobId}`);
   let count = 0;
+  const mattes: MatteJobInfo[] = [];
   for (let i = 0; i < job.items.length; i++) {
     if (job.items[i]?.file === undefined) continue;
     try {
-      await keyItem(job, i);
+      await keyItem(job, i, matteBackend);
       count++;
+      const info = job.items[i].matte;
+      if (info !== undefined) {
+        mattes.push(info);
+        if (info.fallbackReason !== undefined) {
+          appendJobLog(job.log, "warn", `第 ${i + 1} 张去背回退到绿幕：${info.fallbackReason}`);
+        }
+      }
     } catch (error) {
       job.items[i].error = messageOf(error);
       appendJobLog(job.log, "error", `第 ${i + 1} 张抠像失败：${job.items[i].error}`);
     }
   }
   appendJobLog(job.log, "info", `抠像完成：${count} 张（背景占比可在每张下方查看）`);
+  if (mattes.length > 0) {
+    // 每张已经带上自己的 matte，任务日志再补一句汇总（用了谁 / 回退几次）。
+    const fallbackCount = mattes.filter((info) => info.fallbackReason !== undefined).length;
+    const cachedCount = mattes.reduce((sum, info) => sum + info.cachedCount, 0);
+    const elapsedMs = mattes.reduce((sum, info) => sum + info.elapsedMs, 0);
+    appendJobLog(job.log, "info", describeMatte({ ...mattes[0], frames: count, fallbackCount, cachedCount, elapsedMs }));
+  }
   await writeImageJob(job);
   return job;
 }

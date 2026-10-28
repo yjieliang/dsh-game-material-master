@@ -271,7 +271,8 @@ export const SHARED_TOOL_METHODS: ReadonlySet<string> = new Set([
   "testMusic",
   "testMusicScore",
   "testSfx",
-  "setReviewMode"
+  "setReviewMode",
+  "rematte"
 ]);
 
 /**

@@ -17,6 +17,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeJsonAtomic } from "./jsonio.js";
+import { matteJobInfoFrom, type MatteJobInfo } from "./matte.js";
 import { assertSafeId } from "./safeid.js";
 import {
   DEFAULT_TURN_PROMPT,
@@ -120,6 +121,8 @@ export interface FramesNode {
    * 没有它时，序列帧来自「整段等分」的 `runFrames`。
    */
   candidates?: FrameCandidates;
+  /** 这个方向这次去背用的后端 / 回退原因（见 src/matte.ts 的 MatteJobInfo）。 */
+  matte?: MatteJobInfo;
 }
 
 /** 某一个方向的行走视频候选帧，以及输出序列帧各自落在哪一张上。 */
@@ -171,6 +174,8 @@ export interface SheetState {
   borderSamplesDropped?: number;
   /** 边框采样点总数（各帧之和）。 */
   borderSamples?: number;
+  /** 这次去背用的后端 / 回退原因 / 耗时（见 src/matte.ts 的 MatteJobInfo）。 */
+  matte?: MatteJobInfo;
 }
 
 export interface LogEntry {
@@ -656,7 +661,8 @@ function normalizeProject(raw: any): Project {
         keyed: Array.isArray(node.keyed) ? node.keyed.map(String) : [],
         approved: node.approved === true,
         stale: node.stale === true,
-        candidates: normalizeFrameCandidates(node.candidates)
+        candidates: normalizeFrameCandidates(node.candidates),
+        matte: matteJobInfoFrom(node.matte)
       };
     }
   }
@@ -704,7 +710,8 @@ function normalizeProject(raw: any): Project {
       frameCount: raw?.sheet?.frameCount,
       backgroundFraction: typeof raw?.sheet?.backgroundFraction === "number" ? raw.sheet.backgroundFraction : undefined,
       borderSamplesDropped: typeof raw?.sheet?.borderSamplesDropped === "number" ? raw.sheet.borderSamplesDropped : undefined,
-      borderSamples: typeof raw?.sheet?.borderSamples === "number" ? raw.sheet.borderSamples : undefined
+      borderSamples: typeof raw?.sheet?.borderSamples === "number" ? raw.sheet.borderSamples : undefined,
+      matte: matteJobInfoFrom(raw?.sheet?.matte)
     },
     settings: merged,
     imageMode,

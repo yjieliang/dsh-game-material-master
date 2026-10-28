@@ -319,6 +319,22 @@ export interface Config {
   comfySeed: number;
   comfyTimeoutMs: number;
 
+  /**
+   * **去背后端**（模块①②③ 共用，见 src/matte.ts）。
+   *
+   * - `keygreen`（默认）：现有绿幕算法，行为与加这个开关之前完全一致；
+   * - `birefnet`：本机 ComfyUI 的 BiRefNet 工作流（手绘 / 照片 / 非纯色背景也能去）；
+   * - `auto`：先跑绿幕，判据不成立（几乎没抠掉东西 / 绿边太重）才改用模型。
+   */
+  matteBackend: "keygreen" | "birefnet" | "auto";
+  /** BiRefNet 失败（ComfyUI 没开 / 超时 / 尺寸不一致…）时是否自动回退绿幕。关掉 = 直接报错。 */
+  matteFallback: boolean;
+  /**
+   * 去背工作流 id。默认内置 `builtin.matte-birefnet`；也可以填工作流库里的 id
+   * （`<DSH_HOME>/inkbox/workflows/<id>.json`）或一个本机 `.json` 路径（排障用）。
+   */
+  matteWorkflowId: string;
+
   /** 最终整图单格宽高（像素）。 */
   cellWidth: number;
   cellHeight: number;
@@ -494,6 +510,11 @@ export const DEFAULT_CONFIG: Config = {
   comfySeconds: 0,
   comfySeed: 0,
   comfyTimeoutMs: 600000,
+
+  // 去背默认仍是绿幕（行为不变）；BiRefNet 是用户显式选的后端。
+  matteBackend: "keygreen",
+  matteFallback: true,
+  matteWorkflowId: "builtin.matte-birefnet",
 
   musicProvider: "puyue",
   musicApiKey: "",
@@ -682,6 +703,11 @@ export function normalizeConfig(input: unknown): Config {
     // 0 = 每次随机；生成器只在探测到 seed 输入时才会写进去。
     comfySeed: asInt(raw.comfySeed, DEFAULT_CONFIG.comfySeed, 0, 9007199254740991),
     comfyTimeoutMs: asInt(raw.comfyTimeoutMs, DEFAULT_CONFIG.comfyTimeoutMs, 10000, 3600000),
+
+    // 去背：非法后端一律退回 keygreen（老行为），工作流 id 留空回到内置。
+    matteBackend: raw.matteBackend === "birefnet" ? "birefnet" : raw.matteBackend === "auto" ? "auto" : "keygreen",
+    matteFallback: asBool(raw.matteFallback, DEFAULT_CONFIG.matteFallback),
+    matteWorkflowId: asString(raw.matteWorkflowId, DEFAULT_CONFIG.matteWorkflowId).trim() || DEFAULT_CONFIG.matteWorkflowId,
 
     musicProvider: "puyue",
     musicApiKey: asString(raw.musicApiKey, DEFAULT_CONFIG.musicApiKey),

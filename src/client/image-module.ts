@@ -60,6 +60,9 @@ function ImageModule(props) {
   const [settingsDraft, setSettingsDraft] = React.useState({});
   const [keyingDraft, setKeyingDraft] = React.useState({});
   const globalConfig = useGlobalConfig(api);
+  // 去背后端的中文标签（设置页可切 keygreen / birefnet / auto）。
+  const matteBackendLabel = (backend) =>
+    backend === "birefnet" ? T("BiRefNet 模型") : backend === "auto" ? T("自动") : T("绿幕");
   // 「正在调用接口」的记账表（上传走自己的 uploading 状态，不在这里）。
   const tasks = usePendingTasks();
   // 深链接：切到某一个图片任务。
@@ -324,6 +327,13 @@ function ImageModule(props) {
                 h("div", { className: "SPR_cardHead" }, h("h3", null, T("③ 绿幕抠图"))),
                 h("p", { className: "SPR_hint" }, T("开启后每张生成完会自动抠一遍；也可以上传已有图片只做抠像。") ),
                 h(
+                  "p",
+                  { className: "SPR_hint" },
+                  T("去背后端：{n0}（在设置页切换；BiRefNet 失败会自动回退绿幕并写明原因）", {
+                    n0: matteBackendLabel(globalConfig?.matteBackend)
+                  })
+                ),
+                h(
                   "div",
                   { className: "SPR_toolbar" },
                   h(
@@ -407,6 +417,15 @@ function ImageModule(props) {
                           overlay ? h(BusyBadge, { show: true, text: overlayText }) : null,
                           item.backgroundFraction !== undefined
                             ? h("span", { className: "SPR_refRow" }, T("背景占比 {n0}%", { n0: (item.backgroundFraction * 100).toFixed(0) }))
+                            : null,
+                          item.matte !== undefined
+                            ? h(
+                                "span",
+                                { className: "SPR_refRow" },
+                                item.matte.fallbackReason === undefined
+                                  ? T("去背：{n0}", { n0: matteBackendLabel(item.matte.backend) })
+                                  : T("去背：{n0} · 回退原因：{n1}", { n0: matteBackendLabel(item.matte.backend), n1: item.matte.fallbackReason })
+                              )
                             : null,
                           item.error !== undefined ? h("p", { className: "SPR_error" }, item.error) : null,
                           h(

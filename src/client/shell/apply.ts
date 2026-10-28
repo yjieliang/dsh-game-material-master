@@ -140,6 +140,7 @@ export function createApply(deps: ApplyDeps) {
         setFramePicks: (payload) => call("setFramePicks", payload),
         resetFramePicks: (payload) => call("resetFramePicks", payload),
         rekey: (payload) => call("rekey", payload),
+        rematte: (payload) => call("rematte", payload),
         compose: (payload) => call("compose", payload),
 
         listImageJobs: () => call("listImageJobs"),
