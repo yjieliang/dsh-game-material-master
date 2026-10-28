@@ -93,6 +93,7 @@ DSH 插件「墨盒」：从一张角色设定图出发批量产出游戏素材�
 | 内置默认提示词（`src/directions.ts`）中英各一份，改一份必须改另一份 | 它会真的发给生图 / 视频模型，不是界面装饰。`verify-host.mjs` 的 5b 段按语言逐条比对两侧 |
 | 转圈截帧的首帧一律走 `src/pipeline.ts` 的 `turnFirstFrame()`：它除了「正面绿幕图优先」，还会拿文件时间兜一道（正面图比源图旧 → 退回源图） | 换源图会作废派生产物，但历史项目 / 手工替换的文件仍可能带着旧角色的 `images/front.png`。那一张就是交给视频模型的首帧，「新角色配旧脸」既不报错也不缺图，只能肉眼看出来 |
 | 起 ffmpeg / ffprobe 一律走 `src/media.ts` 的 `ffmpegPath()` / `ffprobePath()`，别写死 `"ffmpeg"`、也别只读 `process.env` | Windows 上 ffmpeg 常常「装了但不在 `PATH` 里」，而 `setx` 设的环境变量又继承不到已经在跑的进程。这两个函数会继续查注册表与 WinGet / Scoop / Chocolatey 的常见位置——绕过它们就是「自检全绿、真机报找不到 ffmpeg」 |
+| 抠像 / 去背一律走 `src/matte.ts` 的 `matteOne()` / `matteBatch()`，模块里不许再直接调 `chroma.keyGreen`；BiRefNet 输出尺寸必须与原图一致，失败必须按 `matteFallback` 回退并在 `matte` 节点 / 任务日志写 `fallbackReason` | 直接调 `keyGreen` 会绕过后端切换与「失败显式回退」，用户在设置里选了 BiRefNet 却仍偷偷走绿幕、或者反过来静默产出黑底 / 脏边，都不报错；`verify-matte.mjs` 有源码静态断言与尺寸 / 回退用例 |
 | `engines.dsh` 与 devDependencies 里的 `cordis` / `typert-protocol` **必须一起跟 DSH 版本走** | DSH 0.2.1 起插件兼容性**优先看 `engines.dsh`**（声明了就不再回退 peerDependencies），本插件声明 `>=0.2.0-rc.2 <0.3.0-0`；`<0.3.0-0` 是必需的，因为 DSH 用 `includePrerelease` 判范围，写 `<0.3.0` 会放行 0.3.0 的 rc。开发依赖是**开发期契约**：0.2.1 对应 `cordis ~4.0.5` / `dsh-typert-protocol 0.2.1-rc.2`，版本太旧时自检会对着旧契约全绿、真机却挂 |
 | 回给浏览器的 `assetBase` 一律走 `src/links.ts` 的 `assetBasePath()`，深链接一律走 `buildOpenLink()` 的默认 origin | DSH 0.2.1 的 `--public-url https://host/prefix/` 会由反代**剥掉路径前缀**再转给 DSH；宿主只拼 `origin + /dsh-inkbox/...` 时，浏览器会请求反代根路径 → 图片全裂、回链落到根页。浏览器半区把 `location.pathname` 一起报上来（`reportClientOrigin({origin,path})`），宿主拼 URL 时补回去。绕过 `assetBasePath` 的字符串拼接就是「本地全对、反代后面图裂」 |
 
@@ -122,6 +123,7 @@ node scripts/verify-host.mjs       # 宿主全链路（387 项）
 node scripts/verify-client.mjs     # 浏览器半区契约（366 项）
 node scripts/verify-tools.mjs      # 对话调用面（196 项，含常驻工具面 ≤6,000 B 预算）
 node scripts/verify-pipeline.mjs   # 抽帧 / 抠像 / 合成（40 项）
+node scripts/verify-matte.mjs        # 去背抽象：绿幕 / BiRefNet / auto、回退、缓存、mock ComfyUI、三条链路（80 项，纯本地）
 node scripts/verify-feedback.mjs   # 浏览器半区真渲染（218 项，含功能管理、侧栏菜单、生图后端设置页、语义保存错误与草稿合并、切语言后页签标题）
 node scripts/verify-i18n.mjs       # 中英词条表契约（9 项）
 node scripts/verify-rename.mjs     # 改名回归（23 项：包名 / bundle id / 路由前缀 / 文案词条一致 + 旧数据目录迁移四种情形）

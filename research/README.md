@@ -18,6 +18,7 @@
 
 | 任务 | 报告 | 结论 | 对应文档 |
 |---|---|---|---|
+| **BiRefNet 去背接入** | [matte-birefnet/matte-birefnet-research-report.md](matte-birefnet/matte-birefnet-research-report.md) | ✅ 可用：本机 8188 单帧 ~1.9s；洋红幕彩边 0.481% vs 绿幕 1.455% | [去背-BiRefNet.md](../docs/去背-BiRefNet.md) |
 | **45° 等距地图地块生成** | [tile-isometric/tile-isometric-research-report.md](tile-isometric/tile-isometric-research-report.md) | ✅ 可行。核心是「几何交给代码、内容交给 AI」：纯文生图达标率 0%，模板填充 100% | [产品文档](../docs/地图地块生成-产品文档.md) · [开发计划](../docs/地图地块生成-开发计划.md) |
 
 ---
