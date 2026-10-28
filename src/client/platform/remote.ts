@@ -53,6 +53,9 @@ export function createRemote(deps: any) {
       ["setFramePick", true],
       ["setFramePicks", true],
       ["resetFramePicks", true],
+      // 自动选帧（本地纯计算）：建议 + 写回现有 picks。模块③ 用 jobId 寻址同一个方法。
+      ["autoPickFrames", true],
+      ["applyAutoPicks", true],
       ["rekey", true],
       ["rematte", true],
       ["compose", true],

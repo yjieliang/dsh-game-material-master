@@ -61,7 +61,9 @@ import {
 } from "./minimax.js";
 import {
   activatePipeline,
+  applyAutoPicks as applyAutoPicksPipeline,
   applyTurnPicks,
+  autoPickFrames as autoPickFramesPipeline,
   clearVideos,
   disposePipeline,
   ensurePoller,
@@ -1602,6 +1604,34 @@ export class GameStudioGateway extends TypertRemoteService {
   async resetFramePicks(payload) {
     const input = asRecord(payload);
     return resetFramePicks(asString(input.projectId), asString(input.key));
+  }
+  /**
+   * 自动选帧（步态 / 周期分析，本地纯计算、零计费）。
+   *
+   * 模块① 走 `projectId`（+ 可选 `key`）；模块③ 走 `jobId`。返回建议帧与置信度，
+   * 失败时带 `reason` 且 picks 是等分（**不**直接改现有选帧数据）。
+   */
+  async autoPickFrames(payload) {
+    const input = asRecord(payload);
+    const jobId = typeof input.jobId === "string" ? input.jobId : "";
+    if (jobId !== "") {
+      const { summary } = await seqgen.autoPickSequenceFrames(jobId);
+      return summary;
+    }
+    const projectId = asString(input.projectId);
+    const key = typeof input.key === "string" && input.key !== "" ? input.key : undefined;
+    const { summary } = await autoPickFramesPipeline(projectId, key);
+    return summary;
+  }
+  /** 把自动选帧的建议写进现有的选帧数据（模块① 的候选帧 picks / 模块③ 的任务帧）。 */
+  async applyAutoPicks(payload) {
+    const input = asRecord(payload);
+    const picks = Array.isArray(input.picks) ? input.picks.map((value) => Number(value)) : [];
+    const jobId = typeof input.jobId === "string" ? input.jobId : "";
+    if (jobId !== "") return seqgen.applySequenceAutoPicks(jobId, picks);
+    const projectId = asString(input.projectId);
+    const key = typeof input.key === "string" && input.key !== "" ? input.key : undefined;
+    return applyAutoPicksPipeline(projectId, key, picks);
   }
   async rekey(payload) {
     const projectId = asString(asRecord(payload).projectId);

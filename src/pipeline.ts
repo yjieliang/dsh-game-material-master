@@ -58,7 +58,6 @@ import {
   videoFailureReason,
   videoBackendOf
 } from "./videogen.js";
-import { composeSheet, type SheetRow } from "./chroma.js";
 import {
   combineMatteInfos,
   describeMatte,
@@ -69,6 +68,8 @@ import {
   type MatteJobInfo,
   type MatteResult
 } from "./matte.js";
+import { composeSheet, keyGreen, segmentBackground, type SheetRow } from "./chroma.js";
+import { CYCLE_REASON_TEXT, pickCycleFrames, type CyclePick, type FrameSample } from "./cycle.js";
 import { encodePng } from "./png.js";
 import { zipEntries, type ZipEntry } from "./zip.js";
 import {
@@ -79,6 +80,7 @@ import {
   projectDir,
   readProject,
   referenceFiles,
+  type FrameSelectionSummary,
   type Project,
   type ProjectSettings,
   type VideoBackend
@@ -1422,6 +1424,9 @@ export async function startFramePick(
         log(current, "info", `「${label}」候选帧抽取完成：${files.length} 张 / 视频 ${extracted.duration.toFixed(2)} 秒`);
       });
       await applyWalkPicks(projectId, key);
+      // 抽完候选帧按配置自动跑一次步态分析（`autoSelectFrames`，默认开）。
+      // 失败 / 没找到周期一律沿用等分并写日志，绝不阻断抽帧。
+      await maybeAutoSelectFrames(projectId, key);
     } catch (error) {
       const message = messageOf(error);
       await patchProject(projectId, (current) => {
@@ -1518,6 +1523,175 @@ export async function resetFramePicks(projectId: string, key: string): Promise<{
   });
   await applyWalkPicks(projectId, key);
   return { picks };
+}
+
+// ── 自动选帧（步态 / 周期分析）────────────────────────────────────────
+
+/** 自动选帧最多分析多少张候选帧（其余按步长抽稀，结果再换算回候选帧下标）。 */
+const AUTO_PICK_MAX_ANALYSIS = 96;
+
+/** 自动选帧没指定方向时，挑第一个有候选帧的方向。 */
+function pickAutoDirection(project: Project): string {
+  const ordered = project.settings.rowOrder.length > 0 ? project.settings.rowOrder : DIRECTION_KEYS;
+  for (const key of ordered) {
+    if (directionOf(key) === undefined) continue;
+    if (project.frames[key]?.candidates?.raw !== undefined) return key;
+  }
+  throw new Error("还没有候选帧，请先在某个方向上点「手动选帧 → 抽取候选帧」");
+}
+
+/**
+ * 从某个方向的候选帧里跑一次自动选帧（步态 / 周期分析）。
+ *
+ * 分析只在**绿幕候选帧**上做：用 `segmentBackground` 估 alpha 轮廓（不跑完整抠像，
+ * 免得为了选帧把 30~90 张候选帧都抠一遍），帧数按 `AUTO_PICK_MAX_ANALYSIS` 抽稀。
+ * 结果写进候选帧现有的 `selection` 字段（建议），**不直接改 picks**——要生效走
+ * `applyAutoPicks`（抽帧后自动应用也走它）。
+ */
+export async function autoPickFrames(
+  projectId: string,
+  key?: string,
+  options: { persist?: boolean } = {}
+): Promise<{ key: string; result: CyclePick; summary: FrameSelectionSummary }> {
+  const project = await readProject(projectId);
+  if (project === undefined) throw new Error(`项目不存在：${projectId}`);
+  const target = key ?? pickAutoDirection(project);
+  if (directionOf(target) === undefined) throw new Error(`未知方向：${target}`);
+  const candidates = project.frames[target]?.candidates;
+  if (candidates?.raw === undefined || (candidates.rawWidth ?? 0) <= 0) {
+    throw new Error("还没有候选帧，请先抽候选帧（「手动选帧 → 抽取候选帧」）");
+  }
+  const width = candidates.rawWidth;
+  const height = candidates.rawHeight ?? 0;
+  const raw = await readFile(assetPath(projectId, candidates.raw));
+  const frameBytes = width * height * 4;
+  const total = Math.max(0, Math.floor(raw.length / frameBytes));
+  if (total === 0) throw new Error("候选帧缓存是空的，请重新抽取");
+
+  const step = Math.max(1, Math.ceil(total / AUTO_PICK_MAX_ANALYSIS));
+  const samples: FrameSample[] = [];
+  for (let i = 0; i < total; i += step) {
+    const slice = Buffer.from(raw.subarray(i * frameBytes, (i + 1) * frameBytes));
+    // 绿幕帧没有可信 alpha，但「非背景」= 角色轮廓：背景分割正好给出这个二值轮廓，
+    // 比跑整套 keyGreen（带去色 / 软边）便宜，而且轮廓统计只需要二值。
+    const background = segmentBackground(slice, width, height, project.settings.bgTolerance);
+    const alpha = new Uint8Array(width * height);
+    for (let p = 0; p < alpha.length; p++) alpha[p] = background[p] === 1 ? 0 : 255;
+    samples.push({ index: i, alpha, width, height });
+  }
+
+  const outputCount = Math.max(1, project.settings.frameCount);
+  const analysis = pickCycleFrames(samples, outputCount, { maxAnalysisFrames: AUTO_PICK_MAX_ANALYSIS });
+  const toIndex = (samplePosition: number): number => {
+    const sample = samples[Math.max(0, Math.min(samples.length - 1, samplePosition))];
+    return sample === undefined ? 0 : sample.index;
+  };
+  const period = analysis.fallback ? 0 : Math.max(0, Math.round(analysis.period * step));
+  const cycleStart = analysis.fallback ? 0 : toIndex(analysis.cycleStart);
+  const picks = analysis.fallback
+    ? evenSlotPicks(outputCount, total)
+    : analysis.picks.map((position) => toIndex(position));
+  const summary: FrameSelectionSummary = {
+    picks,
+    confidence: analysis.confidence,
+    period,
+    reason: analysis.reason,
+    fallback: analysis.fallback,
+    contacts: analysis.fallback ? [] : analysis.contacts.map((position) => toIndex(position)),
+    passing: analysis.fallback ? [] : analysis.passing.map((position) => toIndex(position)),
+    cycleStart,
+    cycleEnd: analysis.fallback ? 0 : Math.min(total, cycleStart + period),
+    notes: analysis.notes.slice(0, 5),
+    source: "auto",
+    at: Date.now()
+  };
+
+  if (options.persist !== false) {
+    await patchProject(projectId, (current) => {
+      const node = current.frames[target];
+      if (node?.candidates === undefined) return;
+      node.candidates = { ...node.candidates, selection: summary };
+      const label = directionOf(target)?.label ?? target;
+      if (analysis.fallback) {
+        log(current, "warn", `「${label}」自动选帧未通过：${CYCLE_REASON_TEXT[analysis.reason ?? ""] ?? analysis.reason ?? "未知原因"}（已按等分）`);
+      } else {
+        log(current, "info", `「${label}」自动选帧建议：周期 ${period} 帧 / 置信度 ${summary.confidence} / 取第 ${picks.map((index) => index + 1).join(", ")} 帧`);
+      }
+    });
+  }
+  return { key: target, result: analysis, summary };
+}
+
+/**
+ * 把自动选帧的建议写进这个方向现有的 picks（并重切序列帧）。
+ *
+ * 与界面拖圆圈走同一条路（`setFramePicks`），所以「自动选完还能手改」天然成立。
+ */
+export async function applyAutoPicks(
+  projectId: string,
+  key: string | undefined,
+  picks: number[]
+): Promise<{ key: string; picks: number[] }> {
+  const project = await readProject(projectId);
+  if (project === undefined) throw new Error(`项目不存在：${projectId}`);
+  const target = key ?? pickAutoDirection(project);
+  if (directionOf(target) === undefined) throw new Error(`未知方向：${target}`);
+  const candidates = project.frames[target]?.candidates;
+  const total = candidates?.frames?.length ?? candidates?.rawFrameCount ?? 0;
+  if (total === 0 || candidates?.raw === undefined) throw new Error("还没有候选帧，请先抽候选帧");
+  const outputCount = Math.max(1, project.settings.frameCount);
+  if (!Array.isArray(picks) || picks.length !== outputCount) {
+    throw new Error(`这一方向要选 ${outputCount} 帧（与「每段视频抽帧数」一致），收到 ${Array.isArray(picks) ? picks.length : 0} 个位置`);
+  }
+  const next = picks.map((value) => {
+    if (!Number.isFinite(Number(value))) throw new Error("截帧位置必须是数字");
+    return clampInt(Number(value), 0, total - 1);
+  });
+  const applied = await setFramePicks(projectId, target, next);
+  await patchProject(projectId, (current) => {
+    const node = current.frames[target];
+    if (node?.candidates?.selection === undefined) return;
+    node.candidates = {
+      ...node.candidates,
+      selection: { ...node.candidates.selection, picks: [...applied.picks], source: "apply", at: Date.now() }
+    };
+  });
+  return { key: target, picks: applied.picks };
+}
+
+/**
+ * 抽完候选帧后按 `autoSelectFrames` 自动跑一次自动选帧，并且**只在确实找到周期时**
+ * 才写入（失败一律沿用等分 + 写一条 warn 日志，不阻断抽帧）。
+ */
+async function maybeAutoSelectFrames(projectId: string, key: string): Promise<void> {
+  const config = await loadConfig();
+  if (!config.autoSelectFrames) return;
+  const label = directionOf(key)?.label ?? key;
+  try {
+    const { summary } = await autoPickFrames(projectId, key);
+    const project = await readProject(projectId);
+    if (project === undefined) return;
+    const outputCount = Math.max(1, project.settings.frameCount);
+    if (summary.fallback || summary.picks.length !== outputCount) {
+      await patchProject(projectId, (current) => {
+        log(current, "warn", `「${label}」自动选帧未通过（${CYCLE_REASON_TEXT[summary.reason ?? ""] ?? summary.reason ?? "未知原因"}），沿用等分`);
+      });
+      return;
+    }
+    await applyAutoPicks(projectId, key, summary.picks);
+    await patchProject(projectId, (current) => {
+      log(
+        current,
+        "info",
+        `「${label}」按自动选帧切出 ${summary.picks.length} 帧：周期 ${summary.period} 帧 / 置信度 ${summary.confidence}`
+      );
+    });
+  } catch (error) {
+    const message = messageOf(error);
+    await patchProject(projectId, (current) => {
+      log(current, "warn", `「${label}」自动选帧失败（已沿用等分）：${message}`);
+    });
+  }
 }
 
 /**

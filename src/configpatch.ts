@@ -87,6 +87,7 @@ export function buildConfigPatch(payload: unknown): Record<string, any> {
     "cellWidth",
     "cellHeight",
     "frameCount",
+    "autoSelectFrames",
     "fitMode",
     "workingLongEdge",
     "pixelSize",
