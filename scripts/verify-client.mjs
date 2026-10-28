@@ -339,6 +339,21 @@ for (const { label, text } of targets) {
   checkFramePickContracts(text, label);
   checkInputAndZoomContracts(text, label);
   checkDraftContracts(text, label);
+  /**
+   * 定时器收编（P10）：所有**会发请求**的周期轮询都必须走 platform/scheduler.watch，
+   * 并且带稳定 key（同 key 去重 / 失败退避 / 页面隐藏暂停都靠它）。
+   * 裸定时器的数量由 verify-arch 的棘轮兜底；这里钉的是「哪些模块的轮询不许再走回头路」。
+   */
+  check(
+    `${label}：模块轮询统一走集中调度器（iso/map/music/sfx/rig 各有稳定 key）`,
+    [
+      '"iso:" + String(view.id) + ":busy"',
+      '"map:" + String(viewId) + ":busy"',
+      '"music:" + String(jobId)',
+      '"sfx:" + String(jobId)',
+      '"rig:" + String(jobId)'
+    ].every((fragment) => text.includes(fragment))
+  );
 
   const renderers = renderersIn(text);
   check(`${label}：找到阶段渲染函数`, renderers.size > 0, [...renderers.keys()].join("、"));

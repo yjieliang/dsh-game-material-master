@@ -26,6 +26,7 @@ export function createSfx(deps: any) {
     CopyIdButton,
     musicAssetUrl,
     musicDownloadUrl,
+    gmmScheduler,
   } = deps;
 
     /** 格式名由客户端翻，不用宿主回传的中文 label（切英文会露中文）。 */
@@ -35,7 +36,7 @@ export function createSfx(deps: any) {
       return T("WAV（无损，游戏引擎常用）");
     }
 
-    const RawModule = createSfxModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, Chip, Btn, NumField, LoadingOverlay, BusyBtn, CopyIdButton, musicAssetUrl, musicDownloadUrl, sfxFormatLabel });
+    const RawModule = createSfxModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, Chip, Btn, NumField, LoadingOverlay, BusyBtn, CopyIdButton, musicAssetUrl, musicDownloadUrl, sfxFormatLabel, scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "sfx" });

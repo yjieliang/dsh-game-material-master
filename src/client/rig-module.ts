@@ -57,10 +57,12 @@ export interface RigRuntime {
   experimentalGateMuted: any;
   ExperimentalBar: any;
   RigExperimentalDialog: any;
+  /** 集中轮询调度器（platform/scheduler；组合根注入） */
+  scheduler: any;
 }
 
 export function createRigModule(rt: RigRuntime) {
-  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, usePendingTasks, LoadingOverlay, BusyBtn, BusyBadge, ReviewModeBar, readFileBase64, UploadBox, CopyIdButton, JobLogPanel, RIG_ANIMATIONS, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, RIG_BUSY_LABEL, rigStageOf, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RigTexturePanel, RigAssemblyEditor, experimentalGateMuted, ExperimentalBar, RigExperimentalDialog } = rt;
+  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, usePendingTasks, LoadingOverlay, BusyBtn, BusyBadge, ReviewModeBar, readFileBase64, UploadBox, CopyIdButton, JobLogPanel, RIG_ANIMATIONS, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, RIG_BUSY_LABEL, rigStageOf, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RigTexturePanel, RigAssemblyEditor, experimentalGateMuted, ExperimentalBar, RigExperimentalDialog, scheduler } = rt;
 
 function RigModule(props) {
   markRender("RigModule");
@@ -177,10 +179,16 @@ function RigModule(props) {
   React.useEffect(() => {
     if (jobId === null) return undefined;
     // 有任务在跑，或刚提交完还在「沉降窗口」里，都要继续刷新。
+    // 走集中调度器：同 key 去重、失败退避、页面隐藏暂停。
     if (!busy && Date.now() >= settleUntil) return undefined;
-    const timer = setInterval(() => void load(jobId), 2500);
-    return () => clearInterval(timer);
-  }, [busy, jobId, load, settleUntil]);
+    const handle = scheduler.watch({
+      key: "rig:" + String(jobId),
+      intervalMs: 2500,
+      immediate: false,
+      run: () => load(jobId)
+    });
+    return () => handle.cancel();
+  }, [busy, jobId, load, settleUntil, scheduler]);
 
   const run = async (fn, okText = undefined, feedback = undefined) => {
     const invoke = async () => {

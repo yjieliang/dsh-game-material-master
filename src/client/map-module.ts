@@ -7,6 +7,7 @@
  */
 
 import { markRender } from "./platform/perf.js";
+import { onceTimer } from "./platform/lifecycle.js";
 
 export interface MapRuntime {
   React: any;
@@ -37,10 +38,12 @@ export interface MapRuntime {
   MAP_GUIDE_ART: any;
   MapToolIcon: any;
   openAssetChat: any;
+  /** 集中轮询调度器（platform/scheduler；组合根注入） */
+  scheduler: any;
 }
 
 export function createMapModule(rt: MapRuntime) {
-  const { React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat } = rt;
+  const { React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat, scheduler } = rt;
 
 function MapModule(props) {
   markRender("MapModule");
@@ -280,7 +283,6 @@ function MapModule(props) {
   const strokeRef = React.useRef(null);
   const strokeSeq = React.useRef(0);
   const currentStroke = React.useRef(null);
-  const flushTimer = React.useRef(null);
   const pendingOps = React.useRef([]);
   const fittedRef = React.useRef(null);
   const spaceRef = React.useRef(false);
@@ -639,7 +641,7 @@ function MapModule(props) {
   React.useEffect(() => {
     if (api === undefined || viewId === null || layout === null || measured !== true) return undefined;
     let cancelled = false;
-    const timer = setTimeout(() => {
+    const cancel = onceTimer(() => {
       void (async () => {
         const strokeAtQuery = currentStroke.current;
         try {
@@ -687,7 +689,7 @@ function MapModule(props) {
     }, 32);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, viewId, planKey, planEpoch, previewTick, pan, zoom, viewport, single, safeLayerIndex, measured, showPass]);
@@ -981,12 +983,8 @@ function MapModule(props) {
   }, []);
 
   const flushOps = React.useCallback(async () => {
-    if (flushTimer.current !== null) {
-      clearTimeout(flushTimer.current);
-      flushTimer.current = null;
-    }
     if (previewTimer.current !== null) {
-      clearTimeout(previewTimer.current);
+      previewTimer.current();
       previewTimer.current = null;
     }
     /**
@@ -1071,7 +1069,7 @@ function MapModule(props) {
       }
       // 节流预览：让这一笔**看得见**（宿主只算不存），真正的提交仍在 pointerup
       if (previewTimer.current === null) {
-        previewTimer.current = setTimeout(() => {
+        previewTimer.current = onceTimer(() => {
           previewTimer.current = null;
           setPreviewTick((value) => value + 1);
         }, 80);
@@ -2907,16 +2905,20 @@ function MapModule(props) {
   };
   const approvedAll = ["assets", "rules", "paint", "export"].every((stage) => approvedOf(stage));
 
-  // 作业进行中就轮询：验收预览 / 导出是宿主上的异步任务，提交那次读到的还是「进行中」
+  // 作业进行中就轮询：验收预览 / 导出是宿主上的异步任务，提交那次读到的还是「进行中」。
+  // 走集中调度器（同 key 去重 / 失败退避 / 页面隐藏暂停）。
   const projectBusy = view !== null && view.busy === true;
   React.useEffect(() => {
     if (projectBusy !== true || viewId === null || api === undefined) return undefined;
-    const timer = setInterval(() => {
-      void loadProject(viewId, true);
-    }, 1500);
-    return () => clearInterval(timer);
+    const handle = scheduler.watch({
+      key: "map:" + String(viewId) + ":busy",
+      intervalMs: 1500,
+      immediate: false,
+      run: () => loadProject(viewId, true)
+    });
+    return () => handle.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectBusy, viewId, api]);
+  }, [projectBusy, viewId, loadProject, scheduler]);
 
   /**
    * 「素材属性」窗口：点素材列表里的一行打开。

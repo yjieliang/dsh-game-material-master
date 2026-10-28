@@ -399,9 +399,12 @@ check(
 );
 const pollBlock = source.slice(source.indexOf("// 有任务在跑时轮询"), source.indexOf("const selectedSong"));
 check(
-  "★ 任务轮询用 setInterval 且不依赖 updatedAt（否则只刷新一次就停住）",
-  pollBlock.includes("setInterval") && pollBlock.includes("void loadJob(jobId)") && !pollBlock.includes("job?.updatedAt"),
-  pollBlock.slice(0, 160)
+  "★ 任务轮询走集中调度器（scheduler.watch + 稳定 key），且不依赖 updatedAt（否则只刷新一次就停住）",
+  pollBlock.includes("scheduler.watch") &&
+    pollBlock.includes('key: "music:" + String(jobId)') &&
+    pollBlock.includes("run: () => loadJob(jobId)") &&
+    !pollBlock.includes("job?.updatedAt"),
+  pollBlock.slice(0, 200)
 );
 
 // ── 功能管理 ────────────────────────────────────────────────────────────

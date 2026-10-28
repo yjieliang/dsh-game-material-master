@@ -28,6 +28,7 @@ export function createIso(deps: any) {
     CopyIdButton,
     MapToolIcon,
     openIsoAssetChat,
+    gmmScheduler,
   } = deps;
 
     /** 「新增素材」物件大小的上下限（与宿主 `isotiles.parseIsoObjectScale` 同口径）。 */
@@ -163,7 +164,7 @@ export function createIso(deps: any) {
       };
     }
 
-    const RawModule = createIsoModule({ React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat });
+    const RawModule = createIsoModule({ React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat, scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "iso" });

@@ -7,6 +7,7 @@
  */
 
 import { markRender } from "./platform/perf.js";
+import { onceTimer } from "./platform/lifecycle.js";
 
 export interface SequenceRuntime {
   React: any;
@@ -190,7 +191,7 @@ function SequenceModule(props) {
     const id = job.id;
     const value = await run(fn, okText, feedback);
     for (const delay of [1200, 3000, 5500, 9000]) {
-      setTimeout(() => {
+      onceTimer(() => {
         if (jobIdRef.current === id) void load(id);
       }, delay);
     }

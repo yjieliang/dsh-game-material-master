@@ -124,6 +124,7 @@ export function createComposition(deps: any) {
       NumField,
       CopyIdButton,
       openAssetChat,
+      gmmScheduler,
     });
     const { MapModule, MAP_PLAN_LIST, MAP_wrapIndex, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, MapModuleRaw } = map;
 
@@ -216,6 +217,7 @@ export function createComposition(deps: any) {
       ReviewModeBar,
       CopyIdButton,
       openMusicChat,
+      gmmScheduler,
     });
     const { MusicModule, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, MusicModuleRaw } = music;
 
@@ -255,6 +257,7 @@ export function createComposition(deps: any) {
       CopyIdButton,
       musicAssetUrl,
       musicDownloadUrl,
+      gmmScheduler,
     });
     const { SfxModule, sfxFormatLabel, SfxModuleRaw } = sfx;
 
@@ -318,6 +321,7 @@ export function createComposition(deps: any) {
       CopyIdButton,
       MapToolIcon,
       openIsoAssetChat,
+      gmmScheduler,
     });
     const { IsoModule, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, ISO_addPreviewScene, IsoModuleRaw } = iso;
 
@@ -531,6 +535,7 @@ export function createComposition(deps: any) {
       UploadBox,
       CopyIdButton,
       JobLogPanel,
+      gmmScheduler,
     });
     const { RigModule, RigSemanticsPanel } = rig;
 

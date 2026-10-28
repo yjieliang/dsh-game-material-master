@@ -634,7 +634,7 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
         const polling = projectBusy(store.getState().project) || tasks.active;
         if (polling) {
           if (handle === null) {
-            // 走集中调度器：同 key 去重、失败退避、页面隐藏暂停（原来是裸 setInterval）。
+            // 走集中调度器：同 key 去重、失败退避、页面隐藏暂停（原来是面板自己的周期定时器）。
             handle = scheduler.watch({
               key: "project:" + String(projectId) + ":busy",
               intervalMs: 2500,

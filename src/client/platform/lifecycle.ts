@@ -76,6 +76,47 @@ export function createResources(): Resources {
 }
 
 /**
+ * 一次性延时时器（可取消）：语义与裸 `setTimeout` 完全一致，只是把实现收在 platform。
+ *
+ * 为什么不走 scheduler：调度器是给**周期轮询**用的（主时钟 250ms + 去重 / 退避 /
+ * 页面隐藏暂停）。防抖 / 节流 / 延时刷新大多跟用户这一次操作绑定，塞进调度器会被
+ * 主时钟粒度拖慢，而且它们本来就该随 effect 的 cleanup 取消。
+ *
+ * @param fn - 到点执行
+ * @param ms - 延时毫秒
+ * @returns 取消函数（effect cleanup 里调，替代 clearTimeout）
+ */
+export function onceTimer(fn: () => void, ms: number): () => void {
+  const handle = setTimeout(fn, ms);
+  let cancelled = false;
+  return () => {
+    if (cancelled) return;
+    cancelled = true;
+    clearTimeout(handle);
+  };
+}
+
+/**
+ * 周期定时器（可取消）：语义与裸 `setInterval` 完全一致。
+ *
+ * 只给**纯表现层时钟**用（例如动画帧号推进）。会发请求的轮询不要用它 ——
+ * 走 `platform/scheduler.watch`（去重 / 退避 / 页面隐藏暂停都在那边）。
+ *
+ * @param fn - 每个周期执行
+ * @param ms - 周期毫秒
+ * @returns 取消函数（effect cleanup 里调，替代 clearInterval）
+ */
+export function repeatTimer(fn: () => void, ms: number): () => void {
+  const handle = setInterval(fn, ms);
+  let cancelled = false;
+  return () => {
+    if (cancelled) return;
+    cancelled = true;
+    clearInterval(handle);
+  };
+}
+
+/**
  * 组件内的登记簿：卸载时自动 dispose。
  * @returns 登记簿
  */

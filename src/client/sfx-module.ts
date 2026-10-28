@@ -25,10 +25,12 @@ export interface SfxRuntime {
   musicAssetUrl: any;
   musicDownloadUrl: any;
   sfxFormatLabel: any;
+  /** 集中轮询调度器（platform/scheduler；组合根注入） */
+  scheduler: any;
 }
 
 export function createSfxModule(rt: SfxRuntime) {
-  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, Chip, Btn, NumField, LoadingOverlay, BusyBtn, CopyIdButton, musicAssetUrl, musicDownloadUrl, sfxFormatLabel } = rt;
+  const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, Chip, Btn, NumField, LoadingOverlay, BusyBtn, CopyIdButton, musicAssetUrl, musicDownloadUrl, sfxFormatLabel, scheduler } = rt;
 function sfxFmtBytes(bytes) {
   const value = Number(bytes) || 0;
   if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`;
@@ -164,14 +166,18 @@ function SfxModule(props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intent]);
 
-  // 有任务在跑时轮询；用 setInterval（不要依赖 updatedAt，见音乐模块的踩坑）。
+  // 有任务在跑时轮询；走集中调度器（同 key 去重 / 失败退避 / 页面隐藏暂停），
+  // 且不要依赖 updatedAt 重排（见音乐模块的踩坑）。
   React.useEffect(() => {
     if (job?.busy !== true || jobId === null) return undefined;
-    const timer = window.setInterval(() => {
-      void loadJob(jobId);
-    }, 2500);
-    return () => window.clearInterval(timer);
-  }, [job?.busy, jobId, loadJob]);
+    const handle = scheduler.watch({
+      key: "sfx:" + String(jobId),
+      intervalMs: 2500,
+      immediate: false,
+      run: () => loadJob(jobId)
+    });
+    return () => handle.cancel();
+  }, [job?.busy, jobId, loadJob, scheduler]);
 
   const saveJob = async () => {
     if (api === undefined || jobId === null) return undefined;

@@ -616,6 +616,48 @@ try {
   bundle.apply(fakeCtx);
   check("apply 可执行", true);
 
+  /**
+   * 面板的忙碌轮询走**集中调度器**（`scheduler.watch` 一个 1.5s 的轮询项），不再自己
+   * `setInterval`。测试里把握把（`window.__GMM_SCHEDULER__`）的 `watch` 接到同一个
+   * `intervals` 队列：`tickIntervals()` 仍然等价于真机上「又过了 1.5s」，同时把注册项
+   * 记下来，后面断言它确实走的是集中调度器（去重 / 退避 / 页面隐藏暂停都靠它）。
+   */
+  const schedulerWatches = [];
+  const schedulerStub = windowStub.__GMM_SCHEDULER__;
+  check(
+    "测试握把：window.__GMM_SCHEDULER__ 可用（busy 轮询才接得到集中调度器）",
+    schedulerStub !== undefined && schedulerStub !== null && typeof schedulerStub.watch === "function"
+  );
+  check(
+    "★ 源码：busy 轮询走集中调度器（scheduler.watch，key = map:<id>:busy，1500ms，immediate:false）",
+    /scheduler\.watch\(\{[\s\S]{0,240}?key: "map:" \+ String\(viewId\) \+ ":busy"[\s\S]{0,200}?intervalMs: 1500[\s\S]{0,120}?immediate: false/.test(source)
+  );
+  if (schedulerStub !== undefined && schedulerStub !== null && typeof schedulerStub.watch === "function") {
+    schedulerStub.watch = (options) => {
+      const record = { key: options.key, intervalMs: options.intervalMs, immediate: options.immediate !== false };
+      schedulerWatches.push(record);
+      let cancelled = false;
+      const id = ++intervalSeq;
+      intervals.set(id, () => {
+        if (cancelled) return;
+        void options.run();
+      });
+      const handle = {
+        key: options.key,
+        enabled: true,
+        cancel() {
+          if (cancelled) return;
+          cancelled = true;
+          intervals.delete(id);
+        },
+        poke() {}
+      };
+      // 让测试能在「临时渲染」结束时把登记项摘掉（不放回去会漏到后面的 tickIntervals 里）。
+      record.cancel = handle.cancel;
+      return handle;
+    };
+  }
+
   const test = bundle.__test ?? {};
   const { MapModule, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells } = test;
   check("产物带出 MapModule", typeof MapModule === "function");
@@ -1297,6 +1339,51 @@ try {
     textOf(assetsCard).match(/会动 \d+ 帧/)?.[0] ?? ""
   );
   check("列表里没有「改格子 / 改形态」这类入口（属性只能在新增时定）", !/改格子|改形态|这块素材怎么用/.test(textOf(assetsCard)));
+
+  /**
+   * ── busy 轮询的接线：走集中调度器 ────────────────────────────────────────
+   *
+   * `view.busy === true` 时面板每 1.5s 重读一次项目（真机导出时文件列表靠它自己冒出来）。
+   * 这条路径现在走 `platform/scheduler.watch`，不再自己开定时器。
+   *
+   * ⚠️ 真实导出流程在本机沙箱里会被 ffmpeg 的 spawn 挡住（本机没装 ffmpeg，见脚本末尾的
+   * 豁免说明），所以「导出跑完后界面自己刷新」那条端到端断言这里到不了。这段只验接线：
+   * busy 期间确实登记了 `map:<id>:busy` 的 1.5s 轮询项，而且时钟一到真的会去读项目
+   * （不是登了个空注册）。
+   */
+  {
+    let busyReads = 0;
+    const busyView = await G.mapView(await G.readMapProject(projectId));
+    const busyApi = {
+      ...api,
+      getMapProject: async () => {
+        busyReads++;
+        return { ...busyView, busy: true };
+      }
+    };
+    const watchesBefore = schedulerWatches.length;
+    /**
+     * ⚠️ 用 `withFreshHooks` 的**临时 Hook 存储**渲染：这次夹具是为了验接线，
+     * 不能把正在测的面板的既有状态（相机 / 当前层 / 笔刷 …）清掉 —— 后面依赖它的
+     * 断言会连锁崩（本机踩过：直接 remount 之后拖拽 / 撤销全红了）。
+     * 时钟也在临时存储里拨：轮询触发的 setState 写进那份临时存储，结束时一起丢掉。
+     */
+    await withFreshHooks(async () => {
+      await renderTree(() => MapModule({ api: busyApi }), { fresh: true });
+      const registered = schedulerWatches.slice(watchesBefore).find((entry) => entry.key === "map:" + projectId + ":busy");
+      check(
+        "★ busy 期间向集中调度器登记 1.5s 轮询（key = map:<id>:busy，immediate:false）",
+        registered !== undefined && registered.intervalMs === 1500 && registered.immediate === false,
+        JSON.stringify(schedulerWatches.slice(watchesBefore))
+      );
+      const readsBefore = busyReads;
+      await tickIntervals();
+      check("★ 调度器时钟一到，busy 轮询真的重读项目（不是一个空注册）", busyReads > readsBefore, `${readsBefore} → ${busyReads}`);
+      // 摘掉这次临时渲染登记的轮询，别让它漏到后面的 tickIntervals 里。
+      if (registered !== undefined && typeof registered.cancel === "function") registered.cancel();
+    });
+  }
+
   /**
    * ── 导出卡片：**选择 / 执行 / 拿文件**三件事分开 ──────────────────────────
    *
@@ -1381,6 +1468,11 @@ try {
     await tickTimers();
   }
   check("导出跑完后界面自己刷新出结果区（busy 期间的轮询真的在跑）", result !== undefined && /最近一次导出：\d+ 个文件/.test(textOf(result)), textOf(resultCard).slice(0, 140));
+  check(
+    "★ busy 轮询走集中调度器（scheduler.watch，key = map:<id>:busy，1500ms）",
+    schedulerWatches.some((entry) => /^map:.+:busy$/.test(String(entry.key)) && entry.intervalMs === 1500 && entry.immediate === false),
+    JSON.stringify(schedulerWatches.slice(0, 4))
+  );
   const download = collect(resultCard, (node) => node.props?.["data-testid"] === "map-export-download")[0];
   const viewForExport = await G.mapView(await G.readMapProject(projectId));
   const zipFile = viewForExport.exportFiles.find((file) => file.endsWith(".zip"));

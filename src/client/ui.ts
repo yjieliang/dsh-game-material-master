@@ -11,6 +11,8 @@
  *   · 只做展示与纯函数，不直接发远程调用。
  */
 
+import { onceTimer } from "./platform/lifecycle.js";
+
 /**
  * @param deps.React - 宿主注入的 react
  * @param deps.h - deps.React.createElement 的简写
@@ -332,13 +334,13 @@ export function createUiKit({ React, h, T }: any) {
         const timers = timersRef.current;
         return () => {
           aliveRef.current = false;
-          for (const id of timers) clearTimeout(id);
+          for (const cancel of timers) cancel();
           timers.length = 0;
         };
       }, []);
 
       const release = React.useCallback((key) => {
-        const id = setTimeout(() => {
+        const cancel = onceTimer(() => {
           if (!aliveRef.current) return;
           setMap((current) => {
             if (current[key] === undefined) return current;
@@ -347,7 +349,7 @@ export function createUiKit({ React, h, T }: any) {
             return next;
           });
         }, TASK_HOLD_MS);
-        timersRef.current.push(id);
+        timersRef.current.push(cancel);
       }, []);
 
       const run = React.useCallback(
@@ -662,7 +664,7 @@ export function createUiKit({ React, h, T }: any) {
       const [state, setState] = React.useState("idle");
       const timer = React.useRef(null);
       React.useEffect(() => () => {
-        if (timer.current !== null) clearTimeout(timer.current);
+        if (timer.current !== null) timer.current();
       }, []);
       if (id === null || id === undefined || id === "") return null;
       const text = String(id);
@@ -670,8 +672,8 @@ export function createUiKit({ React, h, T }: any) {
         if (event !== null && event !== undefined && typeof event.stopPropagation === "function") event.stopPropagation();
         const ok = await copyIdText(text);
         setState(ok ? "ok" : "failed");
-        if (timer.current !== null) clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
+        if (timer.current !== null) timer.current();
+        timer.current = onceTimer(() => {
           timer.current = null;
           setState("idle");
         }, 1600);

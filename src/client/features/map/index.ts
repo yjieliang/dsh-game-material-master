@@ -33,6 +33,7 @@ export function createMap(deps: any) {
     NumField,
     CopyIdButton,
     openAssetChat,
+    gmmScheduler,
   } = deps;
 
     const MAP_PLAN_LIST = "chunks";
@@ -300,7 +301,7 @@ export function createMap(deps: any) {
       return null;
     }
 
-    const RawModule = createMapModule({ React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat });
+    const RawModule = createMapModule({ React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat, scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "map" });

@@ -30,6 +30,7 @@ export function createRig(deps: any) {
     UploadBox,
     CopyIdButton,
     JobLogPanel,
+    gmmScheduler,
   } = deps;
 
   /** 重算本模块的模块级文案表（语言切换时由 client.ts 的 staticTextRebuilders 调用）。 */
@@ -2542,7 +2543,7 @@ export function createRig(deps: any) {
       );
     }
 
-    const RigModuleRaw = createRigModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, usePendingTasks, LoadingOverlay, BusyBtn, BusyBadge, ReviewModeBar, readFileBase64, UploadBox, CopyIdButton, JobLogPanel, RIG_ANIMATIONS, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, RIG_BUSY_LABEL, rigStageOf, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RigTexturePanel, RigAssemblyEditor, experimentalGateMuted, ExperimentalBar, RigExperimentalDialog });
+    const RigModuleRaw = createRigModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, usePendingTasks, LoadingOverlay, BusyBtn, BusyBadge, ReviewModeBar, readFileBase64, UploadBox, CopyIdButton, JobLogPanel, RIG_ANIMATIONS, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, RIG_BUSY_LABEL, rigStageOf, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RigTexturePanel, RigAssemblyEditor, experimentalGateMuted, ExperimentalBar, RigExperimentalDialog, scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const RigBoundary = createFeatureBoundary({ name: "rig" });

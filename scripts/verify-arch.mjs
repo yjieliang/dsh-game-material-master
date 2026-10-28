@@ -23,8 +23,13 @@ const BUNDLE = ROOT + "lib/client.js";
 
 /** 迁移期棘轮：历史遗留允许存在，但不得增长（每迁一个模块就把数字往下调）。 */
 const BASELINE = {
-  /** 非 platform 客户端源码里的 setInterval/setTimeout 计数 */
-  legacyTimers: 16,
+  /**
+   * 非 platform 客户端源码里的 setInterval/setTimeout 计数。
+   * P10 已把最后一批裸定时器收编：周期轮询 → platform/scheduler.watch，
+   * 防抖 / 节流 / 延时刷新 → platform/lifecycle.onceTimer（repeatTimer 只给动画钟）。
+   * 所以这里是 0 —— 新代码不许再出现裸定时器（注释里提及也会被数到）。
+   */
+  legacyTimers: 0,
   /** 非 platform 客户端源码里的裸 fetch( 计数 */
   legacyFetch: 3,
   /** 非 platform 客户端源码里的 addEventListener 计数（走 lifecycle 之前允许存在） */

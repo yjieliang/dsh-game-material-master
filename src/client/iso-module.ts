@@ -7,6 +7,7 @@
  */
 
 import { markRender } from "./platform/perf.js";
+import { onceTimer, repeatTimer } from "./platform/lifecycle.js";
 
 export interface IsoRuntime {
   React: any;
@@ -32,10 +33,12 @@ export interface IsoRuntime {
   ISO_lineCells: any;
   ISO_addPreviewScene: any;
   openIsoAssetChat: any;
+  /** 集中轮询调度器（platform/scheduler；组合根注入） */
+  scheduler: any;
 }
 
 export function createIsoModule(rt: IsoRuntime) {
-  const { React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat } = rt;
+  const { React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat, scheduler } = rt;
 
 function IsoModule(props) {
   markRender("IsoModule");
@@ -265,7 +268,8 @@ function IsoModule(props) {
   React.useEffect(() => {
     if (view === null || layout === null || measured !== true) return undefined;
     let cancelled = false;
-    const timer = setTimeout(async () => {
+    const cancel = onceTimer(() => {
+      void (async () => {
       const pending = pendingRef.current;
       const have = pending.length > 0 ? [] : [...planRef.current.keys()];
       try {
@@ -298,10 +302,11 @@ function IsoModule(props) {
       } catch (error) {
         if (!cancelled) setNotice({ kind: "error", text: msg(error) });
       }
+      })();
     }, pendingRef.current.length > 0 ? 60 : 20);
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.id, viewport.w, viewport.h, zoom, pan.x, pan.y, planEpoch, previewTick, single, layerIndex, showPass, measured, api]);
@@ -313,17 +318,22 @@ function IsoModule(props) {
       return undefined;
     }
     const started = Date.now();
-    const timer = setInterval(() => setAnimElapsed((Date.now() - started) / 1000), 90);
-    return () => clearInterval(timer);
+    const cancel = repeatTimer(() => setAnimElapsed((Date.now() - started) / 1000), 90);
+    return cancel;
   }, [planMeta.frameCount, view?.id]);
 
-  // 作业进行中轮询（预览 / 导出）
+  // 作业进行中轮询（预览 / 导出）：走集中调度器（同 key 去重 / 失败退避 / 页面隐藏暂停）。
   React.useEffect(() => {
     if (view === null || view.busy !== true) return undefined;
-    const timer = setInterval(() => void loadProject(view.id, true), 1500);
-    return () => clearInterval(timer);
+    const handle = scheduler.watch({
+      key: "iso:" + String(view.id) + ":busy",
+      intervalMs: 1500,
+      immediate: false,
+      run: () => loadProject(view.id, true)
+    });
+    return () => handle.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view?.id, view?.busy, api]);
+  }, [view?.id, view?.busy, loadProject, scheduler]);
 
   const clampPan = (next) => {
     if (view === null) return next;

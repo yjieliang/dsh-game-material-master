@@ -37,10 +37,12 @@ export interface MusicRuntime {
   musicStatusChip: any;
   MusicWave: any;
   openMusicChat: any;
+  /** 集中轮询调度器（platform/scheduler；组合根注入） */
+  scheduler: any;
 }
 
 export function createMusicModule(rt: MusicRuntime) {
-  const { React, h, activeLang, T, useLocaleTick, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, MUSIC_ENGINES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, useStudioIntent, msg, Chip, Btn, NumField, BusyBtn, BusyBadge, ReviewModeBar, CopyIdButton, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, openMusicChat } = rt;
+  const { React, h, activeLang, T, useLocaleTick, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, MUSIC_ENGINES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, useStudioIntent, msg, Chip, Btn, NumField, BusyBtn, BusyBadge, ReviewModeBar, CopyIdButton, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, openMusicChat, scheduler } = rt;
 
 function MusicModule(props) {
   markRender("MusicModule");
@@ -170,19 +172,22 @@ function MusicModule(props) {
     setShowGuide(false);
   }, [workflow, job?.id]);
 
-  // 有任务在跑时轮询；跑完自动停。
+  // 有任务在跑时轮询；跑完自动停。走集中调度器：同 key 去重、失败退避、页面隐藏暂停。
   //
-  // ⚠️ 这里**必须用 setInterval，且不要把 job.updatedAt 放进依赖**：
+  // ⚠️ **不要把 job.updatedAt 放进依赖**：
   // 平台还在排队时，每次 getMusicJob 拿到的 updatedAt 可能完全一样，
-  // setTimeout + updatedAt 会让 effect 不再重排，轮询只跑一次就停住 ——
+  // 依赖 updatedAt 重排会让 effect 不再重跑，轮询只跑一次就停住 ——
   // 表现就是「点完按钮转圈结束、歌不出来，切走再切回才出现」。
   React.useEffect(() => {
     if (job?.busy !== true || jobId === null) return undefined;
-    const timer = window.setInterval(() => {
-      void loadJob(jobId);
-    }, 4000);
-    return () => window.clearInterval(timer);
-  }, [job?.busy, jobId, loadJob]);
+    const handle = scheduler.watch({
+      key: "music:" + String(jobId),
+      intervalMs: 4000,
+      immediate: false,
+      run: () => loadJob(jobId)
+    });
+    return () => handle.cancel();
+  }, [job?.busy, jobId, loadJob, scheduler]);
 
   const selectedSong = (job?.songs ?? []).find((song) => song.id === selectedSongId) ?? null;
   const versions = job?.versions ?? [];

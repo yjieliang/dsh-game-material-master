@@ -33,6 +33,7 @@ export function createMusic(deps: any) {
     ReviewModeBar,
     CopyIdButton,
     openMusicChat,
+    gmmScheduler,
   } = deps;
 
     // ── 模块七：音乐生成编辑 ─────────────────────────────────────────────
@@ -123,7 +124,7 @@ export function createMusic(deps: any) {
       );
     }
 
-    const RawModule = createMusicModule({ React, h, activeLang, T, useLocaleTick, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, MUSIC_ENGINES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, useStudioIntent, msg, Chip, Btn, NumField, BusyBtn, BusyBadge, ReviewModeBar, CopyIdButton, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, openMusicChat });
+    const RawModule = createMusicModule({ React, h, activeLang, T, useLocaleTick, buildMusicRequestPrompt, buildComposeRequestPrompt, deriveMusicName, MUSIC_ENGINES, MUSIC_FORMATS, MUSIC_EDIT_LIMITS, useStudioIntent, msg, Chip, Btn, NumField, BusyBtn, BusyBadge, ReviewModeBar, CopyIdButton, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, openMusicChat, scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "music" });
