@@ -5,6 +5,9 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { markRender } from "./platform/perf.js";
+
 export interface MapRuntime {
   React: any;
   h: any;
@@ -40,6 +43,7 @@ export function createMapModule(rt: MapRuntime) {
   const { React, h, activeLang, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, stampLimits, clampStampSpan, ASSET_SHAPES, assetShapeLabel, buildAssetRequestPrompt, useHiddenModules, OPEN_SHAPES, useStudioIntent, msg, Btn, NumField, CopyIdButton, MAP_PLAN_LIST, MAP_pointToCell, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, openAssetChat } = rt;
 
 function MapModule(props) {
+  markRender("MapModule");
   useLocaleTick();
   const api = props.api;
 

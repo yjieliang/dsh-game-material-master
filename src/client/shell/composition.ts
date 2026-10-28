@@ -26,6 +26,7 @@ export function createComposition(deps: any) {
   const {
     h,
     React,
+    store,
     activeLang,
     fill,
     T,
@@ -99,6 +100,7 @@ export function createComposition(deps: any) {
   } = deps;
     // ── 模块六 · 地图编辑器（feature 切片，见 src/client/features/map/）────────────────
     const map = createMap({
+      store,
 
           h,
       React,
@@ -157,6 +159,7 @@ export function createComposition(deps: any) {
      */
     // ── 模块③：序列帧生成（feature 切片，见 src/client/features/sequence/）──────────
     const sequence = createSequence({
+      store,
 
           h,
       T,
@@ -191,6 +194,7 @@ export function createComposition(deps: any) {
 
     // ── 模块七：音乐生成编辑（feature 切片，见 src/client/features/music/）────────────
     const music = createMusic({
+      store,
           T,
       h,
       Chip,
@@ -234,6 +238,7 @@ export function createComposition(deps: any) {
 
     // ── 模块八：音效生成（feature 切片，见 src/client/features/sfx/）────────────
     const sfx = createSfx({
+      store,
 
           T,
       React,
@@ -255,6 +260,7 @@ export function createComposition(deps: any) {
 
     // ── 模块②：图片生成（feature 切片，见 src/client/features/image/）──────────────
     const image = createImage({
+      store,
 
           React,
       h,
@@ -293,6 +299,7 @@ export function createComposition(deps: any) {
 
     // ── 模块五 · 45° 地图编辑器（iso，feature 切片，见 src/client/features/iso/）──────────
     const iso = createIso({
+      store,
 
           React,
       h,
@@ -501,6 +508,7 @@ export function createComposition(deps: any) {
      */
     // ── 模块④：骨骼动画（feature 切片，见 src/client/features/rig/）─────────────
     const rig = createRig({
+      store,
       T,
       React,
       h,
@@ -546,6 +554,7 @@ export function createComposition(deps: any) {
     };
     // ── 模块①：八方向图（feature 切片，见 src/client/features/sprite/）────────
     const sprite = createSprite({
+      store,
       T,
       DIRECTION_KEYS,
       LABEL_OF,
@@ -575,7 +584,7 @@ export function createComposition(deps: any) {
     });
     let IMAGE_MODES = sprite.IMAGE_MODES();
     const { renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage } = sprite;
-    const StudioPanel = createStudioPanel({ React, h, T, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
+    const StudioPanel = createStudioPanel({ React, h, T, store, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
 
   // 启动自检：面板的模块表顺序必须和 feature registry 一致（两处清单不许漂移）。
   try {

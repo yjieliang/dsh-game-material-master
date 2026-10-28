@@ -5,6 +5,9 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { markRender } from "./platform/perf.js";
+
 export interface RigRuntime {
   React: any;
   h: any;
@@ -60,6 +63,7 @@ export function createRigModule(rt: RigRuntime) {
   const { React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, usePendingTasks, LoadingOverlay, BusyBtn, BusyBadge, ReviewModeBar, readFileBase64, UploadBox, CopyIdButton, JobLogPanel, RIG_ANIMATIONS, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, RIG_BUSY_LABEL, rigStageOf, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RigTexturePanel, RigAssemblyEditor, experimentalGateMuted, ExperimentalBar, RigExperimentalDialog } = rt;
 
 function RigModule(props) {
+  markRender("RigModule");
   useLocaleTick();
   const api = props.api;
   const [jobs, setJobs] = React.useState([]);

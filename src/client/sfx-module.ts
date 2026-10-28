@@ -5,6 +5,9 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { markRender } from "./platform/perf.js";
+
 export interface SfxRuntime {
   React: any;
   h: any;
@@ -46,6 +49,7 @@ function sfxSettingsOf(job) {
 }
 
 function SfxModule(props) {
+  markRender("SfxModule");
   useLocaleTick();
   const api = props.api;
   const intent = useStudioIntent();

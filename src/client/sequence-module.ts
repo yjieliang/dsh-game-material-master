@@ -5,6 +5,9 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { markRender } from "./platform/perf.js";
+
 export interface SequenceRuntime {
   React: any;
   scheduler: any;
@@ -50,6 +53,7 @@ export function createSequenceModule(rt: SequenceRuntime) {
   const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel } = rt;
 
 function SequenceModule(props) {
+  markRender("SequenceModule");
   useLocaleTick();
   const api = props.api;
   const [jobs, setJobs] = React.useState([]);

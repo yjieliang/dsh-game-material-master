@@ -31,6 +31,8 @@ export interface StudioRuntime {
   scheduler?: any;
   /** 性能与错误计数（platform/perf） */
   perf?: any;
+  /** 面板共享状态（platform/store 的 createStudioStateStore 产物）；组件按 selector 订阅 */
+  store?: any;
   /** 宿主 ctx（保留给确实需要的场景，勿滥用） */
   ctx?: any;
 }

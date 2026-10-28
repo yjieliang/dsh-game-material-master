@@ -5,6 +5,9 @@
  * `__ModuleLoader__.load` 的 factory 里可用 —— 模块顶层不能直接抓 React。所以共享物
  * （React / h / T / api 辅助 / 公共组件）由入口显式传进来，这里只构造一次组件。
  */
+
+import { markRender } from "./platform/perf.js";
+
 export interface IsoRuntime {
   React: any;
   h: any;
@@ -35,6 +38,7 @@ export function createIsoModule(rt: IsoRuntime) {
   const { React, h, fill, T, useLocaleTick, deriveAssetName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX, buildIsoAssetRequestPrompt, useHiddenModules, useStudioIntent, Btn, NumField, readFileBase64, CopyIdButton, MapToolIcon, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_cellCenter, ISO_lineCells, ISO_addPreviewScene, openIsoAssetChat } = rt;
 
 function IsoModule(props) {
+  markRender("IsoModule");
   useLocaleTick();
   const api = props.api;
   const intent = useStudioIntent();

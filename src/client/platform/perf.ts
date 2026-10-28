@@ -122,3 +122,19 @@ export function createPerf(options: { enabled?: boolean; maxErrors?: number } = 
  * 这是一个可被子会话覆盖的弱引用，不做强约束。
  */
 export const perf: Perf = createPerf();
+
+/**
+ * 组件渲染计数：组件函数体第一行调用它，真机在控制台读 __GMM_PERF__.renderCount("名字")。
+ *
+ * 为什么走 globalThis 而不是 studio().perf：自检桩（verify-feedback / perf-poll）没有装
+ * 运行时，组件照常要能渲染；没装 perf 时这里静默跳过，不影响任何行为。
+ * @param name - 组件名（与 __GMM_PERF__.renderCount 的参数一致）
+ */
+export function markRender(name: string): void {
+  try {
+    const counters = (globalThis as any).__GMM_PERF__;
+    if (counters !== undefined && typeof counters.recordRender === "function") counters.recordRender(name);
+  } catch {
+    /* 计数永不影响渲染 */
+  }
+}

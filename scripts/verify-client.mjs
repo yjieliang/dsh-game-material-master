@@ -132,12 +132,19 @@ function objectKeys(body) {
 /** 找 `function NAME(ctx) {` 的函数体，并读出它从 ctx 解构出来的键。 */
 function renderersIn(text) {
   const found = new Map();
-  const re = /function\s+(\w+)\s*\(\s*ctx\s*\)\s*\{/g;
+  // P9 起阶段渲染不再收整包 ctx：改成「组件 + props」，props 里只放它真正要用的回调；
+  // 项目快照与草稿从 platform/store 按 selector 订阅。契约本身不变：
+  // 每个渲染函数声明的 props 键，都必须在挂载点被转发（漏传 api 就是当年那个 bug）。
+  const re = /function\s+(\w+)\s*\(\s*(ctx|props)\s*\)\s*\{/g;
   let match;
   while ((match = re.exec(text)) !== null) {
+    // 只认阶段渲染函数（renderX）：ui 组件也有 `(props) { const {...} = props }` 形状，
+    // 把它们算进来会拿「按钮少传一个可选回调」当阶段转发失败。
+    if (!/^render[A-Z]/.test(match[1])) continue;
+    const param = match[2];
     const body = bracedBody(text, match.index + match[0].length - 1);
     if (body === null) continue;
-    const destructured = /const\s*\{([\s\S]*?)\}\s*=\s*ctx\s*;/.exec(body);
+    const destructured = new RegExp("const\\s*\\{([\\s\\S]*?)\\}\\s*=\\s*" + param + "\\s*;").exec(body);
     if (destructured === null) continue;
     const keys = objectKeys(destructured[1]);
     if (keys === null) continue;
@@ -149,10 +156,16 @@ function renderersIn(text) {
 /** 找 `NAME({ … })` 形式、带对象字面量实参的调用点。 */
 function callSitesIn(text, name) {
   const sites = [];
-  const re = new RegExp(`(?<![\\w$.])${name}\\s*\\(`, "g");
+  // 两种挂载写法都认：旧式 `renderX({ … })` 与 P9 起的 `h(renderX, { … })`。
+  const re = new RegExp(`(?<![\\w$.])${name}\\s*\\((?![\\s\\S]{0,40}?\\b(props|ctx)\\b)`, "g");
+  const mountRe = new RegExp(`h\\(\\s*${name}\\s*,\\s*`, "g");
+  const matches = [];
   let match;
-  while ((match = re.exec(text)) !== null) {
-    let cursor = re.lastIndex;
+  while ((match = re.exec(text)) !== null) matches.push(match);
+  while ((match = mountRe.exec(text)) !== null) matches.push(match);
+  matches.sort((left, right) => left.index - right.index);
+  for (const match of matches) {
+    let cursor = match.index + match[0].length;
     while (cursor < text.length && /\s/.test(text[cursor])) cursor++;
     if (text[cursor] !== "{") continue;
     const body = bracedBody(text, cursor);

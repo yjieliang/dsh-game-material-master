@@ -68,6 +68,13 @@ const ReactStub = {
   },
   useContext() {
     return undefined;
+  },
+  // P9 起组件用 platform/store 的 useStore 订阅共享状态：它内部是 useRef +
+  // useSyncExternalStore。桩里把 useSyncExternalStore 也当「一个 Hook」计数
+  // （真 React 同样占一个 Hook 位），并直接返回当前快照。
+  useSyncExternalStore(_subscribe, getSnapshot) {
+    HOOK.cursor++;
+    return getSnapshot();
   }
 };
 
@@ -207,9 +214,29 @@ check("挂上了 main 工作台组件", typeof panel === "function", typeof pane
  * 不在 `props.children` 上；只遍历 props 会一个 `SPR_node` 都找不到。
  */
 function collect(node, predicate, out = [], seen = new Set()) {
+  // P9：组件从 platform/store 取数（不再是 props 一路传下来），而 collect 是**惰性**展开的。
+  // 每棵渲染树在 renderStage 里把当时的 store 快照挂到根节点上；展开它时临时把
+  // store.getState 钉在那份快照上，否则「先渲染、后断言」的旧树会读到最新一次 seed 的状态
+  // （表现为：明明渲染时八张图都在，断言时却拿到空项目）。
+  const gmmSnapshot = node !== null && typeof node === "object" ? node.__studioSnapshot : undefined;
+  if (gmmSnapshot === undefined || gmmSnapshot === null) return collectInner(node, predicate, out, seen);
+  const gmmStore = bundle?.__test?.studioStore;
+  if (gmmStore === undefined) return collectInner(node, predicate, out, seen);
+  // 组件里读数据走的是 store.use(selector)：改成「对这份快照求值」即可，
+  // 不用动内层 createStore 的状态机（use 是闭包里唯一的读数入口）。
+  const gmmOriginalUse = gmmStore.use;
+  gmmStore.use = (selector) => selector(gmmSnapshot);
+  try {
+    return collectInner(node, predicate, out, seen);
+  } finally {
+    gmmStore.use = gmmOriginalUse;
+  }
+}
+
+function collectInner(node, predicate, out = [], seen = new Set()) {
   if (node === null || node === undefined || typeof node !== "object") return out;
   if (Array.isArray(node)) {
-    for (const child of node) collect(child, predicate, out, seen);
+    for (const child of node) collectInner(child, predicate, out, seen);
     return out;
   }
   if (seen.has(node)) return out;
@@ -218,10 +245,10 @@ function collect(node, predicate, out = [], seen = new Set()) {
   // `children` 正常情况下是数组；万一它是别的东西（例如被 memo 包了一层），
   // 就跳过而不是抛异常——测试要报告缺遮罩，不该被遍历本身打断。
   if (Array.isArray(node.children)) {
-    for (const child of node.children) collect(child, predicate, out, seen);
+    for (const child of node.children) collectInner(child, predicate, out, seen);
   }
   for (const value of Object.values(node.props ?? {})) {
-    if (value !== null && typeof value === "object") collect(value, predicate, out, seen);
+    if (value !== null && typeof value === "object") collectInner(value, predicate, out, seen);
   }
   if (typeof node.type === "function") {
     // 函数组件要按 React 语义渲染：children 通过 props 传进去，不在 props 里。
@@ -231,7 +258,7 @@ function collect(node, predicate, out = [], seen = new Set()) {
     const props = { ...(node.props ?? {}) };
     if (children.length === 1) props.children = children[0];
     else if (children.length > 1) props.children = children;
-    collect(node.type(props), predicate, out, seen);
+    collectInner(node.type(props), predicate, out, seen);
   }
   return out;
 }
@@ -335,14 +362,16 @@ const api = new Proxy(
 );
 
 /**
- * 每个组件的「Hook 调用总数」（useState + useRef），顺序与数量都不能变。
+ * 每个组件的「Hook 调用总数」（useState + useRef + useSyncExternalStore），顺序与数量都不能变。
  *
  * 为什么用确切数字而不是「不越界」：桩槽位是按顺序喂值的，顺序一挪，
  * 某个 useState 就会读到别人的值——界面上表现为莫名其妙的初始值，
  * 本地却什么都看不出来。数字变了就说明 Hook 顺序改了，必须同步这里的槽位。
+ *
+ * P9 起 StudioPanel 不再持有项目快照/草稿（搬进 platform/store），Hook 从 21 降到 13。
  */
 const EXPECTED_HOOKS = {
-  StudioPanel: 21,
+  StudioPanel: 13,
   ImageModule: 17,
   SequenceModule: 17
 };
@@ -352,43 +381,64 @@ const EXPECTED_HOOKS = {
  *
  * StudioPanel 的 Hook 顺序（**槽位下标**，顺序不能错；useRef 不读槽位，
  * 但同样占一个下标）：
- *   0 useLocaleTick / 1 projects / 2 projectId / 3 project / 4 stage / 5 module /
- *   6 notice / 7 loading / 8 promptDraft / 9 promptOpen / 10 videoPromptDraft /
- *   11 settingsDraft / 12 sourceBusy / 13 dropOver /
- *   14 fileInputRef(useRef) / 15 usePendingTasks 的 map / 16·17 usePendingTasks 内部两个 ref /
- *   18 useStudioIntent（深链接意图；null = 没有待处理的链接）/
- *   19 useHiddenModules（被隐藏的功能模块 key 数组；[] = 五个全可见）/
- *   20 loadedPrompts(useRef，上次从宿主读到的提示词；不读槽位)
+ *   0 useLocaleTick /
+ *   1·2 projectId 的 useStore（useRef + useSyncExternalStore）/
+ *   3 stage / 4 module / 5 notice / 6 loading /
+ *   7·8·9 usePendingTasks（pending 表 + 内部两个 ref）/
+ *   10 useStudioIntent（深链接意图；null = 没有待处理的链接）/
+ *   11 useHiddenModules（被隐藏的功能模块 key 数组；[] = 全部可见）/
+ *   12 loadedPrompts(useRef，上次从宿主读到的提示词；不读槽位)
  *
- * ⚠️ 槽位是**稀疏**的：下标 18 之前的几个 `undefined` 会让桩回落到 Hook 的初始值，
- * 所以新加的 Hook 必须显式写它的下标——顺手 append 到数组末尾会落到 ref 槽上，
- * 测试会「看起来没生效」。
+ * 项目快照与草稿不在槽位里：P9 起它们在 platform/store，由 seedStudio() 直接写。
+ * ⚠️ 槽位是**稀疏**的：新加的 Hook 必须显式写它的下标——顺手 append 到数组末尾
+ * 会落到 ref 槽上，测试会「看起来没生效」。
  *
- * `hidden` 就是第 19 槽：传 `["rig"]` 之类就能测「隐藏后页签里不再出现」。
+ * `hidden` 就是第 11 槽：传 `["rig"]` 之类就能测「隐藏后页签里不再出现」。
  */
+/**
+ * 把桩数据写进面板共享 store（P9 起项目快照不在 Hook 槽位里，而在 platform/store）。
+ *
+ * 面板只订阅「当前项目 id」这类粗粒度信号；阶段页签 / 源图 / 各阶段主体各自按 selector
+ * 订阅自己那一段，所以这里一次性把整份状态写进去，和真机 loadProject 回包后的状态同形。
+ */
+function seedStudio(project) {
+  const store = bundle?.__test?.studioStore;
+  if (store === undefined) throw new Error("__test 里没有 studioStore");
+  store.setState({
+    projects:
+      project === null
+        ? []
+        : [{ id: "p1", name: project.name ?? "角色", imageReady: 0, videoReady: 0, framesReady: 0, sheetReady: false }],
+    projectId: project === null ? null : "p1",
+    project,
+    promptDraft: {},
+    videoPromptDraft: "",
+    settingsDraft: {},
+    promptOpen: {}
+  });
+  return store;
+}
+
 function renderStage(project, stage, tasks, hidden = []) {
+  // 项目快照走 store（面板不再用 useState 持有 project）。
+  seedStudio(project);
   HOOK.slots = [];
-  HOOK.slots[0] = 0;
-  HOOK.slots[1] = ["p1"];
-  HOOK.slots[2] = "p1";
-  HOOK.slots[3] = project;
-  HOOK.slots[4] = stage;
-  HOOK.slots[5] = "sprite";
-  HOOK.slots[6] = null;
-  HOOK.slots[7] = false;
-  HOOK.slots[8] = {};
-  HOOK.slots[9] = {};
-  HOOK.slots[10] = "";
-  HOOK.slots[11] = {};
-  HOOK.slots[12] = false;
-  HOOK.slots[13] = false;
-  HOOK.slots[14] = undefined;
-  HOOK.slots[15] = tasks.map;
-  HOOK.slots[16] = null;
-  HOOK.slots[19] = hidden;
+  HOOK.slots[0] = 0; // useLocaleTick
+  // 1·2：projectId 的 useStore（useRef + useSyncExternalStore；值来自 store，不读槽位）
+  HOOK.slots[3] = stage;
+  HOOK.slots[4] = "sprite";
+  HOOK.slots[5] = null; // notice
+  HOOK.slots[6] = false; // loading
+  HOOK.slots[7] = tasks.map; // usePendingTasks 的 pending 表
+  // 8·9：usePendingTasks 内部两个 ref（useRef 不读槽位，但各占一个下标）
+  HOOK.slots[10] = null; // useStudioIntent（深链接意图）
+  HOOK.slots[11] = hidden; // useHiddenModules（被隐藏的功能模块 key 数组）
+  // 12：loadedPrompts(useRef，上次从宿主读到的提示词；不读槽位)
   HOOK.cursor = 0;
   hookOverflow = false;
   const tree = panel({ api });
+  // 把渲染时的 store 快照挂在树根：collect 惰性展开旧树时用它（见 collect 的注释）。
+  if (tree !== null && typeof tree === "object") tree.__studioSnapshot = seedStudio(project).getState();
   return { tree, overflow: false, hooks: HOOK.cursor };
 }
 

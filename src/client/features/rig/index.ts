@@ -13,6 +13,7 @@ import { createFeatureBoundary } from "../../platform/errors.js";
 export function createRig(deps: any) {
   // 依赖：组合根注入（P4a 纯搬运阶段先按需展开）
   const {
+    store, // P9：组合根注入的共享 store；本模块内部暂未直接使用，不再往下透传。
     T, React, h,
     Btn, StatusChip, NumField, BusyBtn, Chip,
     useLocaleTick,
@@ -2546,9 +2547,23 @@ export function createRig(deps: any) {
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const RigBoundary = createFeatureBoundary({ name: "rig" });
 
+  /**
+   * 根组件包一层 memo：面板因为**别的原因**重渲染时（别的模块的轮询 / 外壳状态变化），
+   * 活动模块的根组件不会被无关 props 拖着重画。
+   *
+   * 比较器只看两个稳定引用（`api` / `studioCtx`）——面板交给模块的就这两样。
+   * ⚠️ 自检桩（verify-feedback / verify-sfx-client / perf-baseline）的假 React 没有 `memo`
+   * （与 createFeatureBoundary 见过的 `Component` 缺失同一类问题）：缺了就退化为原组件，
+   * 否则产物一加载就抛 `React.memo is not a function`，所有自检一起红。
+   */
+  const MemoRaw = typeof React.memo === "function"
+    ? React.memo(RigModuleRaw, (a: any, b: any) => a?.api === b?.api && a?.studioCtx === b?.studioCtx)
+    : RigModuleRaw;
+
   return {
     rebuildStaticText,
     RIG_ANIMATIONS, make_RIG_ROLES, RIG_ROLES, make_RIG_STAGES, RIG_STAGES, K_RIG_JOB, K_RIG_SHEET, K_RIG_SEGMENT, K_RIG_QA, K_RIG_LAYOUT, K_RIG_BONES, K_RIG_ATLAS, K_RIG_CREATE, K_RIG_REDRAW, make_RIG_BUSY_LABEL, RIG_BUSY_LABEL, rigStageOf, TRACK_VALUE_KEYS, make_TRACK_LABELS, TRACK_LABELS, make_EASING_PRESETS, EASING_PRESETS, easingNameOf, sampleTrack, IDENTITY_TINT, tintToCssFilter, describeTint, noteSuffix, RIG_ZOOM_MIN, RIG_ZOOM_MAX, RIG_ZOOM_STEP, RIG_HANDLES, RIG_SNAP_PX, defaultItemOf, experimentalGateMuted, ExperimentalDialog, ExperimentalBar, RigExperimentalDialog, EXPERIMENTAL_REPO, make_RIG_EXPERIMENTAL_POINTS, RIG_EXPERIMENTAL_POINTS, RigPartCard, RigSemanticsPanel, RigBoneEditor, RigAnimationPanel, RigTimelineEditor, RigQaPanel, RigConstraintPanel, RigMeshPanel, RigPathPanel, RangeRow, RigTexturePanel, RigAssemblyEditor,
-    RigModule: (props: any) => h(RigBoundary, null, h(RigModuleRaw, props))
+    RigModule: (props: any) => h(RigBoundary, null, h(MemoRaw, props)),
+    RigModuleRaw
   };
 }

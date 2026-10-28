@@ -10,6 +10,7 @@ import { createFeatureBoundary } from "../../platform/errors.js";
 export function createIso(deps: any) {
   // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
   const {
+    store, // P9：组合根注入的共享 store；本模块内部暂未直接使用，不再往下透传。
     React,
     h,
     fill,
@@ -167,8 +168,21 @@ export function createIso(deps: any) {
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "iso" });
 
+  /**
+   * 根组件包一层 memo：面板因为**别的原因**重渲染时（别的模块的轮询 / 外壳状态变化），
+   * 活动模块的根组件不会被无关 props 拖着重画。
+   *
+   * 比较器只看两个稳定引用（`api` / `studioCtx`）——面板交给模块的就这两样。
+   * ⚠️ 自检桩（verify-feedback / verify-sfx-client / perf-baseline）的假 React 没有 `memo`
+   * （与 createFeatureBoundary 见过的 `Component` 缺失同一类问题）：缺了就退化为原组件，
+   * 否则产物一加载就抛 `React.memo is not a function`，所有自检一起红。
+   */
+  const MemoRaw = typeof React.memo === "function"
+    ? React.memo(RawModule, (a: any, b: any) => a?.api === b?.api && a?.studioCtx === b?.studioCtx)
+    : RawModule;
+
   return {
-    ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_wrapIndex, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, ISO_addPreviewScene, IsoModule: (props: any) => h(Boundary, null, h(RawModule, props)),
+    ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCellRaw, ISO_wrapIndex, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, ISO_addPreviewScene, IsoModule: (props: any) => h(Boundary, null, h(MemoRaw, props)),
     IsoModuleRaw: RawModule,
   };
 }

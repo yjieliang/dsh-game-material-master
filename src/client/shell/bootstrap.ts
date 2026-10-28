@@ -14,6 +14,7 @@ import { CSS } from "../styles.js";
 import { createUiKit } from "../ui.js";
 import { installRuntime } from "../platform/runtime.js";
 import { perf } from "../platform/perf.js";
+import { createStudioStateStore } from "../platform/store.js";
 import { provideRuntime } from "../platform/runtime.js";
 import { createRemote } from "../platform/remote.js";
 import { createI18n } from "../platform/i18n.js";
@@ -305,8 +306,13 @@ export function createBootstrap(input: BootstrapInput): any {
     // ── 小工具与基础组件 ───────────────────────────────────────────────────
     // 实现已移到 src/client/ui.ts；这里取回同一份引用继续用。
     const { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } = createUiKit({ React, h, T, useLocaleTick });
+    // ── 共享状态（platform/store）：项目快照 + 草稿 ─────────────────────────
+    // 以前这些是 StudioPanel 的 useState，轮询回包 setState 就重渲染整棵模块子树；
+    // 现在写进 store，面板与各模块组件按 selector 精确订阅（P9）。
+    // React 从组合根注入（platform 不许在模块顶层 import react；自检桩也要用自己的假 React）。
+    const studioStore = createStudioStateStore({ React, sameDraft });
     // ui 组件表挂到运行时：后续模块可直接 studio().ui.Btn 取用（P3 起）
-    provideRuntime({ scheduler: gmmScheduler, perf, ui: { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } });
+    provideRuntime({ scheduler: gmmScheduler, perf, store: studioStore, ui: { cls, msg, sameDraft, mergeDrafts, askNewName, statusKind, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, assetUrl, ZoomableImage, TASK_HOLD_MS, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, LocalVideoPick, fileLabel, SaveLink, pickLocalVideo, KeyingFields, copyIdText, CopyIdButton, JobSidebar } });
 
     /**
      * 数字参数输入框。
@@ -562,6 +568,7 @@ export function createBootstrap(input: BootstrapInput): any {
     const composition = createComposition({
           h,
       React,
+      store: studioStore,
       activeLang,
       fill,
       T,
@@ -669,6 +676,6 @@ export function createBootstrap(input: BootstrapInput): any {
      * `mapgeom` / `mapdoc` 的真实现做黄金对照逐点比对 —— 界面复刻的那部分几何
      * 必须有守门的，否则「预览与导出错位」会以静默的方式回来。
      */
-    bundleModule.exports.__test = { StudioPanel, IsoModule: IsoModuleRaw, ImageModule: ImageModuleRaw, SequenceModule: SequenceModuleRaw, mergeDrafts, RigSemanticsPanel, MapModule: MapModuleRaw, MusicModule: MusicModuleRaw, SfxModule: SfxModuleRaw, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, NumField, ZoomableImage, CSS, subscribeIntent, parseIntents, openStudioIntent, OPEN_QUERY_KEY, StudioGlyph, StudioGlyphIcon, publishHiddenModules, useHiddenModules, visibleModulesOf, normalizeHiddenKeys, ConfigSection, attachSessionBridge, openAssetChat, openMusicChat, buildAssetRequestPrompt, buildIsoAssetRequestPrompt, buildMusicRequestPrompt, buildComposeRequestPrompt, openIsoAssetChat, deriveAssetName, deriveMusicName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX };
+    bundleModule.exports.__test = { StudioPanel, IsoModule: IsoModuleRaw, studioStore, ImageModule: ImageModuleRaw, SequenceModule: SequenceModuleRaw, mergeDrafts, RigSemanticsPanel, MapModule: MapModuleRaw, MusicModule: MusicModuleRaw, SfxModule: SfxModuleRaw, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, NumField, ZoomableImage, CSS, subscribeIntent, parseIntents, openStudioIntent, OPEN_QUERY_KEY, StudioGlyph, StudioGlyphIcon, publishHiddenModules, useHiddenModules, visibleModulesOf, normalizeHiddenKeys, ConfigSection, attachSessionBridge, openAssetChat, openMusicChat, buildAssetRequestPrompt, buildIsoAssetRequestPrompt, buildMusicRequestPrompt, buildComposeRequestPrompt, openIsoAssetChat, deriveAssetName, deriveMusicName, ASSET_FRAMES_MIN, ASSET_FRAMES_MAX };
     return bundleModule.exports;
 }

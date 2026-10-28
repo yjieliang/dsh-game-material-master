@@ -12,6 +12,7 @@
  */
 
 import { createFeatureBoundary } from "../../platform/errors.js";
+import { markRender } from "../../platform/perf.js";
 
 export function createSprite(deps: any) {
   // 依赖：组合根注入（P3a 纯搬运阶段先按需展开；P3b 再收窄签名）
@@ -42,6 +43,31 @@ export function createSprite(deps: any) {
     COMPASS_OF,
     KEY_AXIS,
   } = deps;
+
+  /**
+   * 面板共享 store（组合根注入）：项目快照与草稿都在这里，组件按 selector 订阅。
+   * 组合根的 P9 之前是面板 useState + 组件 props 下传，轮询一变就重渲染整棵子树。
+   */
+  const studioStore = deps.store;
+  const storeActions = studioStore.actions;
+
+  /**
+   * 只比较项目快照里与「本阶段」相关的几段字段。
+   *
+   * selector 返回的还是同一个 project 对象，但用这个比较器把「与我没关系的变化」判成相等，
+   * store 就把旧引用还回来、组件不重渲染——这就是轮询只重渲染 ≤3 个组件的关键。
+   * @param a - 上一次的 project
+   * @param b - 新的 project
+   * @param fields - 本阶段关心的顶层字段
+   */
+  function projectFieldsEqual(a: any, b: any, fields: string[]): boolean {
+    if (a === b) return true;
+    if (a === null || a === undefined || b === null || b === undefined) return false;
+    for (const field of fields) {
+      if (!Object.is(a[field], b[field])) return false;
+    }
+    return true;
+  }
 
   /** 模块级文案表：语言切换时由 rebuildStaticText 重算。 */
   let IMAGE_MODES = make_IMAGE_MODES();
@@ -128,7 +154,10 @@ export function createSprite(deps: any) {
     }
 
     /** 阶段①的生成方式切换条。 */
-    function ImageModeBar({ project, api, start, mode }) {
+    function ImageModeBar({ api, start }) {
+      markRender("SpriteImageModeBar");
+      const mode = studioStore.use((state) => imageModeOf(state.project));
+      const projectId = studioStore.use((state) => state.project?.id ?? null);
       return h(
         "div",
         { className: "SPR_modeBar" },
@@ -144,7 +173,7 @@ export function createSprite(deps: any) {
               title: entry.hint,
               "data-testid": `image-mode-${entry.key}`,
               onClick: () =>
-                void start(() => api.setImageMode({ projectId: project.id, mode: entry.key }), { reload: true })
+                void start(() => api.setImageMode({ projectId, mode: entry.key }), { reload: true })
             },
             h("span", { className: "SPR_modeTitle" }, entry.title),
             entry.key === "turn" ? h("span", { className: "SPR_modeTag" }, T("默认")) : null
@@ -284,7 +313,13 @@ export function createSprite(deps: any) {
     }
 
     /** 转圈截帧：转圈视频 → 候选帧 → 八圆圈时间轴 → 八张方向图。 */
-    function TurnImageStage({ project, api, start, setNotice, tasks, savePrompts }) {
+    function TurnImageStage({ api, start, setNotice, tasks, savePrompts }) {
+      markRender("SpriteTurnStage");
+      // 只订阅转圈截帧用到的字段：别的阶段（视频/合图）变化不重渲染这一块。
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "id", "images", "jobs", "name", "prompts", "settings", "turn", "updatedAt"])
+      );
       const video = project.turn?.video ?? {};
       const frames = project.turn?.frames ?? {};
       const total = Array.isArray(frames.frames) ? frames.frames.length : 0;
@@ -577,19 +612,37 @@ export function createSprite(deps: any) {
       );
     }
 
-    function renderImageStage(ctx) {
-      const { project, api, promptDraft, setPromptDraft, promptOpen, setPromptOpen, savePrompts, start, setNotice, tasks } = ctx;
-      const mode = imageModeOf(project);
-      const modeBar = h(ImageModeBar, { project, api, start, mode });
-      // 转圈截帧（默认）：整条链路都在 TurnImageStage 里，产物同样是 images/<方向>.png。
-      if (mode === "turn") {
-        return h(
-          React.Fragment,
-          null,
-          modeBar,
-          h(TurnImageStage, { project, api, start, setNotice, tasks, savePrompts })
-        );
-      }
+    function renderImageStage(props) {
+      markRender("SpriteImageStage");
+      const { api, start, setNotice, savePrompts, tasks } = props;
+      // 这一层只订阅「生成方式」：图片/视频产物变化不会重渲染它，只重渲染下面真正用到的那块。
+      const mode = studioStore.use((state) => imageModeOf(state.project));
+      return h(
+        React.Fragment,
+        null,
+        h(ImageModeBar, { api, start }),
+        // 转圈截帧（默认）：整条链路都在 TurnImageStage 里，产物同样是 images/<方向>.png。
+        mode === "turn"
+          ? h(TurnImageStage, { api, start, setNotice, tasks, savePrompts })
+          : h(ImageDirectStage, props)
+      );
+    }
+
+    /**
+     * 阶段①「逐方向生图」主体：只订阅 images / prompts / source / jobs 这几段，
+     * 视频阶段的字段变了不会把这块拖下水。
+     */
+    function ImageDirectStage(props) {
+      markRender("SpriteImageDirectStage");
+      const { api, start, setNotice, savePrompts, tasks } = props;
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "id", "imageMode", "images", "jobs", "name", "prompts", "source", "updatedAt"])
+      );
+      const promptDraft = studioStore.use((state) => state.promptDraft);
+      const promptOpen = studioStore.use((state) => state.promptOpen);
+      const setPromptDraft = storeActions.setPromptDraft;
+      const setPromptOpen = storeActions.setPromptOpen;
       const allApproved = DIRECTION_KEYS.every((key) => project.images?.[key]?.approved);
       // 「一键生成全部」/「全部重新生成」提交后，八个方向都可能要重出图，
       // 在宿主状态回来之前先整体盖住，别让用户以为按钮没生效。
@@ -604,7 +657,6 @@ export function createSprite(deps: any) {
       return h(
         React.Fragment,
         null,
-        modeBar,
         h(
           "div",
           { className: "SPR_toolbar" },
@@ -808,8 +860,15 @@ export function createSprite(deps: any) {
       );
     }
 
-    function renderVideoStage(ctx) {
-      const { project, videoPromptDraft, setVideoPromptDraft, savePrompts, start, setNotice, api, tasks } = ctx;
+    function renderVideoStage(props) {
+      markRender("SpriteVideoStage");
+      const { savePrompts, start, setNotice, api, tasks } = props;
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "id", "images", "jobs", "name", "prompts", "updatedAt", "videos"])
+      );
+      const videoPromptDraft = studioStore.use((state) => state.videoPromptDraft);
+      const setVideoPromptDraft = storeActions.setVideoPromptDraft;
       const readyImages = DIRECTION_KEYS.filter((key) => project.images?.[key]?.file !== undefined);
       const promptDirty = videoPromptDraft !== (project.prompts?.video ?? "");
       const running = DIRECTION_KEYS.filter((key) => project.videos?.[key]?.status === "running");
@@ -1208,14 +1267,21 @@ export function createSprite(deps: any) {
       );
     }
 
-    function renderFrameStage(ctx) {
-      const { project, start, api, settingsDraft, saveSettings, tasks } = ctx;
-      // 选帧草稿必须放在独立组件里。这里是普通函数，而且只在切到「提取序列帧」
-      // 时才被调用；直接 useState 会算进 StudioPanel，前后两次渲染的 Hook 数量对不上。
+    function renderFrameStage(props) {
+      markRender("SpriteFrameStageRoot");
+      const { start, api, saveSettings, tasks } = props;
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "frames", "id", "jobs", "name", "settings", "updatedAt", "videos"])
+      );
+      const settingsDraft = studioStore.use((state) => state.settingsDraft);
+      // 选帧草稿必须放在独立组件里（FrameStage）：这一层是订阅壳，只负责把
+      // project / settingsDraft 这两段快照交给下面的界面。
       return h(FrameStage, { project, start, api, settingsDraft, saveSettings, tasks });
     }
 
     function FrameStage({ project, start, api, settingsDraft, saveSettings, tasks }) {
+      markRender("SpriteFrameStage");
       const readyVideos = DIRECTION_KEYS.filter((key) => project.videos?.[key]?.file !== undefined);
       const allApproved = DIRECTION_KEYS.every((key) => project.frames?.[key]?.approved);
       const draft = settingsDraft ?? project.settings ?? {};
@@ -1442,8 +1508,15 @@ export function createSprite(deps: any) {
       );
     }
 
-    function renderSheetStage(ctx) {
-      const { project, settingsDraft, setSettingsDraft, saveSettings, start, api, tasks } = ctx;
+    function renderSheetStage(props) {
+      markRender("SpriteSheetStage");
+      const { saveSettings, start, api, tasks } = props;
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "frames", "id", "jobs", "name", "settings", "sheet", "updatedAt"])
+      );
+      const settingsDraft = studioStore.use((state) => state.settingsDraft);
+      const setSettingsDraft = storeActions.setSettingsDraft;
       const draft = settingsDraft ?? project.settings ?? {};
       // 用户会问「第 3 步不是已经抠过了吗」，所以这里把两处抠像的分工讲清楚：
       // 第 3 步抠的是**每个方向的预览带**（顺手把整图也合出来），第 4 步在同样的
@@ -1723,7 +1796,11 @@ export function createSprite(deps: any) {
     }
 
     function WalkPreview(props) {
-      const project = props.project;
+      markRender("SpriteWalkPreview");
+      const project = studioStore.use(
+        (state) => state.project,
+        (a, b) => projectFieldsEqual(a, b, ["assetBase", "id", "name", "settings", "sheet", "updatedAt"])
+      );
       const tasks = props.tasks;
       const canvasRef = React.useRef(null);
       const boxRef = React.useRef(null);
