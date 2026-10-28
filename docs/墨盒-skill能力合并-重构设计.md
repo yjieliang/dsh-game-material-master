@@ -1,6 +1,6 @@
 # 墨盒 × 本机 skill 能力合并 · 重构设计
 
-- **状态**：待评审（设计文档，不改产品代码）
+- **状态**：已评审定稿（2026-10-29；§13 五项按推荐项裁决，见 §15）
 - **日期**：2026-10-29
 - **基线**：分支 `refactor/client-module-split`，HEAD `1553dec`（工作区另有 0.12.0 发布准备改动）
 - **关联需求**：
@@ -688,6 +688,22 @@ export function pickCycleFrames(samples: FrameSample[], count: number, options?:
 - 不改音乐/音效/地图模块的既有流程（仅共享 QA/导出基础设施，若需要另立需求）。
 
 ---
+
+## 15. 评审裁决记录（2026-10-29）
+
+**裁决依据**：用户指令「需要裁决的直接按推荐的来」。§13 五项全部按建议执行，不再等待逐项确认：
+
+1. **默认策略 = `manual`**：全局默认走 `imageProvider` 指定后端，行为与今天一致；设置页提供「本地优先（local-first）」开关，不默认探测 ComfyUI，避免没装 ComfyUI 的用户被探测超时拖慢。
+2. **客户端体积预算上调到 1.3 MB / gzip 340 KB**：基线 `lib/client.js` 1,187,280 B（已用 94% / 1.2 MB），新增 UI 预计 +20~30 KB。`scripts/verify-arch.mjs` 的体积预算同步上调，gzip 预算 320 KB → 340 KB；其余棘轮（裸定时器 / 裸 fetch / 裸监听器计数）只降不涨。
+3. **内置 3 个工作流**（透明精灵 Turbo / 像素风 SDXL / BiRefNet 去背）+ **其余 6 个以目录条目呈现、由用户从本机导入**（ComfyUI `user\default\workflows\*.json`，经 `importWorkflowFile({path})`）；仓库不存另外 6 份 JSON 正文，避免模型版本耦合与仓库膨胀。
+4. **自动选帧用纯 TS 实现**（`src/cycle.ts`），不调用本机 Python `make_cycle.py`：算法与阈值参考 skill，注明来源与许可（sprite-gen Apache-2.0 只参考、不搬代码）。
+5. **QA 默认只警告**（`qaEnabled: true` / `qaFailClosed: false`）：报告写 `<job>/qa/report.json` 并在界面展示；只有用户显式打开 `qaFailClosed` 时 `fail` 才阻断导出。
+
+### 15.1 实施分支与合并顺序（团队执行约定）
+
+- 基线：`f786f31`（`refactor/client-module-split`，0.12.0 工作区快照）。
+- 六个实施子需求各在独立 git worktree 分支上开发，完成后由总控按「工作流库 → 去背 → QA → 导出 → 选帧 → 互操作」顺序合并，合并后重建 `lib/` 并跑 `gate --full`。
+- 每个子需求把「用了谁 / 为什么回退 / 指标口径」写进自身文档与 `verify-*.mjs`，不得静默降级。
 
 ## 附：参考来源
 
