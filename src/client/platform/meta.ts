@@ -162,14 +162,34 @@ export function createMeta(deps: any) {
       return MUSIC_ENGINES.find((entry) => entry.id === key) ?? MUSIC_ENGINES[0];
     }
 
+  /**
+   * 原地换掉一张表的全部元素。
+   *
+   * ⚠️ 这些表在工厂创建时就被各层按值抓走：`hidden.ts` 抓 `MODULES`、`studio-panel.ts`
+   * 抓 `STAGES`、`config-section.ts` 抓 `MODULES`、`bootstrap.ts` 抓一大堆 —— 语言切换后
+   * 它们**不会**回来重新取一次引用。所以重算时只能改内容、不能改引用（`X = 新数组`
+   * 只有内部变量变、外面全是旧的）：P7b 拆分后「切英文页签还是中文」就是这么坏的。
+   * 拆分前这些表都在同一个作用域里是 `let`，原地改等价于当时的语义。
+   */
+  function replaceArray(target: any[], next: any[]): void {
+    target.length = 0;
+    target.push(...next);
+  }
+
+  /** 对象型表（目前只有 `LABEL_OF`）同理：清键再赋，保住对象身份。 */
+  function replaceObject(target: Record<string, any>, next: Record<string, any>): void {
+    for (const key of Object.keys(target)) delete target[key];
+    Object.assign(target, next);
+  }
+
   /** 重算本模块的模块级文案表（locale 切换时调用）。 */
   function rebuildStaticText(): void {
-    DIRECTIONS = make_DIRECTIONS();
-    LABEL_OF = make_LABEL_OF();
-    MODULES = make_MODULES();
-    STAGES = make_STAGES();
-    MUSIC_ENGINES = make_MUSIC_ENGINES();
-    MUSIC_PHASES = make_MUSIC_PHASES();
+    replaceArray(DIRECTIONS, make_DIRECTIONS());
+    replaceObject(LABEL_OF, make_LABEL_OF());
+    replaceArray(MODULES, make_MODULES());
+    replaceArray(STAGES, make_STAGES());
+    replaceArray(MUSIC_ENGINES, make_MUSIC_ENGINES());
+    replaceArray(MUSIC_PHASES, make_MUSIC_PHASES());
   }
 
   return {

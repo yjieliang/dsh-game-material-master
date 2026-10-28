@@ -122,7 +122,7 @@ node scripts/verify-host.mjs       # 宿主全链路（387 项）
 node scripts/verify-client.mjs     # 浏览器半区契约（366 项）
 node scripts/verify-tools.mjs      # 对话调用面（196 项，含常驻工具面 ≤6,000 B 预算）
 node scripts/verify-pipeline.mjs   # 抽帧 / 抠像 / 合成（40 项）
-node scripts/verify-feedback.mjs   # 浏览器半区真渲染（217 项，含功能管理、侧栏菜单、生图后端设置页、语义保存错误与草稿合并）
+node scripts/verify-feedback.mjs   # 浏览器半区真渲染（218 项，含功能管理、侧栏菜单、生图后端设置页、语义保存错误与草稿合并、切语言后页签标题）
 node scripts/verify-i18n.mjs       # 中英词条表契约（9 项）
 node scripts/verify-comfy.mjs      # 本地 ComfyUI 后端（124 项，自起 mock ComfyUI，纯本地、不用装 ComfyUI）
 node scripts/verify-custom-image.mjs  # 自定义生图后端三协议（68 项：起本地假服务端，离线、零计费）
@@ -238,7 +238,7 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 - 轮询全部收编到 `platform/scheduler`（P3b / P10）：非 platform 裸定时器 **16 → 0**，棘轮同步降到 0。
 - 项目快照搬进 `platform/store` 按 selector 订阅（P9）：一次轮询重渲染的产品组件从「整棵树」降到 **3 个**；
   轮询回包内容没变时不 `setState`。
-- 产物 `lib/client.js` **1,119,623 B / gzip 297,182 B**（预算 1.2 MB / 320 KB 内），仍是经典脚本。
+- 产物 `lib/client.js` **1,120,339 B / gzip 297,481 B**（预算 1.2 MB / 320 KB 内），仍是经典脚本。
 - 文档：`docs/ENGINEERING.md` 新增「客户端分层」一节（四层职责、依赖方向、装配顺序、加模块清单、
   verify-arch 17 项、棘轮与体积预算、**2026-10-28 真机验收记录**）；`AGENTS.md` 增一条分层硬约束；
   `README.md` / `README.en.md` 的「加一条界面文案」与生效表改到新路径
@@ -253,7 +253,7 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 
 #### 本次复跑的自检（文档任务只跑这几项）
 
-`verify-arch` **17** · `verify-client` **366** · `verify-feedback` **217** · `verify-i18n` **9**，
+`verify-arch` **17** · `verify-client` **366** · `verify-feedback` **218** · `verify-i18n` **9**，
 全部通过。其余脚本本次未复跑（`verify-host` / `verify-tools` / `verify-pipeline` 在沙箱里 spawn `ffmpeg` 会 `EPERM`）。
 
 ⚠️ 宿主半区有改动（`src/index.ts` / `jobs.ts` / `receipts.ts` 等）：**升级后要重启 DSH**；浏览器半区刷新即可。

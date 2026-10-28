@@ -1597,4 +1597,62 @@ section("图片提示词保存与生成时序");
   check("所有保存完成后才使用最新提示词生成", calls.map(x=>x.type).join(",") === "save,save,generate" && calls.at(-1).prompt === "latest typed prompt", JSON.stringify(calls));
 }
 
+section("语言切换：8 个模块页签标题 / 副标题跟着变（req_5d9a0ffa46）");
+{
+  /**
+   * 真渲染回归：拆分后 `platform/meta.ts` 把模块表按值 export，语言切换只重算内部
+   * `let` → 各层按值抓走的旧数组永远停在中文（页签标题 / 副标题就是这处回归）。
+   *
+   * 这里走**真实链路**，不手改文案表：
+   *   1. 最小 locale 服务（getSnapshot / register / bind / subscribe）；
+   *   2. `installI18n` —— 与真机挂 locale 服务同一条路：注册中英词典 → `rebuildStaticText()`
+   *      按当前语言重算模块级表；
+   *   3. 切 `active = "en"` 并触发订阅回调（重新 bind + rebuild，与 locale.subscribe 一致）；
+   *   4. 重新渲染 StudioPanel，读真实元素 `.SPR_moduleTitle` / `.SPR_moduleHint`。
+   *
+   * 旧实现（meta 用 `MODULES = make_MODULES()` 换新数组）会让第 4 步读到中文 → 这条红。
+   */
+  const dicts = new Map();
+  const listeners = new Set();
+  let lang = "zh";
+  const fillParams = (text, params) =>
+    String(text).replace(/\{(\w+)\}/gu, (match, name) => (params !== undefined && name in params ? String(params[name]) : match));
+  const locale = {
+    getSnapshot: () => ({ active: lang }),
+    register: (namespace, dict) => {
+      dicts.set(namespace, dict);
+      return () => dicts.delete(namespace);
+    },
+    bind: (namespace) => (key, params) => fillParams(dicts.get(namespace)?.[lang]?.[key] ?? key, params),
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    }
+  };
+  const installI18n = bundle.__test?.installI18n;
+  const installed =
+    typeof installI18n === "function"
+      ? installI18n({ get: (name) => (name === "locale" ? locale : undefined), effect: (fn) => fn() })
+      : false;
+  lang = "en";
+  for (const listener of [...listeners]) listener();
+  const tree = renderStage(makeProject(), "images", makeTasks()).tree;
+  const titles = byClass(tree, "SPR_moduleTitle").map(textOf);
+  const hints = byClass(tree, "SPR_moduleHint").map(textOf);
+  const enTable = dicts.get("dsh-game-material-master")?.en ?? {};
+  check(
+    "切 English 后 8 个页签标题 / 副标题都变英文（真渲染 .SPR_moduleTitle / .SPR_moduleHint）",
+    installed === true &&
+      titles.length === MODULE_COUNT &&
+      titles.every((title) => /[A-Za-z]/u.test(title) && !/[\u4e00-\u9fff]/u.test(title)) &&
+      hints.length === MODULE_COUNT &&
+      hints.every((hint) => /[A-Za-z]/u.test(hint) && !/[\u4e00-\u9fff]/u.test(hint)) &&
+      titles[0] === enTable["八方向图生成"],
+    `installed=${String(installed)} 标题=${titles.join(" / ")}`
+  );
+  // 收尾：切回中文，别把全局 T 留在英文态（脚本要能重复跑）。
+  lang = "zh";
+  for (const listener of [...listeners]) listener();
+}
+
 report();

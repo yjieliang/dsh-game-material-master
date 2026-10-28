@@ -6,6 +6,9 @@ export function createHiddenModules(deps: any) {
   // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
   const {
     T,
+    // ⚠️ 这里的 MODULES 是**按引用**抓的：`platform/meta.ts` 语言切换时用
+    // `replaceArray` 原地换内容（数组身份不变），所以本工厂拿着旧引用也能读到新标题。
+    // 别为了「拿最新的」在这里再复制一份快照 —— 那样切语言后页签会永远停在旧语言。
     MODULES,
     React,
   } = deps;

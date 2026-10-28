@@ -1892,6 +1892,40 @@ const staticTextRebuilders = [() => { DIRECTIONS = make_DIRECTIONS(); }, …, ()
 **新增模块级 `T()` 文案表时要同步加一条 rebuilder**，否则又会退化成「切了语言它不动」。
 只写在函数体里（组件、渲染函数）的 `T()` 不受影响——那些每次渲染都重新求值。
 
+### 坑上加坑：重算时**换新数组**，下游抓的还是旧数组
+
+上面那套在单文件时代是对的（所有引用都在同一个作用域里读 `let`）。P7b 拆成多文件、
+依赖改成「工厂创建时按值注入」之后，它就**只对了一半**：
+
+```ts
+// platform/meta.ts（拆之后：export 出去的是创建那一刻的数组快照）
+export function createMeta(deps) {
+  let MODULES = make_MODULES();
+  function rebuildStaticText() {
+    MODULES = make_MODULES();   // ← 只有这个闭包变量变了
+  }
+  return { MODULES, rebuildStaticText };   // ← 取它的人拿到的仍是旧数组
+}
+```
+
+`hidden.ts` 抓 `MODULES`、`studio-panel.ts` 抓 `STAGES`、`config-section.ts` 抓 `MODULES`、
+`bootstrap.ts` 抓一大把——语言切换后它们**不会**回来重新取一次引用，于是
+`visibleModulesOf()` 永远返回旧语言。真机表现：切英文后 8 个模块页签标题 / 副标题还是中文，
+**刷新也一样**；`STAGES` 阶段名、「功能管理」里的模块名同理（同一类 bug，只是没那么显眼）。
+
+修法：重算**只换内容、不换引用**（`platform/meta.ts` 的 `replaceArray` / `replaceObject`），
+等价于拆分前同一作用域里的 `let` 语义：
+
+```ts
+function replaceArray(target, next) { target.length = 0; target.push(...next); }
+function rebuildStaticText() { replaceArray(MODULES, make_MODULES()); … }
+```
+
+⚠️ 所以「工厂 + `let`」还不够，**表本身必须身份稳定**。新写按值注入的共享表时，
+要么照上面原地改，要么注入 getter / `() => 表`，**不要注入数组本身**。
+回归断言：`verify-feedback.mjs` 末尾用最小 locale 服务走真实 `installI18n` 链路，
+切 English 后断言 8 个 `.SPR_moduleTitle` / `.SPR_moduleHint` 全英文（修前这条是红的）。
+
 ### 批量包装老代码：词法级 codemod
 
 800+ 条文案靠手改必漏，所以有一个纯词法的改写脚本：
@@ -2639,8 +2673,8 @@ React → i18n（T）→ platform 运行时 → 轮询调度器 / perf
 | 11 | 每个 feature 有 `descriptor.ts` | 模块元数据散回 shell 里 |
 | 12 | `registry` 覆盖全部 features | 新增模块忘了注册（页签不出现） |
 | 13 | 每个 feature 根组件被 `FeatureBoundary` 包裹 | 一个模块渲染崩掉拖垮整个工作台 |
-| 14 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,119,623） | 体积回归 |
-| 15 | `lib/client.js` gzip ≤ 320 KB（当前 297,182） | 同上 |
+| 14 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,120,339） | 体积回归 |
+| 15 | `lib/client.js` gzip ≤ 320 KB（当前 297,481） | 同上 |
 | 16 | 产物是经典脚本（没有 `import` / `export`） | 宿主按普通脚本加载，混入模块语法直接语法错 |
 | 17 | `lib/client.js` 存在 | 忘了 build 就提交 |
 
@@ -2659,7 +2693,7 @@ const BASELINE = { legacyTimers: 0, legacyFetch: 3, legacyListeners: 30 };
 ```bash
 node scripts/verify-arch.mjs        # 架构 17 项：依赖方向 / 棘轮 / 体积 / 经典脚本
 node scripts/verify-client.mjs      # 浏览器半区契约 366 项
-node scripts/verify-feedback.mjs    # 浏览器半区真渲染 217 项（含功能管理、草稿合并）
+node scripts/verify-feedback.mjs    # 浏览器半区真渲染 218 项（含功能管理、草稿合并、切语言后页签标题）
 node scripts/verify-i18n.mjs        # 中英词条表 9 项（含产物与源分词条表一致）
 node scripts/perf-baseline.mjs      # 挂载期渲染计数基线
 node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改后两份产物，见架构方案 §2.8）
@@ -2681,7 +2715,7 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 | 宿主 | 本机正在跑的 DSH Web（`http://127.0.0.1:3080`），插件 link 到本仓库、`lib/client.js` 按请求从磁盘读 |
 | 浏览器 | 本机 Edge 155.0.4283.60（Playwright 无头；用 `scripts/dsh-web-cookie.mjs` 派生会话 cookie 注入，不需要启动 token） |
 | 刷新方式 | **整页刷新**（等价 Ctrl+R）：`location.reload()` 后重新进面板。**没有重启 DSH** —— 客户端束本来就是刷新即生效 |
-| 结论 | **8 个模块全部进入并渲染出内容，0 个未捕获异常**；一次零计费「一键生成」成功；切英文暴露 1 个回归（见末尾） |
+| 结论 | **8 个模块全部进入并渲染出内容，0 个未捕获异常**；一次零计费「一键生成」成功；切英文发现的 1 个回归（页签标题 / 副标题不跟随）已在本分支修复，复验见末尾 |
 
 逐模块结果（刷新后依次点开页签；按钮与文案均按真实 DOM 读取）：
 
@@ -2704,12 +2738,16 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 （`Game Material Master` / `Refresh list` / `Rename` / `Delete project`），**切回中文立即恢复**，
 阶段名 / 按钮等中性文案跟随正常。
 
-⚠️ **发现 1 个回归（本次文档任务不修，待另开需求）**：切英文后 8 个模块**页签标题与副标题仍为中文**，
-刷新页面也一样。根因：`platform/hidden.ts` 在工厂创建时按**值**解构了 `platform/meta.ts` 的 `MODULES`
-数组；`meta.rebuildStaticText()` 在语言切换时重建的是**新数组**，而 `hidden.ts` 仍持有旧数组 →
-`visibleModulesOf()` 永远返回中文标题。修复方向：把 `MODULES` 改成 **getter** 传进
-`createHiddenModules`（或让 `hidden.ts` 通过 `meta` 实时取），并在 `verify-feedback` 补一条
-「切语言后页签标题变英文」的断言。
+✅ **语言切换回归已修复**（见「坑上加坑：重算时换新数组」）：切英文后 8 个模块页签标题 / 副标题
+**立即变英文**，整页刷新后仍是英文，切回中文恢复。回归断言在 `verify-feedback.mjs`
+（217 → **218** 项：最小 locale 服务 → 真实 `installI18n` → 切 en → 真渲染读
+`.SPR_moduleTitle` / `.SPR_moduleHint`；修前同一断言读到的是 8 个中文标题）。
+
+复验（**2026-10-28 13:12–13:20 本地 · 05:12–05:20 UTC**，同一台正在跑的 DSH `0.2.1-rc.3-15907e6-dirty`、
+整页刷新但**没有重启 DSH**）：Playwright + 系统 Edge 无头，cookie 由 `scripts/dsh-web-cookie.mjs` 派生，
+脚本化点「更多 → 设置 → 通用设置 → 语言」。**10/10 项通过**：中文 → 切 English → 8 个页签标题 / 副标题
+（`.SPR_moduleTitle` / `.SPR_moduleHint`）立即变英文 → 整页刷新后仍英文 → 切回中文恢复；
+全程 0 个未捕获异常（`window.error` / `unhandledrejection` / `pageerror` 均为空）。
 
 > 复现（不需要 Computer Use）：`node scripts/dsh-web-cookie.mjs 127.0.0.1:3080 --json` 拿 cookie，
 > Playwright 起系统 Edge 注入 cookie 打开 `http://127.0.0.1:3080/`；工作台在侧栏「游戏素材大师」，
