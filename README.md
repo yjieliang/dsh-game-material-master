@@ -141,6 +141,28 @@ flowchart LR
 目录的结构摆好（`images/…`、`turn/…`、`frames/…`、`keyed/…`、`out/sheet.png`）。
 生成出来的成片（转圈视频、八段行走视频）同样各自有一个「保存视频」链接。
 
+### 引擎导出：manifest / Godot SpriteFrames / Aseprite JSON
+
+阶段④ 合成整图之后，主卡下方会多出一张 **引擎导出** 卡：勾选要导出的内容 → **导出到引擎**，
+产物落在项目目录的 `out/engine/<名字>/`；勾了「打包成 zip」再多一个 `out/<名字>-engine.zip`。
+全部在本机完成、零计费，也不会调用任何模型。
+
+| 勾选 | 产物 | 给谁用 |
+|---|---|---|
+| 整图 PNG | `sprite-sheet.png` | 所有格式都引用它（勾 manifest / Godot / Aseprite / 帧序列时会自动带上） |
+| 逐帧序列 | `frames/<方向>/f00.png…` | 不吃图集的管线（Flame / 自研） |
+| manifest 清单 | `manifest.json` | 运行时读 fps / 帧矩形 / pivot / 方向 |
+| Godot SpriteFrames | `godot/<名字>.tres` | Godot 4 直接拖到 AnimatedSprite2D |
+| Aseprite JSON | `aseprite/<名字>.json` | Phaser `load.aseprite` / Flame `fromAsepriteData` |
+| 打包成 zip | `out/<名字>-engine.zip` | 一次拿走（条目都在 `<名字>/` 下，解压即用） |
+
+- **帧顺序 = 行优先**（行序就是整图上方的方向顺序），`manifest.frameLayout` 逐帧给出矩形；
+- **对不上直接报错**：整图尺寸、帧数、方向数与记录不一致时不会「大概切一下」，而是报错让你先重新合成；
+- **pivot** 是脚底线（归一化），由合成时的「底部留白」推算：`y = (单格高 - 底部留白) / 单格高`；
+- **fps 默认 10**，导出卡里可改（1~60）；`loop` 默认开。
+- 格式细节、Godot 导入步骤、Aseprite 字段映射与错误码见 [docs/引擎导出-格式说明.md](docs/引擎导出-格式说明.md)。
+- 对话面同样可调：`game_material({action:'call', method:'exportSprite', payload:{projectId, formats:['manifest','godot','aseprite','zip'], fps:12}})`（模块③ 传 `jobId`）。
+
 ### 怎么用
 
 1. **新建项目 → 上传设定图**，写提示词（转圈截帧用的是**一份转圈视频提示词**；逐方向生图是每个方位一份，
@@ -234,6 +256,8 @@ flowchart LR
 4. **绿幕抠像与合成**：调好抠像参数后合成横向条图；右侧预览区会按帧率循环播放，
    **动作连不连贯、抠像边缘稳不稳，直接看播放**。
 5. **验收**：三步各自打「通过」。
+6. **引擎导出**：合成条图之后同样有一张「引擎导出」卡——manifest / Godot SpriteFrames / Aseprite JSON /
+   逐帧 PNG / zip 一次导出（单行动画，动画名 `action`，fps 默认 10）。见 [docs/引擎导出-格式说明.md](docs/引擎导出-格式说明.md)。
 
 ![序列帧生成 · 视频输入](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-08-sequence-input.png)
 

@@ -258,28 +258,14 @@ export function assertFrameAlignment(manifest: SpriteManifest, sheet: { width: n
     fail("frame-count-mismatch", `frameLayout 有 ${frameLayout.length} 帧，期望 ${columns}×${rows}=${columns * rows} 帧`);
   if (!sheet || !Number.isInteger(sheet.width) || !Number.isInteger(sheet.height) || sheet.width < 1 || sheet.height < 1)
     fail("sheet-size-mismatch", `整图尺寸非法：${JSON.stringify(sheet)}`);
-  if (sheet.width !== cell.width * columns || sheet.height !== cell.height * rows)
-    fail(
-      "sheet-size-mismatch",
-      `整图 ${sheet.width}×${sheet.height} ≠ 单格 ${cell.width}×${cell.height} × ${columns}列×${rows}行（${cell.width * columns}×${cell.height * rows}）`
-    );
 
+  // 第 1 步：**几何安全**（越界 / 重叠）先于「网格一致性」——这两类错即使行列编号
+  // 也乱了，也该先报「切出来会坏图」的那一条；不然只会得到一句「坐标对不上」。
   for (let index = 0; index < frameLayout.length; index++) {
     const frame = frameLayout[index];
     if (frame === null || typeof frame !== "object") fail("manifest-invalid", `frameLayout[${index}] 不是对象`);
-    if (frame.index !== index)
-      fail("frame-order-mismatch", `frameLayout[${index}].index = ${frame.index}，期望 ${index}（必须行优先且连续）`);
-    const expectRow = Math.floor(index / columns);
-    const expectColumn = index % columns;
-    if (frame.row !== expectRow || frame.column !== expectColumn)
-      fail("frame-order-mismatch", `frameLayout[${index}] 的 (row, column) = (${frame.row}, ${frame.column})，期望 (${expectRow}, ${expectColumn})`);
-    if (frame.x !== expectColumn * cell.width || frame.y !== expectRow * cell.height)
-      fail(
-        "frame-layout-mismatch",
-        `frameLayout[${index}] 的 (x, y) = (${frame.x}, ${frame.y})，期望 (${expectColumn * cell.width}, ${expectRow * cell.height})`
-      );
-    if (frame.w !== cell.width || frame.h !== cell.height)
-      fail("frame-cell-mismatch", `frameLayout[${index}] 的 (w, h) = (${frame.w}, ${frame.h})，期望 (${cell.width}, ${cell.height})`);
+    if (!Number.isInteger(frame.x) || !Number.isInteger(frame.y) || !Number.isInteger(frame.w) || !Number.isInteger(frame.h) || frame.w < 1 || frame.h < 1)
+      fail("frame-cell-mismatch", `frameLayout[${index}] 的矩形不是合法整数：${JSON.stringify({ x: frame.x, y: frame.y, w: frame.w, h: frame.h })}`);
     if (!Number.isFinite(frame.durationMs) || frame.durationMs <= 0)
       fail("duration-invalid", `frameLayout[${index}].durationMs 非法：${frame.durationMs}`);
     if (frame.x < 0 || frame.y < 0 || frame.x + frame.w > sheet.width || frame.y + frame.h > sheet.height)
@@ -288,7 +274,6 @@ export function assertFrameAlignment(manifest: SpriteManifest, sheet: { width: n
         `frameLayout[${index}] 的矩形 (${frame.x}, ${frame.y}, ${frame.w}, ${frame.h}) 越出整图 ${sheet.width}×${sheet.height}`
       );
   }
-
   // 两两不重叠：矩形是按行列切的，正常情况天然不重叠；这里仍独立算一遍，
   // 免得「行优先 + cell 计算」被改动时重叠问题悄悄溜过去（设计 §7.1 明确要求校验）。
   for (let a = 0; a < frameLayout.length; a++) {
@@ -307,6 +292,31 @@ export function assertFrameAlignment(manifest: SpriteManifest, sheet: { width: n
         );
     }
   }
+
+  // 第 2 步：**网格一致性**（行优先顺序 + 矩形与行列一致 + 单帧 = 单格）。
+  for (let index = 0; index < frameLayout.length; index++) {
+    const frame = frameLayout[index];
+    if (frame.index !== index)
+      fail("frame-order-mismatch", `frameLayout[${index}].index = ${frame.index}，期望 ${index}（必须行优先且连续）`);
+    const expectRow = Math.floor(index / columns);
+    const expectColumn = index % columns;
+    if (frame.row !== expectRow || frame.column !== expectColumn)
+      fail("frame-order-mismatch", `frameLayout[${index}] 的 (row, column) = (${frame.row}, ${frame.column})，期望 (${expectRow}, ${expectColumn})`);
+    if (frame.x !== expectColumn * cell.width || frame.y !== expectRow * cell.height)
+      fail(
+        "frame-layout-mismatch",
+        `frameLayout[${index}] 的 (x, y) = (${frame.x}, ${frame.y})，期望 (${expectColumn * cell.width}, ${expectRow * cell.height})`
+      );
+    if (frame.w !== cell.width || frame.h !== cell.height)
+      fail("frame-cell-mismatch", `frameLayout[${index}] 的 (w, h) = (${frame.w}, ${frame.h})，期望 (${cell.width}, ${cell.height})`);
+  }
+
+  // 第 3 步：整图尺寸必须**恰好**是 cell × (columns, rows)。
+  if (sheet.width !== cell.width * columns || sheet.height !== cell.height * rows)
+    fail(
+      "sheet-size-mismatch",
+      `整图 ${sheet.width}×${sheet.height} ≠ 单格 ${cell.width}×${cell.height} × ${columns}列×${rows}行（${cell.width * columns}×${cell.height * rows}）`
+    );
 }
 
 // ── PNG 解码（最小实现，零依赖）──────────────────────────────────────────
