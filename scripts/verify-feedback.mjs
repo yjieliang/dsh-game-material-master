@@ -908,6 +908,27 @@ section("阶段④ 抠绿幕合成整图");
   check("重跑抠像时也盖遮罩", overlays(rekey.tree).length >= 1, `${overlays(rekey.tree).length} 个`);
 }
 
+
+// ── 阶段④ 的「引擎导出」卡（req_b70a5d20bb）──────────────────────────────
+section("阶段④ 的引擎导出卡（manifest / Godot / Aseprite）");
+{
+  const tree = renderStage(makeProject(), "sheet", makeTasks()).tree;
+  const cards = collect(tree, (node) => node.props?.["data-testid"] === "engine-export");
+  check("阶段④ 出现引擎导出卡", cards.length === 1, cards.length + " 个");
+  const card = cards[0] ?? {};
+  const boxes = collect(card, (node) => node.type === "input" && node.props?.type === "checkbox");
+  check("卡里 6 个内容复选框（整图/帧序/manifest/Godot/Aseprite/zip）", boxes.length === 6, boxes.length + " 个");
+  const fpsInputs = collect(card, (node) => node.type === "input" && node.props?.type === "number");
+  check("有 fps 输入框且默认 10", fpsInputs.length === 1 && Number(fpsInputs[0].props.value) === 10, String(fpsInputs[0]?.props?.value));
+  const cardText = textOf(card);
+  check(
+    "列出三种引擎格式与 zip 选项",
+    ["整图 PNG", "逐帧序列", "manifest 清单", "Godot SpriteFrames", "Aseprite JSON", "打包成 zip"].every((label) => cardText.includes(label)),
+    ""
+  );
+  check("有「导出到引擎」按钮", cardText.includes("导出到引擎"));
+}
+
 // ── 宿主侧状态 running（不是本地 pending）也要有遮罩 ─────────────────────
 section("宿主任务状态 running 的反馈");
 {
@@ -1102,6 +1123,13 @@ if (typeof SequenceModule === "function") {
       "已通过的步骤显示「已通过」",
       collect(renderModule(SequenceModule, halfApproved, makeTasks()).tree, (node) => node.props?.className === "SPR_btn").map(textOf).includes("已通过")
     );
+
+    const exportCard = collect(
+      renderModule(SequenceModule, makeSequenceJob(), makeTasks()).tree,
+      (node) => node.props?.["data-testid"] === "engine-export"
+    );
+    check("模块③ 合成之后也挂引擎导出卡（同一份实现，目标换成 jobId）", exportCard.length === 1, exportCard.length + " 个");
+
   }
 }
 
