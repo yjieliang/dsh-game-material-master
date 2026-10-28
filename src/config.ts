@@ -324,6 +324,15 @@ export interface Config {
   cellHeight: number;
   /** 每个视频平均提取多少帧。 */
   frameCount: number;
+  /**
+   * 抽完候选帧后**自动建议帧序**（步态 / 周期分析，见 src/cycle.ts）。
+   *
+   * 默认开：走循环的素材按「一个完整周期」均匀取帧，比按时长等分更不容易出现
+   * 「首尾接不上 / 左右脚不交替」。分析不出可信周期时**回退等分**并写原因，
+   * 行为与关掉它完全一致。只影响模块① 的手动选帧候选帧路径（模块③ 的自动选帧按钮
+   * 无论开关都能手动点）。
+   */
+  autoSelectFrames: boolean;
   /** 角色在单格内的缩放方式。 */
   fitMode: "contain" | "stretch";
   /**
@@ -516,6 +525,7 @@ export const DEFAULT_CONFIG: Config = {
   cellWidth: 256,
   cellHeight: 256,
   frameCount: 8,
+  autoSelectFrames: true,
   fitMode: "contain",
   workingLongEdge: 768,
   pixelSize: 0,
@@ -706,6 +716,7 @@ export function normalizeConfig(input: unknown): Config {
     cellWidth: asInt(raw.cellWidth, DEFAULT_CONFIG.cellWidth, 16, 2048),
     cellHeight: asInt(raw.cellHeight, DEFAULT_CONFIG.cellHeight, 16, 2048),
     frameCount: asInt(raw.frameCount, DEFAULT_CONFIG.frameCount, 1, 64),
+    autoSelectFrames: asBool(raw.autoSelectFrames, DEFAULT_CONFIG.autoSelectFrames),
     fitMode: raw.fitMode === "stretch" ? "stretch" : "contain",
     workingLongEdge: asInt(raw.workingLongEdge, DEFAULT_CONFIG.workingLongEdge, 128, 2048),
     pixelSize: asInt(raw.pixelSize, DEFAULT_CONFIG.pixelSize, 0, 32),

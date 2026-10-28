@@ -27,7 +27,8 @@ import { assertSafeId } from "./safeid.js";
 import { normalizeDuration, normalizeResolution } from "./minimax.js";
 import { assertVideoBackendReady, downloadVideoTask, queryVideoTask, submitVideoTask, videoFailureReason } from "./videogen.js";
 import { extractFrames, fileSize, mimeOf, toJpegDataUri } from "./media.js";
-import { composeSheet, keyGreen, type SheetRow } from "./chroma.js";
+import { composeSheet, keyGreen, segmentBackground, type SheetRow } from "./chroma.js";
+import { CYCLE_REASON_TEXT, pickCycleFrames, type CyclePick, type FrameSample } from "./cycle.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
@@ -38,7 +39,7 @@ import {
   tasksOf
 } from "./jobs.js";
 import { safeName, sniffImage } from "./imagegen.js";
-import type { NodeStatus, VideoBackend } from "./store.js";
+import type { FrameSelectionSummary, NodeStatus, VideoBackend } from "./store.js";
 
 export type SequenceMode = "frames" | "reference";
 
@@ -76,6 +77,16 @@ export interface SequenceFramesState {
   duration?: number;
   error?: string;
   stale?: boolean;
+  /**
+   * 自动选帧（步态 / 周期分析）的建议。
+   *
+   * 与模块① 同一条思路：**不新建一套选帧数据**——真正生效的永远是 `files`（这套帧
+   * 是按 picks 从候选里取出来的），`picks` 只记录它们在候选时间轴上的位置，便于复现 /
+   * 手改。失败时 `selection.fallback = true` 且 `reason` 非空。
+   */
+  selection?: FrameSelectionSummary;
+  /** 这套帧对应候选序列里的位置（自动选帧写入；手动抽取不写）。 */
+  picks?: number[];
   /** 验收打标。 */
   approved?: boolean;
   updatedAt?: number;
@@ -683,6 +694,161 @@ export async function extractSequenceFrames(jobId: string, count?: number): Prom
     await writeSequenceJob(fresh);
     throw error;
   }
+}
+
+// ── 自动选帧（步态 / 周期分析）────────────────────────────────────────
+
+/** 自动选帧的候选帧张数：比交付张数密 4 倍（一个完整周期至少要被采样 3~4 次）。 */
+const AUTO_PICK_CANDIDATES_MIN = 24;
+const AUTO_PICK_CANDIDATES_MAX = 64;
+
+/** 自动选帧的候选帧张数（按交付张数放大，夹在 24~64 之间）。 */
+function autoPickCandidateCount(frameCount: number): number {
+  return Math.max(AUTO_PICK_CANDIDATES_MIN, Math.min(AUTO_PICK_CANDIDATES_MAX, Math.max(1, frameCount) * 4));
+}
+
+/** 候选帧的抽取分辨率：分析只需要轮廓，长边封顶 768；交付帧也沿用这个分辨率。 */
+function autoPickLongEdge(longEdge: number): number {
+  return Math.min(768, Math.max(128, Math.round(longEdge)));
+}
+
+/**
+ * 抽一批「供自动选帧用」的候选帧（只在内存里，不落盘）。
+ *
+ * 与 `extractSequenceFrames` 的区别：张数更多（`autoPickCandidateCount`）、分辨率封顶
+ * 768。复用同一条 ffmpeg 抽帧路径，所以时间点与交付路径「按 fps 均匀取样」一致。
+ */
+async function extractAutoPickCandidates(job: SequenceJob): Promise<{ frames: Buffer[]; width: number; height: number; duration: number }> {
+  if (job.video.file === undefined) throw new Error("还没有可用视频，请先生成视频");
+  return extractFrames({
+    video: sequenceAssetPath(job.id, job.video.file),
+    frameCount: autoPickCandidateCount(job.settings.frameCount),
+    longEdge: autoPickLongEdge(job.settings.longEdge),
+    cropInset: job.settings.cropInset
+  });
+}
+
+/**
+ * 绿幕候选帧 → alpha 样本（用背景分割估轮廓，不跑完整抠像）。
+ *
+ * 自动选帧只需要「角色剪影」：`segmentBackground` 给出背景掩码，取反就是 alpha，
+ * 比为了 30~60 张候选帧跑整套 keyGreen（软边 / 去色）便宜一个数量级。
+ */
+function alphaSamplesOf(extracted: { frames: Buffer[]; width: number; height: number }, tolerance: number): FrameSample[] {
+  const samples: FrameSample[] = [];
+  const pixels = extracted.width * extracted.height;
+  for (let i = 0; i < extracted.frames.length; i++) {
+    const background = segmentBackground(extracted.frames[i], extracted.width, extracted.height, tolerance);
+    const alpha = new Uint8Array(pixels);
+    for (let p = 0; p < pixels; p++) alpha[p] = background[p] === 1 ? 0 : 255;
+    samples.push({ index: i, alpha, width: extracted.width, height: extracted.height });
+  }
+  return samples;
+}
+
+/**
+ * 序列帧任务的自动选帧：从视频里密抽一批候选帧 → 步态 / 周期分析 → 建议 N 帧。
+ *
+ * 只写 `frames.selection`（建议），不改 `frames.files`；要生效走
+ * `applySequenceAutoPicks`（会按建议重新抽取并重跑抠像 + 合成）。
+ */
+export async function autoPickSequenceFrames(jobId: string): Promise<{ summary: FrameSelectionSummary; result: CyclePick }> {
+  const job = await readSequenceJob(jobId);
+  if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+  if (job.video.file === undefined) throw new Error("还没有可用视频，请先生成视频");
+  const extracted = await extractAutoPickCandidates(job);
+  const samples = alphaSamplesOf(extracted, job.keying.bgTolerance);
+  const frameCount = Math.max(1, job.settings.frameCount);
+  const result = pickCycleFrames(samples, frameCount, { maxAnalysisFrames: AUTO_PICK_CANDIDATES_MAX });
+  const picks = result.fallback
+    ? samples.map((sample) => sample.index).filter((_, position) => position % Math.max(1, Math.ceil(samples.length / frameCount)) === 0).slice(0, frameCount)
+    : result.picks;
+  const summary: FrameSelectionSummary = {
+    picks,
+    confidence: result.confidence,
+    period: result.fallback ? 0 : result.period,
+    reason: result.reason,
+    fallback: result.fallback,
+    contacts: result.fallback ? [] : result.contacts,
+    passing: result.fallback ? [] : result.passing,
+    cycleStart: result.fallback ? 0 : result.cycleStart,
+    cycleEnd: result.fallback ? 0 : result.cycleEnd,
+    notes: result.notes.slice(0, 5),
+    source: "auto",
+    at: Date.now()
+  };
+  const fresh = await readSequenceJob(jobId);
+  if (fresh !== undefined) {
+    fresh.frames = { ...fresh.frames, selection: summary };
+    appendJobLog(
+      fresh.log,
+      result.fallback ? "warn" : "info",
+      result.fallback
+        ? `自动选帧未通过：${CYCLE_REASON_TEXT[result.reason ?? ""] ?? result.reason ?? "未知原因"}（沿用等分）`
+        : `自动选帧建议：周期 ${summary.period} 帧 / 置信度 ${summary.confidence} / 候选 ${extracted.frames.length} 张里取 ${picks.length} 张`
+    );
+    await writeSequenceJob(fresh);
+  }
+  return { summary, result };
+}
+
+/**
+ * 应用自动选帧的建议：按 picks 从候选里取出这 N 帧，落盘成任务帧并重跑抠像 + 合成。
+ *
+ * picks 是**候选帧下标**（与 `autoPickSequenceFrames` 返回的一致）。这里重新抽一遍
+ * 候选（确定性：同样的张数 / 分辨率 / 裁剪），取其中被选中的几帧落盘 —— 不把 30~60 张
+ * 候选全写进磁盘，避免任务目录多出几十 MB 的中间产物。
+ */
+export async function applySequenceAutoPicks(jobId: string, picks: number[]): Promise<{ picks: number[]; count: number }> {
+  const job = await readSequenceJob(jobId);
+  if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+  if (job.video.file === undefined) throw new Error("还没有可用视频，请先生成视频");
+  const frameCount = Math.max(1, job.settings.frameCount);
+  if (!Array.isArray(picks) || picks.length !== frameCount) {
+    throw new Error(`这个任务要 ${frameCount} 帧（与「抽帧张数」一致），收到 ${Array.isArray(picks) ? picks.length : 0} 个位置`);
+  }
+  const extracted = await extractAutoPickCandidates(job);
+  const total = extracted.frames.length;
+  const next = picks.map((value) => {
+    if (!Number.isFinite(Number(value))) throw new Error("截帧位置必须是数字");
+    return Math.max(0, Math.min(total - 1, Math.round(Number(value))));
+  });
+  const pickedFrames = next.map((index) => extracted.frames[index]);
+  const rawRelative = "frames/raw.bin";
+  await mkdir(join(sequenceJobDir(jobId), "frames"), { recursive: true });
+  await writeFile(sequenceAssetPath(jobId, rawRelative), Buffer.concat(pickedFrames));
+  await mkdir(join(sequenceJobDir(jobId), "keyed"), { recursive: true });
+  const files: string[] = [];
+  for (let i = 0; i < pickedFrames.length; i++) {
+    const relative = `frames/f${String(i).padStart(2, "0")}.png`;
+    await writeFile(sequenceAssetPath(jobId, relative), encodePng(pickedFrames[i], extracted.width, extracted.height));
+    files.push(relative);
+  }
+  const fresh = await readSequenceJob(jobId);
+  if (fresh === undefined) throw new Error(`任务不存在：${jobId}`);
+  const previousSelection = fresh.frames.selection;
+  fresh.frames = {
+    status: "ready",
+    count: files.length,
+    files,
+    keyed: [],
+    raw: rawRelative,
+    width: extracted.width,
+    height: extracted.height,
+    duration: extracted.duration,
+    stale: false,
+    updatedAt: Date.now(),
+    picks: [...next],
+    selection:
+      previousSelection === undefined
+        ? { picks: [...next], confidence: 0, period: 0, fallback: true, contacts: [], passing: [], cycleStart: 0, cycleEnd: 0, notes: [], source: "apply", at: Date.now() }
+        : { ...previousSelection, picks: [...next], source: "apply", at: Date.now() }
+  };
+  appendJobLog(fresh.log, "info", `按自动选帧取 ${files.length} 帧（候选 ${total} 张里第 ${next.map((index) => index + 1).join(", ")} 张）`);
+  await writeSequenceJob(fresh);
+  await keySequenceFrames(jobId);
+  await composeSequenceSheet(jobId);
+  return { picks: next, count: files.length };
 }
 
 export function startSequenceKey(jobId: string): { started: boolean; reason?: string } {

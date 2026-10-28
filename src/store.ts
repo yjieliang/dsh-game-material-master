@@ -138,9 +138,35 @@ export interface FrameCandidates {
   strip?: string;
   /** 输出帧各自对应的候选帧下标。长度等于项目的「每段视频抽帧数」。 */
   picks: number[];
+  /**
+   * 自动选帧（步态 / 周期分析）的最近一次建议。
+   *
+   * 它只是**建议**的元数据：真正生效的选帧永远是上面的 `picks`（界面拖动、重置等分、
+   * 自动选帧都写同一份 picks），不新建一套选帧数据。回退时 `fallback=true` 且
+   * `reason` 非空，picks 是等分。
+   */
+  selection?: FrameSelectionSummary;
   error?: string;
   stale?: boolean;
   updatedAt?: number;
+}
+
+/** 自动选帧的建议摘要（与 src/cycle.ts 的 CyclePick 对齐，去掉逐帧诊断大数组）。 */
+export interface FrameSelectionSummary {
+  picks: number[];
+  confidence: number;
+  /** 估出的周期（帧）；0 = 没找到。 */
+  period: number;
+  reason?: string;
+  fallback: boolean;
+  contacts: number[];
+  passing: number[];
+  cycleStart: number;
+  cycleEnd: number;
+  notes: string[];
+  /** 建议来源：auto = 自动选帧；apply = 用户确认写入；manual = 手动拖过。 */
+  source: "auto" | "apply" | "manual";
+  at: number;
 }
 
 export interface SheetState {
@@ -732,9 +758,32 @@ function normalizeFrameCandidates(raw: any): FrameCandidates | undefined {
     duration: typeof raw.duration === "number" ? raw.duration : undefined,
     strip: typeof raw.strip === "string" ? raw.strip : undefined,
     picks: Array.isArray(raw.picks) ? raw.picks.map((value: unknown) => Math.max(0, Math.round(num(value, 0)))) : [],
+    selection: normalizeFrameSelection(raw.selection),
     error: typeof raw.error === "string" ? raw.error : undefined,
     stale: raw.stale === true,
     updatedAt: typeof raw.updatedAt === "number" ? raw.updatedAt : undefined
+  };
+}
+
+/** 自动选帧建议的读取侧收敛（老项目缺字段就是 undefined，不改写）。 */
+function normalizeFrameSelection(raw: any): FrameSelectionSummary | undefined {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const picks = Array.isArray(raw.picks) ? raw.picks.map((value: unknown) => Math.max(0, Math.round(num(value, 0)))) : [];
+  if (picks.length === 0 && typeof raw.reason !== "string") return undefined;
+  const source: FrameSelectionSummary["source"] = raw.source === "apply" ? "apply" : raw.source === "manual" ? "manual" : "auto";
+  return {
+    picks,
+    confidence: Math.max(0, Math.min(1, num(raw.confidence, 0))),
+    period: Math.max(0, Math.round(num(raw.period, 0))),
+    reason: typeof raw.reason === "string" && raw.reason !== "" ? raw.reason : undefined,
+    fallback: raw.fallback === true,
+    contacts: Array.isArray(raw.contacts) ? raw.contacts.map((value: unknown) => Math.max(0, Math.round(num(value, 0)))) : [],
+    passing: Array.isArray(raw.passing) ? raw.passing.map((value: unknown) => Math.max(0, Math.round(num(value, 0)))) : [],
+    cycleStart: Math.max(0, Math.round(num(raw.cycleStart, 0))),
+    cycleEnd: Math.max(0, Math.round(num(raw.cycleEnd, 0))),
+    notes: Array.isArray(raw.notes) ? raw.notes.filter((value: unknown) => typeof value === "string").slice(0, 6).map(String) : [],
+    source,
+    at: typeof raw.at === "number" ? raw.at : Date.now()
   };
 }
 
