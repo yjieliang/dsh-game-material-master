@@ -1187,6 +1187,100 @@ export function createSprite(deps: FeatureDeps) {
       );
     }
 
+    /**
+     * 自动选帧（步态 / 周期分析）的建议卡片。
+     *
+     * 数据来自宿主写进候选帧的 `candidates.selection`（不是界面自己算的）：置信度、
+     * 回退原因、建议帧下标都在里面。建议帧缩略图直接用候选帧原图（就是圆圈对着拖的
+     * 那条条带里的格子），所以「建议」和「手改」看到的是同一批图。
+     */
+    function AutoPickBlock({ project, direction, api, start, tasks, candidates, total, cutting }) {
+      const selection = candidates?.selection;
+      if (selection === undefined || selection === null) return null;
+      const picks = Array.isArray(selection.picks) ? selection.picks : [];
+      const current = Array.isArray(candidates?.picks) ? candidates.picks : [];
+      const applied = picks.length > 0 && picks.length === current.length && picks.every((value, index) => value === current[index]);
+      const confidence = Math.round(Math.max(0, Math.min(1, Number(selection.confidence ?? 0))) * 100);
+      const applyKey = `frames:auto:${direction.key}:apply`;
+      const reasonText =
+        selection.reason === undefined || selection.reason === ""
+          ? null
+          : ({
+              too_few_frames: T("候选帧太少（少于 4 帧），无法分析步态"),
+              empty_frames: T("多数候选帧里没有角色（alpha 为空），无法分析步态"),
+              no_stride_signal: T("帧里左右脚几乎没有分开过（原地站立 / 滑步 / 单人剪影），找不到步幅信号"),
+              no_period: T("自相关没有可用周期（帧数不足或步幅没有重复）"),
+              low_period_confidence: T("周期相关性太低（< 0.5），不认为存在可信周期"),
+              insufficient_period_pairs: T("重叠采样对不足（少于 15 对），周期不可信"),
+              no_full_period: T("候选锚点后面放不下一个完整周期（视频太短 / 周期太长）"),
+              phase_iou_below_min: T("相位自证不过（循环首尾姿态差得太多，不是闭合循环）"),
+              half_period_not_witnessed: T("半周期没有换相位（可能是两倍周期 / 素材本来没有左右交替）"),
+              period_ambiguous: T("周期不明确（疑似两倍周期，折半后也无法自证）"),
+              no_valid_cycle: T("没有找到合格的循环窗口")
+            } as Record<string, string>)[selection.reason] ?? T("自动选帧没有找到可信周期，已回退等分");
+      return h(
+        "div",
+        { className: "SPR_autoPick", "data-testid": `auto-pick-${direction.key}` },
+        h(
+          "div",
+          { className: "SPR_autoPickHead" },
+          h("span", { className: "SPR_nodeTitle" }, T("自动选帧建议")),
+          h(Chip, {
+            kind: selection.fallback === true ? "stale" : "ready",
+            text: selection.fallback === true ? T("已回退等分") : T("置信度 {n0}%", { n0: confidence })
+          }),
+          selection.fallback === true || !(Number(selection.period) > 0)
+            ? null
+            : h("span", { className: "SPR_refRow" }, T("周期 {n0} 帧 · 从第 {n1} 帧起", { n0: selection.period, n1: Number(selection.cycleStart ?? 0) + 1 }))
+        ),
+        reasonText === null ? null : h("p", { className: "SPR_note", "data-kind": "warn" }, reasonText),
+        picks.length === 0 ? null : h("p", { className: "SPR_hint" }, T("建议帧（候选帧序号）：{n0}", { n0: picks.map((value) => value + 1).join(" / ") })),
+        picks.length === 0 || total === 0
+          ? null
+          : h(
+              "div",
+              { className: "SPR_autoPickThumbs" },
+              picks.map((value, slot) => {
+                const file = Array.isArray(candidates.frames) ? candidates.frames[value] : undefined;
+                return h(
+                  "figure",
+                  { className: "SPR_autoPickThumb", key: slot },
+                  file === undefined ? null : h("img", { src: assetUrl(project, file, candidates.updatedAt), alt: T("建议第 {n0} 帧", { n0: slot + 1 }), loading: "lazy" }),
+                  h("figcaption", null, T("第 {n0} 帧", { n0: slot + 1 }) + " · " + T("候选 {n0}", { n0: value + 1 }))
+                );
+              })
+            ),
+        h(
+          "div",
+          { className: "SPR_toolbar" },
+          h(
+            BusyBtn,
+            {
+              primary: applied !== true,
+              busy: tasks.has(applyKey),
+              busyText: T("正在按建议切帧…"),
+              disabled: picks.length === 0 || applied === true || cutting === true,
+              onClick: () =>
+                void start(
+                  () => api.applyAutoPicks({ projectId: project.id, key: direction.key, picks }),
+                  { reload: true, notice: T("已按自动选帧切出 {n0} 帧", { n0: picks.length }), noticeKind: "ok" },
+                  { key: applyKey, label: T("正在按建议「{n0}」切帧…", { n0: direction.label }) }
+                )
+            },
+            applied === true ? T("已应用") : T("应用建议")
+          ),
+          h("span", { className: "SPR_refRow" }, applied === true ? T("当前圆圈就是这个建议，仍可拖动微调") : T("应用后仍可拖动圆圈手改；重跑视频会自动作废"))
+        ),
+        Array.isArray(selection.notes) && selection.notes.length > 0
+          ? h(
+              "ul",
+              { className: "SPR_autoPickNotes" },
+              selection.notes.map((line, index) => h("li", { key: index }, line))
+            )
+          : null
+      );
+    }
+
     function FramePickPanel({ project, direction, api, start, tasks, countDraft, setCountDraft }) {
       const node = project.frames?.[direction.key] ?? {};
       const candidates = node.candidates ?? {};
@@ -1255,8 +1349,24 @@ export function createSprite(deps: FeatureDeps) {
             },
             T("重置为等分")
           ),
+          h(
+            BusyBtn,
+            {
+              busy: tasks.has(`frames:auto:${direction.key}`),
+              busyText: T("正在分析步态…"),
+              disabled: total === 0 || cutting,
+              onClick: () =>
+                void start(
+                  () => api.autoPickFrames({ projectId: project.id, key: direction.key }),
+                  { reload: true, notice: T("自动选帧完成：{n0}", { n0: direction.label }), noticeKind: "ok" },
+                  { key: `frames:auto:${direction.key}`, label: T("正在分析「{n0}」的步态…", { n0: direction.label }) }
+                )
+            },
+            T("自动选帧")
+          ),
           h(BusyBadge, { show: cutting, text: tasks.label(taskKey) ?? T("正在抽取候选帧…") })
         ),
+        h(AutoPickBlock, { project, direction, api, start, tasks, candidates, total, cutting }),
         total > 0
           ? h(FramePickAxis, {
               project,

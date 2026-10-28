@@ -147,6 +147,9 @@ export function createApply(deps: ApplyDeps) {
         setFramePick: (payload) => call("setFramePick", payload),
         setFramePicks: (payload) => call("setFramePicks", payload),
         resetFramePicks: (payload) => call("resetFramePicks", payload),
+        // 自动选帧：本地纯计算（模块③ 要先抽一批候选帧），不用额外超时（默认 0 = 不限）。
+        autoPickFrames: (payload) => call("autoPickFrames", payload),
+        applyAutoPicks: (payload) => call("applyAutoPicks", payload),
         rekey: (payload) => call("rekey", payload),
         rematte: (payload) => call("rematte", payload),
         compose: (payload) => call("compose", payload),
@@ -155,9 +158,6 @@ export function createApply(deps: ApplyDeps) {
         importWorkflowFile: (payload) => call("importWorkflowFile", payload),
         // 产物体检：本地同步计算，返回报告 + 摘要（界面的「重新体检」按钮走它）。
         runQA: (payload) => call("runQA", payload),
-        // 自动选帧（本地免费）：分析候选帧给建议 / 按建议重抽。
-        autoPickFrames: (payload) => call("autoPickFrames", payload),
-        applyAutoPicks: (payload) => call("applyAutoPicks", payload),
 
         listImageJobs: () => call("listImageJobs"),
         createImageJob: (payload) => call("createImageJob", payload),

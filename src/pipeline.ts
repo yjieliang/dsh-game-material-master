@@ -1602,6 +1602,18 @@ export async function autoPickFrames(
     cycleStart,
     cycleEnd: analysis.fallback ? 0 : Math.min(total, cycleStart + period),
     notes: analysis.notes.slice(0, 5),
+    // 循环质量指标一起存：产物 QA / 报告直接读，不必再算一遍（自动选帧本来就算过）。
+    metrics:
+      analysis.metrics === null
+        ? undefined
+        : {
+            seamIou: analysis.metrics.seamIou,
+            adjIouMean: analysis.metrics.adjIouMean,
+            alternationDelta: analysis.metrics.alternationDelta,
+            phaseDevMaxDeg: analysis.metrics.phaseDevMaxDeg,
+            heightCvPct: analysis.metrics.heightCvPct,
+            headWidthCvPct: analysis.metrics.headWidthCvPct
+          },
     source: "auto",
     at: Date.now()
   };
@@ -1867,6 +1879,10 @@ async function renderSheet(projectId: string, options: RenderOptions = {}): Prom
         const count = Math.max(0, Math.floor(raw.length / frameBytes));
         const keyedPaths: string[] = [];
         const keyedBuffers: Buffer[] = [];
+        // 目录必须先建：手动选帧 / 自动选帧这条路径没走过 startExtract，
+        // keyed/<方向>/ 还不存在；不建目录时 writeFile 直接 ENOENT，
+        // 整段合成跟着失败（真机联调踩过：候选帧抽好了、整图却报找不到 f00.png）。
+        await mkdir(dirname(assetPath(projectId, `keyed/${key}/f00.png`)), { recursive: true });
 
         // 去背走统一抽象：默认仍是 keygreen（行为不变），设置里选了 birefnet / auto
         // 才换模型；每帧单独计时 / 单独回退，批量并发默认 2，不把一整批帧压给 ComfyUI。

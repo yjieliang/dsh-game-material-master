@@ -1439,7 +1439,19 @@ function ConfigSection(props) {
           max: 64,
           onChange: (value) => void patch({ bottomMargin: value })
         })
-      )
+      ),
+      h(
+        "label",
+        { className: "SPR_check" },
+        h("input", {
+          type: "checkbox",
+          "data-testid": "cfg-auto-select-frames",
+          checked: config.autoSelectFrames !== false,
+          onChange: (event) => void patch({ autoSelectFrames: event.target.checked })
+        }),
+        h("span", null, T("抽帧后自动选帧（步态 / 周期分析，失败回退等分）"))
+      ),
+      h("p", null, T("走循环的素材按「一个完整周期」均匀取帧，比按时长等分更不容易出现首尾接不上。分析不出可信周期时回退等分并写原因；手动选帧面板里随时可以点「自动选帧」再跑一次。"))
     ),
 
     /**

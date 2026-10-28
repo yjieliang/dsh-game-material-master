@@ -473,11 +473,69 @@ function SequenceModule(props) {
                     },
                     T("按当前张数抽帧（{n0} 张）", { n0: settingsDraft.frameCount ?? 8 })
                   ),
+                  h(
+                    BusyBtn,
+                    {
+                      busy: tasks.has("seq:autoPick"),
+                      busyText: T("正在分析步态…"),
+                      disabled: job.video?.file === undefined || framesBusy || composing,
+                      onClick: () =>
+                        void run(() => api.autoPickFrames({ jobId: job.id }), undefined, {
+                          key: "seq:autoPick",
+                          label: T("正在分析步态…")
+                        })
+                    },
+                    T("自动选帧")
+                  ),
                   job.frames?.stale === true ? h(Chip, { kind: "stale", text: T("参数已变，需重抽") }) : null,
                   h(BusyBadge, { show: framesBusy, text: framesText }),
                   h("span", { className: "SPR_refRow" }, job.frames?.duration !== undefined ? T("视频时长 {n0} 秒 · {n1} 帧", { n0: job.frames.duration.toFixed(2), n1: job.frames.files.length }) : "")
                 )
               ),
+              (() => {
+                const selection = job.frames?.selection;
+                if (selection === undefined || selection === null) return null;
+                const picks = Array.isArray(selection.picks) ? selection.picks : [];
+                const fallback = selection.fallback === true;
+                const confidence = Math.round(Math.max(0, Math.min(1, Number(selection.confidence ?? 0))) * 100);
+                return h(
+                  "div",
+                  { className: "SPR_autoPick", "data-testid": "seq-auto-pick", style: { margin: "0 0 12px" } },
+                  h(
+                    "div",
+                    { className: "SPR_autoPickHead" },
+                    h("span", { className: "SPR_nodeTitle" }, T("自动选帧建议")),
+                    h(Chip, { kind: fallback ? "stale" : "ready", text: fallback ? T("已回退等分") : T("置信度 {n0}%", { n0: confidence }) }),
+                    fallback || !(Number(selection.period) > 0) ? null : h("span", { className: "SPR_refRow" }, T("周期 {n0} 帧", { n0: selection.period }))
+                  ),
+                  fallback ? h("p", { className: "SPR_note", "data-kind": "warn" }, T("自动选帧没有找到可信周期，已回退等分（仍可按等分重抽）")) : null,
+                  picks.length === 0 ? null : h("p", { className: "SPR_hint" }, T("建议帧（候选帧序号）：{n0}", { n0: picks.map((value) => value + 1).join(" / ") })),
+                  h(
+                    "div",
+                    { className: "SPR_toolbar" },
+                    h(
+                      BusyBtn,
+                      {
+                        primary: true,
+                        busy: tasks.has("seq:applyAutoPick"),
+                        busyText: T("正在按建议重抽…"),
+                        disabled: framesBusy || composing || picks.length === 0,
+                        onClick: () =>
+                          void kickAndWatch(
+                            () => api.applyAutoPicks({ jobId: job.id, picks }),
+                            T("已按自动选帧重抽 {n0} 帧", { n0: picks.length }),
+                            { key: "seq:applyAutoPick", label: T("正在按建议重抽…") }
+                          )
+                      },
+                      T("应用建议")
+                    ),
+                    h("span", { className: "SPR_refRow" }, T("应用后会按建议重抽这 {n0} 帧并重跑抠像与合成", { n0: picks.length }))
+                  ),
+                  Array.isArray(selection.notes) && selection.notes.length > 0
+                    ? h("ul", { className: "SPR_autoPickNotes" }, selection.notes.map((line, index) => h("li", { key: index }, line)))
+                    : null
+                );
+              })(),
               h(
                 "div",
                 { className: "SPR_card" },

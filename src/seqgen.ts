@@ -818,6 +818,17 @@ export async function autoPickSequenceFrames(jobId: string): Promise<{ summary: 
     cycleStart: result.fallback ? 0 : result.cycleStart,
     cycleEnd: result.fallback ? 0 : result.cycleEnd,
     notes: result.notes.slice(0, 5),
+    metrics:
+      result.metrics === null
+        ? undefined
+        : {
+            seamIou: result.metrics.seamIou,
+            adjIouMean: result.metrics.adjIouMean,
+            alternationDelta: result.metrics.alternationDelta,
+            phaseDevMaxDeg: result.metrics.phaseDevMaxDeg,
+            heightCvPct: result.metrics.heightCvPct,
+            headWidthCvPct: result.metrics.headWidthCvPct
+          },
     source: "auto",
     at: Date.now()
   };
