@@ -2080,6 +2080,40 @@ DSH 只把 `locale` 服务挂在**浏览器半区**（`ctx.provide("locale", …
 
 默认 4px 方块在 256 格上是「能看出方块但仍保留细节」的平衡点；6px 以上开始丢细节。
 
+## 去背抽象：keygreen / BiRefNet / auto
+
+模块①②③ 的抠像统一走 `src/matte.ts`，**不要再在各模块里直接调 `chroma.keyGreen`**
+（`verify-matte.mjs` 扫源码拦）。三个后端：
+
+| 后端 | 做什么 | 什么时候用 |
+|---|---|---|
+| `keygreen`（默认） | 现有绿幕算法（`chroma.keyGreen`），行为与加这个开关之前完全一致 | 纯色 / 渐变干净的背景 |
+| `birefnet` | 本机 ComfyUI 的 BiRefNet 工作流（`127.0.0.1:8188`，免费） | 手绘、照片、非纯色背景 |
+| `auto` | 先跑绿幕，判据不成立才改用模型 | 不确定素材背景是否干净 |
+
+- **auto 判据**：`backgroundFraction < 5%`（几乎没抠掉东西）或「前景明显偏绿 > 2%」（绿边太重）→ 改用模型；
+  其余情况认为绿幕可信（省一次推理，也避免模型把绿幕图裁坏）。
+- **失败显式回退**：BiRefNet 不可用（ComfyUI 没开 / 模型缺失 / 执行错误 / 输出尺寸不一致 / 单帧超时 120s）时，
+  按 `matteFallback` 回退绿幕，`fallbackReason` 写进 `matte` 节点与任务日志——**绝不静默降级**。
+- **尺寸必须一致**：输出与原图尺寸不一致直接报错（防止工作流里的缩放节点把小图覆盖回原图）。
+- **只输出 mask 也能用**：`SaveImage` 只收 IMAGE，所以只出 MASK 的工作流一定经过 `MaskToImage`
+  （RGB 灰度图）；插件按亮度把它与原图合成 RGBA。
+- **缓存**：同图同参数按内容哈希落 `<DSH_HOME>/inkbox/matte-cache/`（`.rgba` + `.json` 元数据）；
+  缓存键带上**工作流正文**，换模型 / 改节点会自动失效；`INKBOX_MATTE_CACHE=0` 可关。
+- **并发**：批量默认 2 路（`DEFAULT_MATTE_CONCURRENCY`），ComfyUI 自己排队；走 local lane、**不建 receipt**。
+- **工作流**：内置 `builtin.matte-birefnet`（`RemoveBackground → InvertMask → JoinImageWithAlpha → SaveImage`；
+  ⚠️ `RemoveBackground` 的 mask 方向是反的，必须 `InvertMask`；模型加载节点的输入名是
+  `bg_removal_name`，不是界面上显示的 `bg_model`）。其它 id 的解析顺序：
+  `setMatteWorkflowResolver()` 注册的解析器（合并工作流库后接）→ `<DSH_HOME>/inkbox/workflows/<id>.json`
+  （兼容工作流库的 `{ workflow }` 落盘格式）→ 本机 `.json` 路径（排障用）。
+- **落盘**：`project.json` 的 `sheet.matte` 与 `frames[<方向>].matte`、图片任务 `item.matte`、
+  序列帧 `frames.matte`，结构 `{ backend, fallbackReason?, elapsedMs, frames, fallbackCount, cachedCount, workflowId }`。
+- **wire**：`rematte({projectId?|jobId?, backend?})` —— 一次性覆盖后端、不改配置（本地方法，不进 `PAID_METHODS`）。
+- **自检**：`scripts/verify-matte.mjs`（80 项）——mock ComfyUI 覆盖成功 / 执行错误 / 尺寸不一致 / 超时 /
+  没有输出 / 连不上 → 回退；缓存命中；并发 ≤ 2；mask 合成；三条链路真实代码路径。
+- **真实联调**：本机 ComfyUI + BiRefNet 的三条链路实测数据见 [去背-BiRefNet.md](去背-BiRefNet.md)。
+
+
 ---
 
 ## 产物位置
