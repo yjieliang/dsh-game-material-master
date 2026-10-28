@@ -28,4 +28,11 @@ export const CSS_SPRITE = `
 .SPR_promptState[data-dirty="true"]{color:var(--gmm-warn)}
 .SPR_promptReset{margin-left:auto;flex:none;padding:0;border:0;background:none;color:var(--gmm-text-3);font:inherit;font-size:10px;line-height:15px;cursor:pointer}
 .SPR_promptReset:hover{color:var(--gmm-accent);text-decoration:underline}
+.SPR_autoPick{margin-top:10px;padding:10px 12px;box-sizing:border-box;border:1px solid var(--gmm-line-2);border-radius:var(--gmm-r-panel);background:var(--gmm-surface-2)}
+.SPR_autoPickHead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.SPR_autoPickThumbs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+.SPR_autoPickThumb{margin:0;width:64px;display:flex;flex-direction:column;gap:2px}
+.SPR_autoPickThumb img{width:64px;height:64px;object-fit:contain;box-sizing:border-box;background:var(--gmm-surface-3);border:1px solid var(--gmm-line-2);border-radius:var(--gmm-r-ctl)}
+.SPR_autoPickThumb figcaption{font-size:10px;line-height:14px;color:var(--gmm-text-3);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.SPR_autoPickNotes{margin:6px 0 0!important;padding-left:16px;font-size:10.5px;line-height:16px;color:var(--gmm-text-3)}
 `;

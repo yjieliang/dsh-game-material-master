@@ -209,6 +209,16 @@ images are sharper, which suits cases where you only need a few directions or wa
 
 ![Extract sequence frames](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-03-sprite-frames.png)
 
+**Auto-pick frames (local, free)**: after candidate frames are extracted the plugin runs a
+**gait / period analysis** and picks the frames of one full walk cycle evenly, instead of splitting the
+whole clip evenly — so the loop closes and the legs really alternate. The panel shows the confidence, the
+estimated period, which frames are **contact** (foot down) and **passing** (transition), plus thumbnails of
+the 8 suggested frames; **Apply suggestion** writes them back into the circles, which you can still drag to
+fine-tune. When no trustworthy period is found it **falls back to even spacing and says why** (the material
+is static, never alternates legs, or the period is ambiguous). The setting page lets you turn
+"auto-pick after extraction" off, and the manual frame-picking panel always has an **Auto-pick frames**
+button. Algorithm, thresholds and real-material comparison: [docs/自动选帧-算法与阈值.md](docs/自动选帧-算法与阈值.md).
+
 ### ④ Key green screen and compose spritesheet
 
 ![Key green screen and compose spritesheet](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-04-sprite-sheet.png)
@@ -261,7 +271,9 @@ flowchart LR
    - **First/last frame mode**: one image as the starting frame (the last frame is optional);
    - **Multimodal reference mode**: reference image + reference video, used to constrain style and motion.
 2. Write a prompt, pick the model / duration (4–15 seconds) / resolution, and click **Generate video**.
-3. **Extract sequence frames**: frame extraction, uniform cropping, pixel quantization.
+3. **Extract sequence frames**: frame extraction, uniform cropping, pixel quantization. You can also click
+   **Auto-pick frames** first: the plugin samples a denser candidate set, runs gait / period analysis and
+   re-extracts these N frames from the suggestion (falling back to even spacing with a reason), then keys and composes.
 4. **Green-screen keying and composition**: tune the keying parameters and compose the horizontal strip; the
    preview area on the right plays it back in a loop at the frame rate — **whether the motion flows and whether
    the keyed edges stay stable is immediately visible in playback**.

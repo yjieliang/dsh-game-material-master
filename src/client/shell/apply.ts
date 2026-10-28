@@ -139,6 +139,9 @@ export function createApply(deps: ApplyDeps) {
         setFramePick: (payload) => call("setFramePick", payload),
         setFramePicks: (payload) => call("setFramePicks", payload),
         resetFramePicks: (payload) => call("resetFramePicks", payload),
+        // 自动选帧：本地纯计算（模块③ 要先抽一批候选帧），不用额外超时（默认 0 = 不限）。
+        autoPickFrames: (payload) => call("autoPickFrames", payload),
+        applyAutoPicks: (payload) => call("applyAutoPicks", payload),
         rekey: (payload) => call("rekey", payload),
         compose: (payload) => call("compose", payload),
 

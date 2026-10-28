@@ -164,6 +164,18 @@ export interface FrameSelectionSummary {
   cycleStart: number;
   cycleEnd: number;
   notes: string[];
+  /**
+   * 循环质量指标（自动选帧顺手算出来的，产物 QA 可以直接读它，不必重算）：
+   * 缝 IoU / 内部相邻步进均 IoU / 腿交替自证 / picks 相位偏差 / 身高与头宽 CV。
+   */
+  metrics?: {
+    seamIou: number | null;
+    adjIouMean: number | null;
+    alternationDelta: number | null;
+    phaseDevMaxDeg: number | null;
+    heightCvPct: number | null;
+    headWidthCvPct: number | null;
+  };
   /** 建议来源：auto = 自动选帧；apply = 用户确认写入；manual = 手动拖过。 */
   source: "auto" | "apply" | "manual";
   at: number;
@@ -782,8 +794,23 @@ function normalizeFrameSelection(raw: any): FrameSelectionSummary | undefined {
     cycleStart: Math.max(0, Math.round(num(raw.cycleStart, 0))),
     cycleEnd: Math.max(0, Math.round(num(raw.cycleEnd, 0))),
     notes: Array.isArray(raw.notes) ? raw.notes.filter((value: unknown) => typeof value === "string").slice(0, 6).map(String) : [],
+    metrics: normalizeSelectionMetrics(raw.metrics),
     source,
     at: typeof raw.at === "number" ? raw.at : Date.now()
+  };
+}
+
+/** 自动选帧的循环质量指标读取侧收敛（缺就 undefined）。 */
+function normalizeSelectionMetrics(raw: any): FrameSelectionSummary["metrics"] {
+  if (raw === null || typeof raw !== "object") return undefined;
+  const metric = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : null);
+  return {
+    seamIou: metric(raw.seamIou),
+    adjIouMean: metric(raw.adjIouMean),
+    alternationDelta: metric(raw.alternationDelta),
+    phaseDevMaxDeg: metric(raw.phaseDevMaxDeg),
+    heightCvPct: metric(raw.heightCvPct),
+    headWidthCvPct: metric(raw.headWidthCvPct)
   };
 }
 

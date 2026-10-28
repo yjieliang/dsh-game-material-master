@@ -377,7 +377,61 @@ async function main() {
   check("90 帧 256×384 分析 < 3000ms（参考实现口径 < 300ms）", perfMs < 3000, perfMs + "ms / period=" + perfResult.period);
   check("分析耗时记录在 analysis.elapsedMs 里", typeof known.analysis.elapsedMs === "number" && known.analysis.elapsedMs >= 0);
 
-  console.log("\n── 8) 真实走循环素材 vs make_cycle.py（G:/image）──");
+  console.log("\n── 8) 接线与界面契约（wire / config / 客户端方法 / 工具面 / docs）──");
+  {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const root = fileURLToPath(new URL("../", import.meta.url));
+    const read = (relative) => readFileSync(join(root, relative), "utf8");
+    const wire = await import("../lib/wire.js");
+    const autoPick = wire.METHODS.find((spec) => spec.method === "autoPickFrames");
+    const applyPick = wire.METHODS.find((spec) => spec.method === "applyAutoPicks");
+    check("wire 注册了 autoPickFrames", autoPick !== undefined);
+    check("wire 注册了 applyAutoPicks", applyPick !== undefined);
+    const autoPayload = autoPick === undefined ? null : autoPick.payload.parse({ projectId: "p1", jobId: "s1", key: "front", count: 8 });
+    check(
+      "autoPickFrames 的 payload 键不丢（projectId / jobId / key / count）",
+      autoPayload !== null && autoPayload.projectId === "p1" && autoPayload.jobId === "s1" && autoPayload.key === "front" && autoPayload.count === 8,
+      JSON.stringify(autoPayload)
+    );
+    const applyPayload = applyPick === undefined ? null : applyPick.payload.parse({ projectId: "p1", picks: [1, 2, 3] });
+    check(
+      "applyAutoPicks 的 payload 键不丢（projectId / picks）",
+      applyPayload !== null && applyPayload.projectId === "p1" && Array.isArray(applyPayload.picks) && applyPayload.picks.length === 3,
+      JSON.stringify(applyPayload)
+    );
+    const configModule = await import("../lib/config.js");
+    check("config 默认 autoSelectFrames = true", configModule.DEFAULT_CONFIG.autoSelectFrames === true, String(configModule.DEFAULT_CONFIG.autoSelectFrames));
+    const patchModule = await import("../lib/configpatch.js");
+    const patch = patchModule.buildConfigPatch({ autoSelectFrames: false });
+    check("autoSelectFrames 进了 saveConfig 白名单（directKeys）", patch.autoSelectFrames === false, JSON.stringify(patch));
+    const tools = await import("../lib/tools.js");
+    check("工具面把两个新方法归到 sprite 模块", tools.METHOD_MODULE.autoPickFrames === "sprite" && tools.METHOD_MODULE.applyAutoPicks === "sprite", JSON.stringify({ auto: tools.METHOD_MODULE.autoPickFrames, apply: tools.METHOD_MODULE.applyAutoPicks }));
+    const indexSource = read("src/index.ts");
+    check("网关实现了 autoPickFrames / applyAutoPicks 并按 jobId 分派模块③", indexSource.includes("async autoPickFrames(payload)") && indexSource.includes("async applyAutoPicks(payload)") && indexSource.includes("autoPickSequenceFrames"));
+    const pipelineSource = read("src/pipeline.ts");
+    check("pipeline 导出 autoPickFrames / applyAutoPicks 并在抽完候选帧后自动应用", pipelineSource.includes("export async function autoPickFrames") && pipelineSource.includes("export async function applyAutoPicks") && pipelineSource.includes("maybeAutoSelectFrames(projectId, key)"));
+    const seqgenSource = read("src/seqgen.ts");
+    check("seqgen 导出 autoPickSequenceFrames / applySequenceAutoPicks", seqgenSource.includes("export async function autoPickSequenceFrames") && seqgenSource.includes("export async function applySequenceAutoPicks"));
+    const clientText = read("lib/client.js");
+    check("客户端有「自动选帧」按钮", clientText.includes('T("自动选帧")'));
+    check("客户端调用了 autoPickFrames / applyAutoPicks", clientText.includes('call("autoPickFrames"') && clientText.includes('call("applyAutoPicks"'));
+    check("客户端建议卡有缩略图 / 置信度 / 回退原因", clientText.includes("SPR_autoPickThumbs") && clientText.includes("置信度 {n0}%") && clientText.includes("已回退等分"));
+    check("设置页有 autoSelectFrames 开关", clientText.includes("cfg-auto-select-frames") && clientText.includes("抽帧后自动选帧"));
+    const en = read("src/client/i18n-en.ts");
+    check("英文词条补齐（自动选帧相关）", en.includes('"自动选帧": "Auto-pick frames"') && en.includes('"自动选帧建议": "Auto-pick suggestion"'));
+    const docs = read("docs/自动选帧-算法与阈值.md");
+    check("docs 记录算法阈值来源与真实对比", docs.includes("make_cycle.py") && docs.includes("Apache-2.0") && docs.includes("±0 帧"));
+    check("verify-host / verify-iso-gateway 的 wire 方法计数已改 190", read("scripts/verify-host.mjs").includes("invocations.length === 190") && read("scripts/verify-iso-gateway.mjs").includes("WIRE.METHODS.length === 190"));
+    const storeSource = read("src/store.ts");
+    check(
+      "selection 带循环质量指标（QA 可直接读，不必重算）",
+      storeSource.includes("normalizeSelectionMetrics") && storeSource.includes("heightCvPct") && pipelineSource.includes("metrics:") && seqgenSource.includes("metrics:")
+    );
+  }
+
+  console.log("\n── 9) 真实走循环素材 vs make_cycle.py（G:/image）──");
   const available = MAKE_CYCLE_REFERENCE.filter((item) => existsSync(item.dir));
   if (available.length === 0) {
     console.log("  SKIP 本机没有 G:/image 走循环素材（真实对比那一组不计入检查项）");
