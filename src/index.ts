@@ -360,6 +360,14 @@ export class GameStudioGateway extends TypertRemoteService {
        */
       imageBackends: listImageBackends(),
       imageBackend: imageBackendStatus(config),
+      /**
+       * 工作流目录（不含正文）。
+       *
+       * 跟着 `getConfig` 一起回：设置页与模块② 的工作流下拉都需要它，但为它再开一次
+       * 轮询没有意义（目录变化只在用户导入 / 删除时发生，而那时本来就会重读配置）。
+       * 9 条元数据约 2 KB，比一次额外往返便宜。
+       */
+      workflows: await listWorkflowMetas().catch(() => []),
       minimaxModels: MINIMAX_MODEL_PRESETS,
       minimaxHosts: MINIMAX_HOST_PRESETS,
       // 「优云智算版 H3」由用户在模型下拉里显式选择，选中后网关地址/路径/档位全部跟着它走。
