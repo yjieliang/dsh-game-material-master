@@ -188,7 +188,8 @@ const arkBackend: ImageBackend = {
       },
       signal
     );
-    return { bytes: result.bytes, ext: result.ext, usage: { workflowId: undefined, seed: undefined, promptId: undefined } };
+    // 保持原样透传：usage / remoteUrl 是日志与回执要用的信息（门面不做裁剪）。
+    return { bytes: result.bytes, ext: result.ext, usage: result.usage as ImageGenerateUsage };
   },
   async selfTest(config) {
     const blocker = arkBackend.blocker(config);
@@ -218,7 +219,8 @@ const toapisBackend: ImageBackend = {
   },
   async generate(config, request, signal) {
     const result = await generateToapisImage(config, request as any, signal);
-    return { bytes: result.bytes, ext: result.ext };
+    // usage.taskId 是 ToAPIs 对账 / 排障要用的（verify-toapis 也断言它），必须透传。
+    return { bytes: result.bytes, ext: result.ext, remoteUrl: result.remoteUrl, usage: result.usage as ImageGenerateUsage };
   },
   async selfTest(config) {
     const blocker = toapisBackend.blocker(config);
@@ -274,7 +276,7 @@ const customBackend: ImageBackend = {
       },
       signal
     );
-    return { bytes: result.bytes, ext: result.ext };
+    return { bytes: result.bytes, ext: result.ext, usage: result.usage as ImageGenerateUsage };
   },
   async selfTest(config) {
     const blocker = customBackend.blocker(config);
