@@ -23,6 +23,14 @@ import { decodeToRgba, mimeOf, toDataUri } from "./media.js";
 import { keyGreen } from "./chroma.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
+import {
+  decodePngRgba,
+  qaFrames,
+  qaVerdictText,
+  writeQAReportFile,
+  type QAFrame,
+  type QAReport
+} from "./qa.js";
 
 export type ItemStatus = "empty" | "running" | "ready" | "error";
 
@@ -68,6 +76,12 @@ export interface ImageJob {
   };
   keying: KeyingSettings;
   items: ImageItem[];
+  /**
+   * 产物 QA 报告（抠像后自动算；完整内容同时落 <任务>/qa/report.json）。
+   *
+   * 单张图片任务里每张是独立作品，跨帧一致性指标不适用（只算透明比例 / 彩边）。
+   */
+  qa?: QAReport;
   /** 固定流程里问过用户的审核模式；没问过就是 undefined。 */
   reviewMode?: "auto" | "manual";
   log: JobLogEntry[];
@@ -229,6 +243,10 @@ function normalizeImageJob(raw: any): ImageJob {
       edgeShrink: num(raw?.keying?.edgeShrink, 0)
     },
     items,
+    qa:
+      raw?.qa !== null && typeof raw?.qa === "object" && raw.qa.version === 1 && Array.isArray(raw.qa.metrics) && Array.isArray(raw.qa.issues)
+        ? (raw.qa as QAReport)
+        : undefined,
     reviewMode: raw?.reviewMode === "manual" ? "manual" : raw?.reviewMode === "auto" ? "auto" : undefined,
     log: Array.isArray(raw?.log) ? raw.log.slice(-200) : []
   };
@@ -366,6 +384,48 @@ export async function rekeyImageJob(jobId: string): Promise<ImageJob> {
   appendJobLog(job.log, "info", `抠像完成：${count} 张（背景占比可在每张下方查看）`);
   await writeImageJob(job);
   return job;
+}
+
+/**
+ * 对「已抠像的产物」做一次体检并落 qa/report.json（wire 方法 runQA 的图片分支）。
+ *
+ * 图片任务是**独立作品**（不是动画帧），所以只算透明比例 / 彩边这类单图指标，
+ * 不算帧间一致性（跨帧一致性在图片任务里没有意义）。
+ * 没有抠像产物（keying 关闭）时直接返回 undefined —— 未抠像的图全不透明，
+ * 拿它报「透明比例 0%」只会制造噪音。
+ */
+export async function refreshImageJobQA(jobId: string): Promise<QAReport | undefined> {
+  const job = await readImageJob(jobId);
+  if (job === undefined) return undefined;
+  const config = await loadConfig();
+  if (!config.qaEnabled) return undefined;
+  const keyedItems = job.items.filter((item) => item.keyedFile !== undefined);
+  if (keyedItems.length === 0) return undefined;
+  const frames: QAFrame[] = [];
+  for (const item of keyedItems) {
+    try {
+      const bytes = await readFile(imageAssetPath(job.id, item.keyedFile as string));
+      const decoded = decodePngRgba(bytes);
+      if (decoded !== undefined) {
+        frames.push({ rgba: decoded.rgba, width: decoded.width, height: decoded.height, label: "img-" + item.index });
+      }
+    } catch {
+      // 单张读不出来不影响其它帧：体检是提示性质的，不能因为它挡住出图。
+    }
+  }
+  if (frames.length === 0) return undefined;
+  const report = qaFrames(frames, { scope: "image", thresholds: config.qaThresholds, consistency: false });
+  await writeQAReportFile(imageJobDir(job.id), report);
+  const fresh = await readImageJob(job.id);
+  if (fresh === undefined) return report;
+  fresh.qa = report;
+  appendJobLog(
+    fresh.log,
+    report.verdict === "fail" ? "error" : report.verdict === "warn" ? "warn" : "info",
+    "产物体检：" + qaVerdictText(report) + "；明细见 qa/report.json"
+  );
+  await writeImageJob(fresh);
+  return report;
 }
 
 /** 上传一张已有图片作为生成结果（用于只做抠像的场景）。 */

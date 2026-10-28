@@ -141,6 +141,8 @@ export function createApply(deps: ApplyDeps) {
         resetFramePicks: (payload) => call("resetFramePicks", payload),
         rekey: (payload) => call("rekey", payload),
         compose: (payload) => call("compose", payload),
+        // 产物体检：本地同步计算，返回报告 + 摘要（界面的「重新体检」按钮走它）。
+        runQA: (payload) => call("runQA", payload),
 
         listImageJobs: () => call("listImageJobs"),
         createImageJob: (payload) => call("createImageJob", payload),

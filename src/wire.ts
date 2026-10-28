@@ -221,6 +221,13 @@ const removeSequenceRefSchema = z.object({
 });
 const runSequenceFramesSchema = z.object({ jobId: z.string(), count: z.number().optional() });
 const projectOnlySchema = z.object({ projectId: z.string() });
+/**
+ * 产物 QA（本地同步：算一份报告并落 <目标目录>/qa/report.json）。
+ *
+ * 二选一：projectId（八方向图整图）或 jobId（图片任务 / 序列帧任务，按 id 前缀分派）。
+ * 本地计算、零计费，所以**不进 PAID_METHODS**、也不建 receipt。
+ */
+const runQASchema = z.object({ projectId: z.string().optional(), jobId: z.string().optional() });
 
 // ── 骨骼动画生成模块 ────────────────────────────────────────────────────
 const rigJobIdSchema = z.object({ jobId: z.string() });
@@ -1246,6 +1253,8 @@ export const METHODS: MethodSpec[] = [  { method: "getConfig", result: configVie
   { method: "resetFramePicks", payload: resetWalkPicksSchema, result: jsonObject },
   { method: "rekey", payload: projectOnlySchema, result: startedSchema },
   { method: "compose", payload: projectOnlySchema, result: startedSchema },
+  // 产物 QA：本地同步体检（算报告 + 落 qa/report.json），不花钱、不进付费清单。
+  { method: "runQA", payload: runQASchema, result: jsonObject },
 
   // 图片生成
   { method: "listImageJobs", result: z.object({ jobs: z.array(jsonObject) }) },

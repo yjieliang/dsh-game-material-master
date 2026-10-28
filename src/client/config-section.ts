@@ -935,6 +935,71 @@ function ConfigSection(props) {
           )
     ),
 
+    // 产物体检（QA）：开关 / fail-closed / 阈值覆盖。阈值直接读「当前生效值」，
+    // 改一个键就把整份表发回去（宿主侧 normalizeQaThresholds 会补齐并夹范围）。
+    h(
+      "details",
+      { className: "SPR_settingsGroup", "data-testid": "cfg-qa" },
+      groupHead(T("产物体检（QA）"), config.qaFailClosed === true ? T("QA 不通过时阻断验收") : T("只警告")),
+      h("p", null, T("合图 / 条图 / 抠像后自动算一份体检报告（透明比例、边缘彩边、帧间一致性、循环缝），落在产物的 qa/report.json。默认只警告，不阻断。")),
+      h(
+        "div",
+        { className: "SPR_fields" },
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("自动体检")),
+          h(
+            "select",
+            { className: "SPR_input", value: config.qaEnabled === false ? "off" : "on", onChange: (event) => void patch({ qaEnabled: event.target.value === "on" }) },
+            h("option", { value: "on" }, T("开启")),
+            h("option", { value: "off" }, T("关闭"))
+          )
+        ),
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("QA 不通过时阻断验收")),
+          h(
+            "select",
+            { className: "SPR_input", value: config.qaFailClosed === true ? "on" : "off", onChange: (event) => void patch({ qaFailClosed: event.target.value === "on" }) },
+            h("option", { value: "off" }, T("关闭（只警告）")),
+            h("option", { value: "on" }, T("开启（fail 阻断）"))
+          )
+        )
+      ),
+      h(
+        "div",
+        { className: "SPR_fields" },
+        [
+          { key: "transparentRatioMin", label: T("透明比例下限"), min: 0, max: 0.95, step: 0.01 },
+          { key: "transparentRatioMax", label: T("透明比例上限"), min: 0.05, max: 1, step: 0.01 },
+          { key: "fringeRatioMax", label: T("彩边比例上限"), min: 0, max: 1, step: 0.01 },
+          { key: "bboxCvMax", label: T("包围盒宽度 CV 上限"), min: 0, max: 50, step: 0.5 },
+          { key: "heightCvMax", label: T("身高 CV 上限"), min: 0, max: 50, step: 0.1 },
+          { key: "headWidthCvMax", label: T("头宽 CV 上限"), min: 0, max: 50, step: 0.1 },
+          { key: "loopSeamIouMin", label: T("循环缝 IoU 下限"), min: 0, max: 1, step: 0.05 },
+          { key: "loopSeamDiffMax", label: T("循环缝 RGB 差上限"), min: 0, max: 255, step: 1 }
+        ].map((entry) =>
+          h(NumField, {
+            key: entry.key,
+            label: entry.label,
+            value: config.qaThresholds?.[entry.key] ?? config.defaults?.qaThresholds?.[entry.key] ?? 0,
+            min: entry.min,
+            max: entry.max,
+            step: entry.step,
+            onChange: (value) => void patch({ qaThresholds: { ...(config.qaThresholds ?? {}), [entry.key]: value } })
+          })
+        )
+      ),
+      h(
+        "div",
+        { className: "SPR_toolbar" },
+        h(Btn, { "data-testid": "cfg-qa-reset", onClick: () => void patch({ qaThresholds: { ...(config.defaults?.qaThresholds ?? {}) } }) }, T("恢复默认阈值"))
+      ),
+      h("p", { className: "SPR_hint" }, T("透明比例 / 彩边比例 / 循环缝 IoU 是 0~1 的小数；CV 与 RGB 差是百分数 / 像素差。阈值越严格越容易报警告。"))
+    ),
+
     h(
       "details",
       { className: "SPR_settingsGroup" },

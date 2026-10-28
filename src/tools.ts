@@ -271,7 +271,9 @@ export const SHARED_TOOL_METHODS: ReadonlySet<string> = new Set([
   "testMusic",
   "testMusicScore",
   "testSfx",
-  "setReviewMode"
+  "setReviewMode",
+  // 产物体检（QA）：三个模块共用（projectId 或 jobId），归共享类。
+  "runQA"
 ]);
 
 /**

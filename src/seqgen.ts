@@ -39,6 +39,18 @@ import {
 } from "./jobs.js";
 import { safeName, sniffImage } from "./imagegen.js";
 import type { NodeStatus, VideoBackend } from "./store.js";
+import {
+  decodePngRgba,
+  qaCellFrames,
+  qaComposedSheet,
+  qaFrames,
+  qaLoopGroups,
+  qaVerdictText,
+  summarizeQA,
+  writeQAReportFile,
+  type QAReport,
+  type QASummary
+} from "./qa.js";
 
 export type SequenceMode = "frames" | "reference";
 
@@ -132,6 +144,11 @@ export interface SequenceJob {
   video: SequenceVideoState;
   frames: SequenceFramesState;
   sheet: SequenceSheetState;
+  /**
+   * 产物 QA 报告（条图合成后自动算；完整内容同时落 <任务>/qa/report.json）。
+   * 条图重合成一次就换一份报告，所以挂任务上而不是挂在 sheet 节点里。
+   */
+  qa?: QAReport;
   /** 固定流程里问过用户的审核模式；没问过就是 undefined。 */
   reviewMode?: "auto" | "manual";
   log: JobLogEntry[];
@@ -346,6 +363,10 @@ function normalizeSequenceJob(raw: any): SequenceJob {
       approved: raw?.sheet?.approved === true,
       updatedAt: typeof raw?.sheet?.updatedAt === "number" ? raw.sheet.updatedAt : undefined
     },
+    qa:
+      raw?.qa !== null && typeof raw?.qa === "object" && raw.qa.version === 1 && Array.isArray(raw.qa.metrics) && Array.isArray(raw.qa.issues)
+        ? (raw.qa as QAReport)
+        : undefined,
     reviewMode: raw?.reviewMode === "manual" ? "manual" : raw?.reviewMode === "auto" ? "auto" : undefined,
     log: Array.isArray(raw?.log) ? raw.log.slice(-200) : []
   };
@@ -777,11 +798,71 @@ export async function composeSequenceSheet(jobId: string): Promise<void> {
   await mkdir(join(sequenceJobDir(jobId), "out"), { recursive: true });
   await writeFile(sequenceAssetPath(jobId, relative), encodePng(sheet.rgba, sheet.width, sheet.height));
 
+  // 产物 QA：条图合成完立刻体检（纯本地、零计费）。默认 warning-only，
+  // 体检失败绝不影响合成本身；报告落 <任务>/qa/report.json。
+  const config = await loadConfig();
+  let qaReport: QAReport | undefined;
+  if (config.qaEnabled) {
+    try {
+      qaReport = qaComposedSheet({
+        scope: "sequence",
+        rgba: sheet.rgba,
+        width: sheet.width,
+        columns: frames.length,
+        rows: 1,
+        cellWidth: job.settings.cellWidth,
+        cellHeight: job.settings.cellHeight,
+        thresholds: config.qaThresholds
+      });
+      await writeQAReportFile(sequenceJobDir(jobId), qaReport);
+    } catch {
+      qaReport = undefined;
+    }
+  }
+
   const fresh = await readSequenceJob(jobId);
   if (fresh === undefined) return;
   fresh.sheet = { status: "ready", file: relative, width: sheet.width, height: sheet.height, updatedAt: Date.now() };
+  fresh.qa = qaReport;
   appendJobLog(fresh.log, "info", `序列帧合成完成：${sheet.width}×${sheet.height}`);
+  if (qaReport !== undefined) {
+    appendJobLog(
+      fresh.log,
+      qaReport.verdict === "fail" ? "error" : qaReport.verdict === "warn" ? "warn" : "info",
+      "产物体检：" + qaVerdictText(qaReport) + (qaReport.sampled > 1 ? "（长边降采样 ×" + qaReport.sampled + "）" : "") + "；明细见 qa/report.json"
+    );
+  }
   await writeSequenceJob(fresh);
+}
+
+/**
+ * 按已落盘的条图复算一次体检（wire 方法 runQA 的序列帧分支）。
+ *
+ * 与八方向图同理：解 PNG 而不是重跑抠像 + 合成，报告针对的就是用户看到的那张条图。
+ */
+export async function runSequenceJobQA(jobId: string): Promise<{ report: QAReport; qa: QASummary | undefined }> {
+  const job = await readSequenceJob(jobId);
+  if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+  if (job.sheet.status !== "ready" || job.sheet.file === undefined) throw new Error("还没有合成条图，请先在第 ③ 步合成条图");
+  const bytes = await readFile(sequenceAssetPath(jobId, job.sheet.file));
+  const decoded = decodePngRgba(bytes);
+  if (decoded === undefined) throw new Error("条图不是可解析的 RGBA8 PNG，无法体检（可能被外部工具改写过了）");
+  const config = await loadConfig();
+  const cellWidth = clampInt(job.settings.cellWidth, 256, 16, 2048);
+  const cellHeight = clampInt(job.settings.cellHeight, 256, 16, 2048);
+  const columns = Math.max(1, Math.round(decoded.width / cellWidth));
+  const report = qaFrames(
+    qaCellFrames({ rgba: decoded.rgba, sheetWidth: decoded.width, columns, rows: 1, cellWidth, cellHeight }),
+    { scope: "sequence", thresholds: config.qaThresholds, loops: qaLoopGroups(1, columns) }
+  );
+  await writeQAReportFile(sequenceJobDir(jobId), report);
+  const fresh = await readSequenceJob(jobId);
+  if (fresh !== undefined) {
+    fresh.qa = report;
+    appendJobLog(fresh.log, report.verdict === "fail" ? "error" : report.verdict === "warn" ? "warn" : "info", "已重新体检条图：" + qaVerdictText(report));
+    await writeSequenceJob(fresh);
+  }
+  return { report, qa: summarizeQA(report, { failClosed: config.qaFailClosed }) };
 }
 
 // ── 素材上传 ────────────────────────────────────────────────────────────

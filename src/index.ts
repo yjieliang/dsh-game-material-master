@@ -71,6 +71,7 @@ import {
   pollVideosOnce,
   resetFramePicks,
   resetTurnPicks,
+  runProjectQA,
   setFramePick,
   setFramePicks,
   setImageMode,
@@ -89,6 +90,7 @@ import {
 import { assetPath, createProject, deleteProject, listProjects, log, patchProject, projectDir, projectExists, readProject, resetDerivedFromSource, } from "./store.js";
 import * as imagegen from "./imagegen.js";
 import * as seqgen from "./seqgen.js";
+import { qaBlockReason, summarizeQA } from "./qa.js";
 import * as riggen from "./riggen.js";
 import * as isogen from "./isogen.js";
 import * as mapgen from "./mapgen.js";
@@ -568,9 +570,13 @@ export class GameStudioGateway extends TypertRemoteService {
         return draft;
       });
     }
+    // QA 摘要：整图体检结论（verdict + 前 5 条 issues + 计数）。完整报告在
+    // <项目>/qa/report.json，界面的指标表用它，回包只带摘要控制体积。
+    const config = await loadConfig();
     return {
       ...project,
       jobs: listJobs(projectId),
+      qa: summarizeQA(project.sheet?.qa, { failClosed: config.qaFailClosed }),
       assetBase: assetBasePath(`${ROUTE_PREFIX}/assets/${projectId}/`)
     };
   }
@@ -767,6 +773,14 @@ export class GameStudioGateway extends TypertRemoteService {
     const stage = asString(input.stage);
     const key = typeof input.key === "string" ? input.key : undefined;
     const approved = input.approved === true;
+    // fail-closed：只有用户显式开了 qaFailClosed 且整图体检 fail 时才拦「打通过」。
+    // 默认 false —— QA 只提示、不阻断（设计 §15 裁决）。
+    if (approved && stage === "sheet") {
+      const config = await loadConfig();
+      const project = await readProject(projectId);
+      const reason = qaBlockReason(project?.sheet?.qa, config);
+      if (reason !== null) throw new Error(reason);
+    }
     await patchProject(projectId, (project) => {
       if (stage === "images" && key !== undefined && project.images[key] !== undefined) {
         project.images[key].approved = approved;
@@ -1482,6 +1496,36 @@ export class GameStudioGateway extends TypertRemoteService {
     }
     return startCompose(projectId);
   }
+  /**
+   * 产物 QA：按**已落盘的产物**复算一份报告并写 <目标目录>/qa/report.json。
+   *
+   * 本地同步、零计费（不生成、不调远端）。两个入口二选一：
+   *   - projectId → 八方向图整图（解 out/sheet.png，按行序 / 格子尺寸切帧）
+   *   - jobId（i 开头）→ 图片任务（解 keyed/*.png，只算单图指标）
+   *   - jobId（s 开头）→ 序列帧任务（解 out/sequence-strip.png）
+   */
+  async runQA(payload) {
+    const input = asRecord(payload);
+    const projectId = asString(input.projectId);
+    const jobId = asString(input.jobId);
+    if (projectId !== "") {
+      const result = await runProjectQA(projectId);
+      return { report: result.report, qa: result.qa };
+    }
+    if (jobId.startsWith("i")) {
+      const job = await imagegen.readImageJob(jobId);
+      if (job === undefined) throw new Error("任务不存在：" + jobId);
+      const report = await imagegen.refreshImageJobQA(jobId);
+      if (report === undefined) throw new Error("这个图片任务还没有抠像产物（先开启抠像并生成，或点「重新抠像」）");
+      const config = await loadConfig();
+      return { report, qa: summarizeQA(report, { failClosed: config.qaFailClosed }) };
+    }
+    if (jobId.startsWith("s")) {
+      const result = await seqgen.runSequenceJobQA(jobId);
+      return { report: result.report, qa: result.qa };
+    }
+    throw new Error("runQA 需要 projectId 或 jobId（图片任务 i… / 序列帧任务 s…）");
+  }
   // ── 阶段①的另一种生成方式：转圈截帧 ────────────────────────────────────
   /**
    * 切换「八方向绿幕图」的生成方式：`turn`（转圈截帧，默认）/ `direct`（逐方向生图）。
@@ -1606,7 +1650,13 @@ export class GameStudioGateway extends TypertRemoteService {
      * （例如 `composeMapAsset` 整理地图素材），而 `assetBase` 是给浏览器用的 URL。
      * 产物绝对路径 = `dir + "/" + item.file`（`out/img-00.png`）。
      */
-    return { ...job, dir: imagegen.imageJobDir(jobId), assetBase: assetBasePath(`${ROUTE_PREFIX}/image-assets/${jobId}/`) };
+    const config = await loadConfig();
+    return {
+      ...job,
+      dir: imagegen.imageJobDir(jobId),
+      qa: summarizeQA(job.qa, { failClosed: config.qaFailClosed }),
+      assetBase: assetBasePath(`${ROUTE_PREFIX}/image-assets/${jobId}/`)
+    };
   }
 
   async deleteImageJob(payload) {
@@ -1635,6 +1685,10 @@ export class GameStudioGateway extends TypertRemoteService {
     if (input.keying !== undefined) applyKeying(job.keying, asRecord(input.keying));
     // 验收打标：不带 index 就是整个任务，带 index 只改那一张。和界面上的「通过」是同一份数据。
     if (typeof input.approved === "boolean") {
+      if (input.approved === true) {
+        const reason = qaBlockReason(job.qa, await loadConfig());
+        if (reason !== null) throw new Error(reason);
+      }
       const index = input.index === undefined || input.index === null ? undefined : clampInt(input.index, -1, 0, 9999);
       let touched = 0;
       for (const item of job.items) {
@@ -1663,7 +1717,10 @@ export class GameStudioGateway extends TypertRemoteService {
 
   async addImageItem(payload) {
     const input = asRecord(payload);
-    await imagegen.addImageToJob(asString(input.jobId), asString(input.name, "image.png"), asString(input.data));
+    const jobId = asString(input.jobId);
+    await imagegen.addImageToJob(jobId, asString(input.name, "image.png"), asString(input.data));
+    // 上传的图在 keying.enabled 时会被就地抠像，抠完顺手体检一次（没有 keyed 产物会自动跳过）。
+    await imagegen.refreshImageJobQA(jobId);
     return { ok: true };
   }
 
@@ -1719,10 +1776,12 @@ export class GameStudioGateway extends TypertRemoteService {
      * `dir` 与本机绝对路径的用法同 `getImageJob`：抽帧产物的绝对路径 =
      * `dir + "/" + file`，其中 `file` 取 `frames.files` 里那串相对路径。
      */
+    const config = await loadConfig();
     return {
       ...job,
       dir: seqgen.sequenceJobDir(jobId),
       tasks: seqgen.listSequenceTasks(jobId),
+      qa: summarizeQA(job.qa, { failClosed: config.qaFailClosed }),
       assetBase: assetBasePath(`${ROUTE_PREFIX}/sequence-assets/${jobId}/`)
     };
   }
@@ -1766,6 +1825,11 @@ export class GameStudioGateway extends TypertRemoteService {
     // 验收打标：不带 step 就是三步全打，带 step 只改那一步。与界面的「通过」共用同一份数据。
     if (typeof input.approved === "boolean") {
       const step = typeof input.step === "string" ? input.step : undefined;
+      // fail-closed 只拦「条图」这一步（其它步骤没有 QA 报告）。默认关，不阻断。
+      if (input.approved === true && (step === undefined || step === "sheet")) {
+        const reason = qaBlockReason(job.qa, await loadConfig());
+        if (reason !== null) throw new Error(reason);
+      }
       if (step === undefined) {
         job.video.approved = input.approved;
         job.frames.approved = input.approved;
@@ -2718,11 +2782,18 @@ function trackImageTask(jobId: string, key: string, run: () => Promise<unknown>)
 }
 
 function kickImageItem(jobId: string, index: number): boolean {
-  return trackImageTask(jobId, `image:${index}`, () => imagegen.generateImageItem(jobId, index));
+  return trackImageTask(jobId, `image:${index}`, async () => {
+    await imagegen.generateImageItem(jobId, index);
+    // 抠像后自动体检：勾了「自动抠像」的图才有 keyed 产物，函数内部自己判。
+    await imagegen.refreshImageJobQA(jobId);
+  });
 }
 
 function kickImageKey(jobId: string): boolean {
-  return trackImageTask(jobId, "image:key", () => imagegen.rekeyImageJob(jobId));
+  return trackImageTask(jobId, "image:key", async () => {
+    await imagegen.rekeyImageJob(jobId);
+    await imagegen.refreshImageJobQA(jobId);
+  });
 }
 
 function disposeImageTasks(): void {

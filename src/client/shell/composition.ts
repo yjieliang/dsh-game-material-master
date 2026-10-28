@@ -567,6 +567,7 @@ export function createComposition(deps: CompositionDeps) {
       React,
       assetUrl,
       hostJob,
+      msg,
       Btn,
       BusyBtn,
       LocalVideoPick,

@@ -282,7 +282,174 @@ export function createSequence(deps: FeatureDeps) {
       );
     }
 
-    const RawModule = createSequenceModule({ React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel , scheduler: gmmScheduler });
+    /**
+     * 产物体检（QA）卡片：徽标 + 可展开指标表 + 报告 JSON 导出 + 重新体检。
+     *
+     * 数据来自宿主写在序列帧任务上的报告（getSequenceJob 回包的 qa 摘要）。报告里的指标
+     * label 是中文（宿主日志 / 工具面用），界面这里按 key 重新映射 T()，
+     * 切英文时不会露出中文。
+     */
+    function QACard(props) {
+      const { qa, api, owner, assetBase, onReload } = props;
+      const [open, setOpen] = React.useState(false);
+      const [report, setReport] = React.useState(null);
+      const [busy, setBusy] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      if (qa === undefined || qa === null) return null;
+      const metrics = report !== null && Array.isArray(report.metrics) ? report.metrics : null;
+      const warnCount = Number(qa.warnCount ?? 0);
+      const failCount = Number(qa.failCount ?? 0);
+      const verdict = qa.verdict === "fail" ? "fail" : qa.verdict === "warn" ? "warn" : "pass";
+      const chipKind = verdict === "fail" ? "error" : verdict === "warn" ? "stale" : "ready";
+      const badge = verdict === "fail"
+        ? T("QA 失败 · {n0} 项失败", { n0: failCount })
+        : verdict === "warn"
+          ? T("QA · {n0} 项警告", { n0: warnCount })
+          : T("QA 通过");
+      const attention = Array.isArray(qa.issues) ? qa.issues : [];
+      const summary = verdict === "pass"
+        ? T("透明像素比例 / 边缘彩边 / 帧间一致性 / 循环缝都正常")
+        : T("{n0} 项需要关注：{n1}", { n0: warnCount + failCount, n1: attention.map((issue) => qaMetricLabel(issue.code)).join("、") });
+      const reportUrl = typeof assetBase === "string" && assetBase !== "" ? assetBase + "qa/report.json?download=1" : undefined;
+      // 摘要里没有指标明细（设计只回 verdict + issues 前 5），展开 / 重新体检时
+      // 才走 runQA 复算一次 —— 本地同步、毫秒级，不花钱。
+      const loadReport = async (reloadOwner) => {
+        if (typeof api?.runQA !== "function") return;
+        setBusy(true);
+        setError(null);
+        try {
+          const result = await api.runQA(owner);
+          setReport(result?.report ?? null);
+          if (reloadOwner === true && typeof onReload === "function") await onReload();
+        } catch (failure) {
+          setError(msg(failure));
+        } finally {
+          setBusy(false);
+        }
+      };
+      const toggle = () => {
+        const next = !open;
+        setOpen(next);
+        if (next && report === null && busy === false) void loadReport(false);
+      };
+      return h(
+        "div",
+        { className: "SPR_card", "data-testid": "qa-card" },
+        h(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+          h("span", { className: "SPR_fieldLabel" }, T("产物体检（QA）")),
+          h("span", { className: "SPR_chip", "data-kind": chipKind, "data-testid": "qa-badge" }, badge),
+          h("span", { className: "SPR_hint", style: { flex: 1, minWidth: 160, margin: 0 } }, summary),
+          Number(qa.sampled ?? 1) > 1 ? h("span", { className: "SPR_chip" }, T("长边降采样 ×{n0}", { n0: qa.sampled })) : null,
+          h(Btn, { "data-testid": "qa-toggle", on: open, onClick: toggle }, open ? T("收起指标") : T("展开指标")),
+          h(BusyBtn, { busy, busyText: T("体检中…"), disabled: busy, onClick: () => void loadReport(true), "data-testid": "qa-refresh" }, T("重新体检")),
+          reportUrl === undefined ? null : h("a", { className: "SPR_btn", href: reportUrl, download: "qa-report.json", style: { textDecoration: "none" }, "data-testid": "qa-export" }, T("导出报告 JSON"))
+        ),
+        qa.blocked === true
+          ? h("p", { className: "SPR_error" }, T("已开启「QA 不通过就阻断」：修复产物后再打通过。"))
+          : null,
+        open && metrics === null
+          ? h("p", { className: "SPR_hint" }, busy ? T("正在计算指标…") : T("还没有指标数据，点「重新体检」重算一份"))
+          : null,
+        open && metrics !== null
+          ? h(
+              "table",
+              { className: "SPR_qaTable", style: { width: "100%", borderCollapse: "collapse", marginTop: 8, fontSize: 12 } },
+              h(
+                "thead",
+                null,
+                h(
+                  "tr",
+                  null,
+                  h("th", { style: { textAlign: "left", padding: "4px 6px", color: "var(--gmm-text-3)" } }, T("指标")),
+                  h("th", { style: { textAlign: "right", padding: "4px 6px", color: "var(--gmm-text-3)" } }, T("数值")),
+                  h("th", { style: { textAlign: "right", padding: "4px 6px", color: "var(--gmm-text-3)" } }, T("阈值")),
+                  h("th", { style: { textAlign: "right", padding: "4px 6px", color: "var(--gmm-text-3)" } }, T("判定"))
+                )
+              ),
+              h(
+                "tbody",
+                null,
+                metrics.map((metric, index) =>
+                  h(
+                    "tr",
+                    { key: metric.key + "-" + index, "data-verdict": metric.verdict, style: { borderTop: "1px solid var(--gmm-line-2)" } },
+                    h("td", { style: { padding: "4px 6px" } }, qaMetricLabel(metric.key)),
+                    h("td", { style: { padding: "4px 6px", textAlign: "right" } }, qaMetricValueText(metric)),
+                    h("td", { style: { padding: "4px 6px", textAlign: "right", color: "var(--gmm-text-3)" } }, qaMetricThresholdText(metric)),
+                    h(
+                      "td",
+                      {
+                        style: {
+                          padding: "4px 6px",
+                          textAlign: "right",
+                          color:
+                            metric.verdict === "fail"
+                              ? "var(--gmm-bad)"
+                              : metric.verdict === "warn"
+                                ? "var(--gmm-warn, #a06a00)"
+                                : "var(--gmm-text-3)"
+                        }
+                      },
+                      qaVerdictLabel(metric.verdict)
+                    )
+                  )
+                )
+              )
+            )
+          : null,
+        error === null ? null : h("p", { className: "SPR_error" }, error)
+      );
+    }
+
+    /** 指标 key → 界面文案（报告里的中文 label 只给宿主日志 / 工具面用）。 */
+    function qaMetricLabel(key) {
+      switch (key) {
+        case "transparentRatio": return T("透明像素占比");
+        case "fringeRatio": return T("边缘彩边比例");
+        case "bboxCv": return T("包围盒宽度 CV");
+        case "heightCv": return T("身高 CV");
+        case "headWidthCv": return T("头宽 CV");
+        case "loopSeamIou": return T("循环缝 IoU");
+        case "loopSeamDiff": return T("循环缝 RGB 差");
+        case "centroidJitter": return T("相邻帧质心位移最大值");
+        case "centroidJitterMedian": return T("相邻帧质心位移中位数");
+        default: return key;
+      }
+    }
+
+    /** 指标值格式化（比例转百分比、CV 带 %、IoU 三位小数）。 */
+    function qaMetricValueText(metric) {
+      const key = metric.key;
+      if (key === "transparentRatio" || key === "fringeRatio") return (Number(metric.value) * 100).toFixed(1) + "%";
+      if (key === "bboxCv" || key === "heightCv" || key === "headWidthCv") return String(metric.value) + "%";
+      if (key === "loopSeamIou") return Number(metric.value).toFixed(3);
+      if (key === "loopSeamDiff") return String(metric.value);
+      return String(metric.value) + "px";
+    }
+
+    /** 阈值文案：上限 / 下限 / 双边区间。 */
+    function qaMetricThresholdText(metric) {
+      if (metric.key === "transparentRatio") {
+        return T("{n0}~{n1}", { n0: (Number(metric.threshold) * 100).toFixed(0) + "%", n1: (Number(metric.thresholdMax) * 100).toFixed(0) + "%" });
+      }
+      if (metric.threshold === undefined || metric.threshold === null) return "—";
+      if (metric.key === "fringeRatio") return T("≤ {n0}", { n0: (Number(metric.threshold) * 100).toFixed(1) + "%" });
+      if (metric.comparison === "min") return T("≥ {n0}", { n0: String(metric.threshold) });
+      if (metric.key === "bboxCv" || metric.key === "heightCv" || metric.key === "headWidthCv") return T("≤ {n0}", { n0: String(metric.threshold) + "%" });
+      return T("≤ {n0}", { n0: String(metric.threshold) });
+    }
+
+    /** 判定文案。 */
+    function qaVerdictLabel(verdict) {
+      if (verdict === "fail") return T("失败");
+      if (verdict === "warn") return T("警告");
+      if (verdict === "pass") return T("通过");
+      return T("记录");
+    }
+
+    const RawModule = createSequenceModule({ QACard, React, h, T, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel , scheduler: gmmScheduler });
 
   // 错误隔离：整个模块挂一层边界（单模块故障只降级这一块）
   const Boundary = createFeatureBoundary({ name: "sequence" });
