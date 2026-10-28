@@ -440,7 +440,8 @@ try {
     () => downloadToapis(config, "http://169.254.169.254/metadata", "image"),
     /unsafe/,
   );
-  const receiptDir = join(home, "game-material-master", "toapis-receipts");
+  // P8 起 receipt 收口到统一的 receipts/ 目录（toapis-receipts/ 是旧路径）。
+  const receiptDir = join(home, "game-material-master", "receipts");
   const receipts = await Promise.all(
     (await readdir(receiptDir)).map((name) =>
       readFile(join(receiptDir, name), "utf8"),

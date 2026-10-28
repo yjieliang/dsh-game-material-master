@@ -5,6 +5,8 @@
  * 这里只管「和宿主接线」，界面本身在 shell/composition.ts 里装好之后传进来。
  */
 
+import { preparePaidPayload } from "../platform/api.js";
+
 export function createApply(deps: any) {
   // 依赖：组合根注入（先按需展开，由 tsc 报错驱动补齐）
   const {
@@ -51,7 +53,9 @@ export function createApply(deps: any) {
         await mount;
         const remote = ctx.get(`remote.${SERVICE}`);
         if (remote === undefined) throw new Error(T("gameStudio 远程服务不可用，请确认插件已启用"));
-        const result = payload === undefined ? await remote[method]() : await remote[method](payload);
+        // 付费方法必须带 confirm + requestId（平台层会校验并补幂等键；非付费方法原样透传）。
+        const prepared = preparePaidPayload(method, payload);
+        const result = prepared === undefined ? await remote[method]() : await remote[method](prepared);
         if (result === null || typeof result !== "object" || result.ok !== true) {
           const detail = result?.error;
           throw new Error(detail === undefined ? T("{n0} 调用失败", { n0: method }) : `${detail.code ?? "ERROR"}: ${detail.message ?? ""}`);
@@ -59,10 +63,20 @@ export function createApply(deps: any) {
         return result.value;
       };
 
+      /**
+       * 付费方法的唯一通道。
+       *
+       * 用户点的那次按钮本身已经写明「计费 / 会消耗积分」，这里替它打上
+       * `confirm: true`（平台层还会再校验一次，绕过就没有请求）；幂等键 `requestId`
+       * 由平台层自动生成——同一笔提交的重试要靠宿主 receipt 按指纹挡住，
+       * 不是靠这里复用 key（界面没有「重试上一次」的入口，重复点击走的是模块自己的闸门）。
+       */
+      const callPaid = (method: string, payload: any = {}) => call(method, { confirm: true, ...payload });
+
       const api = {
         getConfig: () => call("getConfig"),
         saveConfig: (payload) => call("saveConfig", payload),
-        testArk: () => call("testArk"),
+        testArk: () => callPaid("testArk"),
         testCustomImage: () => call("testCustomImage"),
         testMinimax: () => call("testMinimax"),
         testComfy: () => call("testComfy"),
@@ -81,16 +95,16 @@ export function createApply(deps: any) {
         revealProject: (payload) => call("revealProject", payload),
         uploadVideo: (payload) => call("uploadVideo", payload),
         exportImages: (payload) => call("exportImages", payload),
-        runImage: (payload) => call("runImage", payload),
-        runImages: (payload) => call("runImages", payload),
+        runImage: (payload) => callPaid("runImage", payload),
+        runImages: (payload) => callPaid("runImages", payload),
         setImageMode: (payload) => call("setImageMode", payload),
-        runTurnVideo: (payload) => call("runTurnVideo", payload),
+        runTurnVideo: (payload) => callPaid("runTurnVideo", payload),
         runTurnFrames: (payload) => call("runTurnFrames", payload),
         setTurnPick: (payload) => call("setTurnPick", payload),
         setTurnPicks: (payload) => call("setTurnPicks", payload),
         resetTurnPicks: (payload) => call("resetTurnPicks", payload),
         cutTurnFrames: (payload) => call("cutTurnFrames", payload),
-        runVideos: (payload) => call("runVideos", payload),
+        runVideos: (payload) => callPaid("runVideos", payload),
         pollVideos: (payload) => call("pollVideos", payload),
         clearVideos: (payload) => call("clearVideos", payload),
         runFrames: (payload) => call("runFrames", payload),
@@ -110,7 +124,7 @@ export function createApply(deps: any) {
         removeImageRef: (payload) => call("removeImageRef", payload),
         addImageItem: (payload) => call("addImageItem", payload),
         removeImageItem: (payload) => call("removeImageItem", payload),
-        runImageJob: (payload) => call("runImageJob", payload),
+        runImageJob: (payload) => callPaid("runImageJob", payload),
         keyImageJob: (payload) => call("keyImageJob", payload),
 
         listSequenceJobs: () => call("listSequenceJobs"),
@@ -120,7 +134,7 @@ export function createApply(deps: any) {
         saveSequenceJob: (payload) => call("saveSequenceJob", payload),
         uploadSequenceRef: (payload) => call("uploadSequenceRef", payload),
         removeSequenceRef: (payload) => call("removeSequenceRef", payload),
-        runSequenceVideo: (payload) => call("runSequenceVideo", payload),
+        runSequenceVideo: (payload) => callPaid("runSequenceVideo", payload),
         pollSequenceVideo: (payload) => call("pollSequenceVideo", payload),
         clearSequenceVideo: (payload) => call("clearSequenceVideo", payload),
         runSequenceFrames: (payload) => call("runSequenceFrames", payload),
@@ -166,8 +180,8 @@ export function createApply(deps: any) {
     uploadRigTexture: (payload) => call("uploadRigTexture", payload),
     setRigTextureVersion: (payload) => call("setRigTextureVersion", payload),
     removeRigTextureVersion: (payload) => call("removeRigTextureVersion", payload),
-    runRigRedraw: (payload) => call("runRigRedraw", payload),
-        runRigSheet: (payload) => call("runRigSheet", payload),
+    runRigRedraw: (payload) => callPaid("runRigRedraw", payload),
+        runRigSheet: (payload) => callPaid("runRigSheet", payload),
         runRigSegment: (payload) => call("runRigSegment", payload),
         runRigLayout: (payload) => call("runRigLayout", payload),
         runRigBones: (payload) => call("runRigBones", payload),
@@ -235,26 +249,26 @@ export function createApply(deps: any) {
         testMusicScore: () => call("testMusicScore"),
         saveMusicScorePlan: (payload) => call("saveMusicScorePlan", payload),
         runMusicScore: (payload) => call("runMusicScore", payload),
-        submitMusicScoreToSuno: (payload) => call("submitMusicScoreToSuno", payload),
+        submitMusicScoreToSuno: (payload) => callPaid("submitMusicScoreToSuno", payload),
         saveMusicJob: (payload) => call("saveMusicJob", payload),
         deleteMusicJob: (payload) => call("deleteMusicJob", payload),
         setMusicApproved: (payload) => call("setMusicApproved", payload),
         revealMusicJob: (payload) => call("revealMusicJob", payload),
-        runMusicGeneration: (payload) => call("runMusicGeneration", payload),
+        runMusicGeneration: (payload) => callPaid("runMusicGeneration", payload),
         cancelMusicGeneration: (payload) => call("cancelMusicGeneration", payload),
         refreshMusicJob: (payload) => call("refreshMusicJob", payload),
         getMusicWav: (payload) => call("getMusicWav", payload),
         getMusicLrc: (payload) => call("getMusicLrc", payload),
         listMusicHistory: (payload) => call("listMusicHistory", payload ?? {}),
         listMusicStemInstruments: () => call("listMusicStemInstruments"),
-        runMusicTool: (payload) => call("runMusicTool", payload),
+        runMusicTool: (payload) => callPaid("runMusicTool", payload),
         musicPeaks: (payload) => call("musicPeaks", payload),
         renderMusicEdit: (payload) => call("renderMusicEdit", payload),
         saveMusicVersion: (payload) => call("saveMusicVersion", payload),
         deleteMusicVersion: (payload) => call("deleteMusicVersion", payload),
         exportMusic: (payload) => call("exportMusic", payload),
         // 音效生成（模块八）
-        testSfx: () => call("testSfx"),
+        testSfx: () => callPaid("testSfx"),
         listSfxJobs: () => call("listSfxJobs"),
         createSfxJob: (payload) => call("createSfxJob", payload),
         getSfxJob: (payload) => call("getSfxJob", payload),
@@ -262,7 +276,7 @@ export function createApply(deps: any) {
         deleteSfxJob: (payload) => call("deleteSfxJob", payload),
         uploadSfxRef: (payload) => call("uploadSfxRef", payload),
         removeSfxRef: (payload) => call("removeSfxRef", payload),
-        runSfxGeneration: (payload) => call("runSfxGeneration", payload),
+        runSfxGeneration: (payload) => callPaid("runSfxGeneration", payload),
         cancelSfxGeneration: (payload) => call("cancelSfxGeneration", payload),
         setSfxApproved: (payload) => call("setSfxApproved", payload),
         revealSfxJob: (payload) => call("revealSfxJob", payload),

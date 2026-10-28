@@ -21,6 +21,70 @@ import { perf } from "./perf.js";
 /** 方法类别。 */
 export type MethodKind = "read" | "write" | "paid";
 
+/**
+ * 付费方法清单（宿主加固 · P8）。
+ *
+ * 三处必须一致：这里、宿主 `src/index.ts` 的 `PAID_METHODS`、`src/wire.ts` 里
+ * 用 `withPaidFields()` 挂着 confirm / requestId 的那些方法。`verify-jobs.mjs`
+ * 会逐条比对——漏一处就是某个付费入口既没有确认也没有幂等键，不报错，只重复计费。
+ */
+export const PAID_METHODS: readonly string[] = [
+  "testArk",
+  "testSfx",
+  "runImage",
+  "runImages",
+  "runTurnVideo",
+  "runVideos",
+  "runImageJob",
+  "runSequenceVideo",
+  "runRigRedraw",
+  "runRigSheet",
+  "runMusicGeneration",
+  "runMusicTool",
+  "submitMusicScoreToSuno",
+  "runSfxGeneration"
+];
+
+/** 是否付费方法。 */
+export function isPaidMethod(method: string): boolean {
+  return PAID_METHODS.includes(method);
+}
+
+/**
+ * 生成一次幂等键。
+ *
+ * 浏览器优先用 `crypto.randomUUID()`（去掉连字符，字符集与宿主校验一致）；
+ * 极老环境退化成「时间戳 + 随机串」——幂等键不要求密码学强度，
+ * 只要求同一个 intent 重试时**不重新生成**，所以调用方必须复用它。
+ */
+export function newRequestId(): string {
+  const cryptoApi = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (typeof cryptoApi?.randomUUID === "function") return String(cryptoApi.randomUUID()).replace(/-/g, "");
+  return `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * 付费调用的统一处理：confirm 必须显式为 true，缺 requestId 自动补一个。
+ *
+ * 平台层先挡一道（不发请求、不入账），宿主侧还会再挡一次——两层都写，
+ * 是因为任何一层失守都是真实计费。
+ */
+export function preparePaidPayload(method: string, payload: unknown): unknown {
+  if (!isPaidMethod(method)) return payload;
+  const input =
+    payload !== null && typeof payload === "object" ? { ...(payload as Record<string, unknown>) } : ({} as Record<string, unknown>);
+  if (input.confirm !== true) {
+    const failure = new Error(`${method} 是付费操作：必须显式确认（confirm: true）后再提交`) as ApiFailure;
+    failure.name = "ApiFailure";
+    failure.method = method;
+    failure.code = "confirm-required";
+    failure.retriable = false;
+    throw failure;
+  }
+  if (typeof input.requestId !== "string" || input.requestId === "") input.requestId = newRequestId();
+  return input;
+}
+
 /** 方法元数据。 */
 export interface MethodSpec {
   kind?: MethodKind;

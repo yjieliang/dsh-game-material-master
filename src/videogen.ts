@@ -30,6 +30,16 @@ import {
 } from "./comfy.js";
 import { downloadVideo, queryVideo, retrieveFile, submitVideo } from "./minimax.js";
 import type { VideoBackend } from "./store.js";
+import { noteQueued, withSlot } from "./jobs.js";
+import {
+  assessPaidFailure,
+  beginPaidCall,
+  currentPaidIntent,
+  digest,
+  markPaidFailed,
+  markPaidSubmitted,
+  markPaidUncertain
+} from "./receipts.js";
 
 export type VideoPhase = "pending" | "running" | "succeeded" | "failed";
 
@@ -84,26 +94,67 @@ export function assertVideoBackendReady(config: Config): void {
   if (config.minimaxApiKey.trim() === "") throw new Error("尚未配置 MiniMax API Key");
 }
 
-/** 提交一个视频任务。返回的 taskId 与 backend 必须一起存进节点。 */
+/**
+ * 提交一个视频任务。返回的 taskId 与 backend 必须一起存进节点。
+ *
+ * 三条后端的并发语义不同，通道也不同：
+ *   · MiniMax / ToAPIs —— 付费通道（限速按账号配额），MiniMax 这一路还要落 receipt；
+ *     ToAPIs 的 receipt 在 `toapis.ts` 内部（只有那里能按 taskId 对账），不重复记账；
+ *   · 本机 ComfyUI —— 本地通道（吃 CPU / 显存，与 ffmpeg 共用另一个上限）。
+ */
 export async function submitVideoTask(config: Config, request: VideoSubmitRequest): Promise<VideoSubmitResult> {
-  if (videoBackendOf(config) === "toapis") return {taskId:await submitToapisVideo(config,request),backend:"toapis",notes:["ToAPIs video uses its own configured model, duration and resolution"]};
-  if (videoBackendOf(config) === "comfy") return submitViaComfy(config, request);
-
-  const taskId = await submitVideo({
-    baseUrl: config.minimaxBaseUrl,
-    apiKey: config.minimaxApiKey,
-    model: request.model ?? config.minimaxModel,
-    timeoutMs: config.minimaxTimeoutMs,
-    prompt: request.prompt,
-    firstFrameImage: request.firstFrameImage,
-    lastFrameImage: request.lastFrameImage,
-    referenceImages: request.referenceImages,
-    referenceVideos: request.referenceVideos,
-    duration: request.duration,
-    resolution: request.resolution,
-    promptOptimizer: request.promptOptimizer
+  const backend = videoBackendOf(config);
+  if (backend === "toapis") {
+    return withSlot("paid", { label: "视频 · ToAPIs" }, async () => ({
+      taskId: await submitToapisVideo(config, request),
+      backend: "toapis",
+      notes: ["ToAPIs video uses its own configured model, duration and resolution"]
+    }));
+  }
+  if (backend === "comfy") {
+    return withSlot("local", { label: "视频 · 本机 ComfyUI" }, () => submitViaComfy(config, request));
+  }
+  return withSlot("paid", { label: "视频 · MiniMax", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
+    const ticket = await beginPaidCall({
+      provider: "minimax",
+      identity: {
+        model: request.model ?? config.minimaxModel,
+        duration: request.duration,
+        resolution: request.resolution,
+        promptOptimizer: request.promptOptimizer,
+        prompt: request.prompt,
+        first: digest(request.firstFrameImage ?? ""),
+        last: digest(request.lastFrameImage ?? ""),
+        references: [
+          ...(request.referenceImages ?? []).map((image) => digest(image)),
+          ...(request.referenceVideos ?? []).map((video) => digest(video))
+        ]
+      }
+    });
+    try {
+      const taskId = await submitVideo({
+        baseUrl: config.minimaxBaseUrl,
+        apiKey: config.minimaxApiKey,
+        model: request.model ?? config.minimaxModel,
+        timeoutMs: config.minimaxTimeoutMs,
+        prompt: request.prompt,
+        firstFrameImage: request.firstFrameImage,
+        lastFrameImage: request.lastFrameImage,
+        referenceImages: request.referenceImages,
+        referenceVideos: request.referenceVideos,
+        duration: request.duration,
+        resolution: request.resolution,
+        promptOptimizer: request.promptOptimizer
+      });
+      await markPaidSubmitted(ticket.key, { taskId }).catch(() => undefined);
+      return { taskId, backend: "minimax", notes: [] };
+    } catch (error) {
+      const assessment = assessPaidFailure(error);
+      if (assessment.state === "failed") await markPaidFailed(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      else await markPaidUncertain(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      throw error;
+    }
   });
-  return { taskId, backend: "minimax", notes: [] };
 }
 
 /**

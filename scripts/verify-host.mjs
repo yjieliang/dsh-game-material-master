@@ -518,17 +518,17 @@ async function main() {
       check(name, message.includes(needle), message.slice(0, 80));
     }
   };
-  await expectThrow("无绿幕图时拒绝生成视频", () => studio.runVideos({ projectId }), "绿幕图");
+  await expectThrow("无绿幕图时拒绝生成视频", () => studio.runVideos({ confirm: true, projectId }), "绿幕图");
   await expectThrow("无视频时拒绝抽帧", () => studio.runFrames({ projectId }), "视频");
   await expectThrow("无抽帧时拒绝合成", () => studio.compose({ projectId }), "序列帧");
   await expectThrow("无抽帧时拒绝重抠像", () => studio.rekey({ projectId }), "序列帧");
-  await expectThrow("未知方向不启动", () => studio.runImage({ projectId, key: "nope" }), "未知方向");
+  await expectThrow("未知方向不启动", () => studio.runImage({ confirm: true, projectId, key: "nope" }), "未知方向");
   await expectThrow("未知项目直接报错", () => studio.getProject({ projectId: "p000000000000" }), "项目不存在");
 
   // ── 7. 异步任务与错误传播 ──────────────────────────────────────────────
   console.log("7) 异步任务与错误传播（用无效 Key 真实打一次方舟接口）");
   await studio.saveConfig({ arkApiKey: "invalid-key-for-verification" });
-  const kicked = await studio.runImage({ projectId, key: "front" });
+  const kicked = await studio.runImage({ confirm: true, projectId, key: "front" });
   check("生图任务被接受", kicked.started === true, JSON.stringify(kicked));
 
   let settled = null;
@@ -556,7 +556,7 @@ async function main() {
   // 批量生图也要公布覆盖面：这一批可能跑好几分钟，界面靠它把还没轮到的方向
   // 一直盖住（本地 pending 表只活 700ms）。还是那把无效 Key，八个方向都会很快
   // 失败，但「这一批要重做哪几个方向」当场就能从运行表里读到。
-  const batchKick = await studio.runImages({ projectId });
+  const batchKick = await studio.runImages({ confirm: true, projectId });
   check("批量生图任务被接受", batchKick.started === true, JSON.stringify(batchKick));
   const batchProject = await studio.getProject({ projectId });
   const batchJob = (batchProject.jobs ?? []).find((job) => job.key === "images:all");
@@ -939,9 +939,9 @@ async function main() {
 
   try {
     // 批量提交带 regenerate 会把八段视频全重跑一遍（真金白银），必须直接拒绝。
-    await expectThrow("批量带 regenerate 被拒绝", () => studio.runVideos({ projectId, regenerate: true }), "必须指定方向");
+    await expectThrow("批量带 regenerate 被拒绝", () => studio.runVideos({ confirm: true, projectId, regenerate: true }), "必须指定方向");
 
-    const regenKick = await studio.runVideos({ projectId, keys: ["front"], regenerate: true });
+    const regenKick = await studio.runVideos({ confirm: true, projectId, keys: ["front"], regenerate: true });
     check("单方向重新生成被接受", regenKick.started === true, JSON.stringify(regenKick));
 
     // 作废发生在 RPC 返回之前，所以这里可以直接断言，不需要等异步任务。
@@ -1001,7 +1001,7 @@ async function main() {
       project.videos.front = { status: "ready", file: "videos/front.mp4", approved: false };
       project.videos.back = { status: "ready", file: "videos/back.mp4", approved: false };
     });
-    await expectThrow("已完成的方向默认不重跑，并给出可读原因", () => studio.runVideos({ projectId, keys: ["front"] }), "都已经生成完成");
+    await expectThrow("已完成的方向默认不重跑，并给出可读原因", () => studio.runVideos({ confirm: true, projectId, keys: ["front"] }), "都已经生成完成");
   } finally {
     await new Promise((resolve) => fakeGateway.close(resolve));
     await studio.saveConfig({ minimaxBaseUrl: "https://api.minimaxi.com", clearMinimaxApiKey: true });
@@ -1208,7 +1208,7 @@ async function main() {
       minimaxBaseUrl: `http://127.0.0.1:${turnGateway.address().port}`
     });
     try {
-      const videoKick = await studio.runTurnVideo({ projectId });
+      const videoKick = await studio.runTurnVideo({ confirm: true, projectId });
       check("转圈视频提交被接受", videoKick.started === true, JSON.stringify(videoKick));
       let videoSettled = null;
       for (let i = 0; i < 40; i++) {
@@ -1612,7 +1612,7 @@ async function main() {
   await (async () => {
     let threw = "";
     try {
-      await studio.runSequenceVideo({ jobId: seqId });
+      await studio.runSequenceVideo({ confirm: true, jobId: seqId });
     } catch (error) {
       threw = String(error?.message ?? error);
     }
@@ -1628,7 +1628,7 @@ async function main() {
     await m.writeSequenceJob(job2);
     let threw = "";
     try {
-      await studio.runSequenceVideo({ jobId: seqId });
+      await studio.runSequenceVideo({ confirm: true, jobId: seqId });
     } catch (error) {
       threw = String(error?.message ?? error);
     }
@@ -2004,7 +2004,7 @@ async function main() {
       minimaxBaseUrl: `http://127.0.0.1:${gateway.address().port}`
     });
     try {
-      const kicked = await studio.runTurnVideo({ projectId: freshId });
+      const kicked = await studio.runTurnVideo({ confirm: true, projectId: freshId });
       check("转圈视频提交被接受（首帧保险）", kicked.started === true, JSON.stringify(kicked));
       let guarded = null;
       for (let i = 0; i < 40; i++) {

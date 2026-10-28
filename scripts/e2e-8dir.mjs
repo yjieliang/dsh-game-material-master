@@ -169,7 +169,7 @@ async function main() {
   // ── ①a 转圈截帧（默认生成方式）────────────────────────────────────────
   if (shouldRun("turn")) {
     console.log("\n① 转圈截帧：一段「原地匀速转一整圈」的绿幕视频 → 按时间截出八个方向");
-    const kicked = await studio.runTurnVideo({ projectId });
+    const kicked = await studio.runTurnVideo({ confirm: true, projectId });
     console.log(`  启动：${JSON.stringify(kicked)}`);
     if (kicked.started !== true) throw new Error(`转圈视频未能启动：${kicked.reason}`);
     // 视频落地后宿主会自动抽候选帧并切图，所以等到「没有任务在跑」为止。
@@ -203,7 +203,7 @@ async function main() {
   // ── ①b 八方向绿幕图（逐方向生图）──────────────────────────────────────
   if (shouldRun("images")) {
     console.log("\n① 生成八方向绿幕图（按依赖分层）");
-    const kicked = await studio.runImages({ projectId });
+    const kicked = await studio.runImages({ confirm: true, projectId });
     console.log(`  启动：${JSON.stringify(kicked)}`);
     let project = await waitFor(projectId, (p) => p.images, "images", 30 * 60 * 1000);
     reportErrors(project, (p) => p.images, "images");
@@ -221,7 +221,7 @@ async function main() {
   // ── ② 视频 ────────────────────────────────────────────────────────────
   if (shouldRun("videos")) {
     console.log(`\n② 生成八段行走视频（${config.minimaxModel} / ${RESOLUTION} / ${DURATION}s）`);
-    const kicked = await studio.runVideos({ projectId });
+    const kicked = await studio.runVideos({ confirm: true, projectId });
     console.log(`  启动：${JSON.stringify(kicked)}`);
     if (kicked.started !== true) throw new Error(`视频阶段未能启动：${kicked.reason}`);
     const project = await waitFor(projectId, (p) => p.videos, "videos", 60 * 60 * 1000);

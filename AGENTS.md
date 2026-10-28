@@ -87,7 +87,8 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 | 新增配置字段必须同时在 `src/index.ts` 的 `saveConfig` `directKeys` 白名单里加一条 | 白名单外的键会被**静默丢掉**：界面显示已保存、`config.json` 没变、不报任何错。`comfy*` 那十个键是这么加的。⚠️ 唯一例外是**凭据类**字段（`arkApiKey` / `minimaxApiKey` / `comfyCookies`）：它们**不进**白名单——白名单是原样透传，凭据要先归一化 / trim，所以在 `saveConfig` 函数体里单独处理 |
 | 视频**按节点上记的 `backend` 分派**（`src/videogen.ts`），两个后端的 taskId 都是字符串 | `comfyVideo` 是全局开关，用户可能中途改设置；按当前配置去查就会拿 MiniMax 的接口查 ComfyUI 的 `prompt_id`（表现：一边报「任务不存在」、另一边永远 pending）。新增视频字段时 `VideoNode` / `TurnVideoNode` 的 `backend?` 要一起写 |
 | ComfyUI 工作流是**用户自己的 JSON**，注入前必须过 `parseComfyWorkflow` + `detectComfyBindings`，不许写死节点 id | 节点 id 与输入名由用户装的自定义节点决定。界面格式（顶层 `nodes` / `links` 数组）也收，由 `parseComfyWorkflow` 先转成 API 格式——但**没连线的 IMAGE 槽不会进转换结果**，首帧注入仍靠探测的第 4 级（`object_info` 声明的 optional IMAGE）。「首帧图」尤其危险：`LoadImage` 只代表一张图，首尾帧各用其一，搞错会**静默**把首帧顶掉（`verify-comfy.mjs` 盯这两条） |
-| 后台任务表（`pipeline` / `seqgen` / `riggen`）**每次 `apply` 都要复位**（`activatePipeline()` / `activateSequence()` / `activateRig()`） | DSH 重载插件时 `ctx.effect` 的清理会把模块级的 `disposed` 置为 true，而 Node 模块缓存留着**同一个模块对象**——不可逆。症状：**所有生成类调用**都只回一句「任务已在进行中」，按钮点了没反应、项目日志一条不加，而上传源图 / 查状态 / 测试连接全正常。`activate*()` 就是给重载留的复位入口；`kick()` 失败时用 `kickFailure()` 区分「真在跑」与「实例已废」 |
+| 后台任务表**统一走 `src/jobs.ts`**（P8），五个模块的 `activate*` / `dispose*` 都必须调 `resetModule(module)` | 老实现是五个模块各一套 Map。DSH 重载插件时 `ctx.effect` 的清理会把模块级的 `disposed` 置为 true，而 Node 模块缓存留着**同一个模块对象**——不可逆。症状：**所有生成类调用**都只回一句「任务已在进行中」，按钮点了没反应、项目日志一条不加，而上传源图 / 查状态 / 测试连接全正常。新任务一律 `jobs.startJob({module,scope,taskKey,…})` + `finishJob()`，取消用注册表持有的 signal；不要再自己 `new Map()` / `new AbortController()` |
+| **付费提交必须过 receipt + paid 通道**（`receipts.beginPaidCall()` + `jobs.withSlot("paid",…)`），付费方法必须在 `src/index.ts` `PAID_METHODS`、`src/wire.ts` `withPaidFields()`、`src/client/platform/api.ts` `PAID_METHODS` **三处同时登记** | 漏一处不会报错：没有 receipt 就是「网络超时后用户再点一次 = 再付一次钱」；没有 confirm/requestId 就是同一笔提交可以绕过幂等键重发；三处清单不一致时宿主与客户端各判各的，`verify-jobs.mjs` 逐条比对会红。**`receipts/` 目录只加不删**——删凭证等于把「可能已付费」抹掉 |
 | 内置默认提示词（`src/directions.ts`）中英各一份，改一份必须改另一份 | 它会真的发给生图 / 视频模型，不是界面装饰。`verify-host.mjs` 的 5b 段按语言逐条比对两侧 |
 | 转圈截帧的首帧一律走 `src/pipeline.ts` 的 `turnFirstFrame()`：它除了「正面绿幕图优先」，还会拿文件时间兜一道（正面图比源图旧 → 退回源图） | 换源图会作废派生产物，但历史项目 / 手工替换的文件仍可能带着旧角色的 `images/front.png`。那一张就是交给视频模型的首帧，「新角色配旧脸」既不报错也不缺图，只能肉眼看出来 |
 | 起 ffmpeg / ffprobe 一律走 `src/media.ts` 的 `ffmpegPath()` / `ffprobePath()`，别写死 `"ffmpeg"`、也别只读 `process.env` | Windows 上 ffmpeg 常常「装了但不在 `PATH` 里」，而 `setx` 设的环境变量又继承不到已经在跑的进程。这两个函数会继续查注册表与 WinGet / Scoop / Chocolatey 的常见位置——绕过它们就是「自检全绿、真机报找不到 ffmpeg」 |
@@ -125,6 +126,7 @@ node scripts/verify-i18n.mjs       # 中英词条表契约（9 项）
 node scripts/verify-comfy.mjs      # 本地 ComfyUI 后端（124 项，自起 mock ComfyUI，纯本地、不用装 ComfyUI）
 node scripts/verify-custom-image.mjs  # 自定义生图后端三协议（68 项：起本地假服务端，离线、零计费）
 node scripts/verify-toapis.mjs       # ToAPIs 可选异步图片 / 视频后端（43 项，mock HTTP、零付费调用）
+node scripts/verify-jobs.mjs         # 宿主加固：统一任务表 / 全局并发池 / 付费 receipt / 三处清单一致（54 项，纯本地、零付费调用）
 node scripts/verify-music.mjs      # 音乐生成编辑：mock 谱乐 AI 的生成/轮询/下载/编辑/导出/工具/路由（86 项）
 node scripts/verify-music-score.mjs   # 谱曲模式：方案 / 假 Python / 内置试听 / 乐谱包 / Suno 上传+cover mock（46 项，纯本地）
 node scripts/verify-music-gateway.mjs  # 音乐走真实网关：wire schema 不丢键、工具面、深链接、隐藏模块、谱曲字段（52 项）

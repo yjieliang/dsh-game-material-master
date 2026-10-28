@@ -175,7 +175,7 @@ try {
   await expectThrow("非法采样率被拒绝", () => gw.createSfxJob({ prompt: "x", settings: { sampleRate: 12345 } }), "采样率不合法");
 
   section("3) 生成：请求体与落盘");
-  const started = await gw.runSfxGeneration({ jobId: job.id });
+  const started = await gw.runSfxGeneration({ confirm: true, jobId: job.id });
   check("提交返回 started", started.started === true, JSON.stringify(started));
   const after = await waitIdle(job.id);
   check("任务完成且没有错误", after.status === "ready" && after.takes.length === 1, `${after.status} / ${after.takes.length}`);
@@ -195,14 +195,14 @@ try {
   check("没有水印时不发 watermark", createReq.body.watermark === undefined);
 
   section("4) 再次生成：新增 take，不覆盖");
-  await gw.runSfxGeneration({ jobId: job.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: job.id });
   const after2 = await waitIdle(job.id);
   check("两条 take 都保留", after2.takes.length === 2 && after2.takes[0].id !== after2.takes[1].id, `${after2.takes.length}`);
   check("take 内保留生成时提示词", after2.takes[0].prompt === job.prompt);
   // 用一个慢任务来测并发闸门。
   const slow = await gw.createSfxJob({ prompt: "SLOW 慢任务", settings: { format: "wav", sampleRate: 24000 } });
-  const first = await gw.runSfxGeneration({ jobId: slow.id });
-  const second = await gw.runSfxGeneration({ jobId: slow.id });
+  const first = await gw.runSfxGeneration({ confirm: true, jobId: slow.id });
+  const second = await gw.runSfxGeneration({ confirm: true, jobId: slow.id });
   check("并发提交被闸门挡住", first.started === true && second.started === false, JSON.stringify(second));
   check("取消接口能找到任务", (await gw.cancelSfxGeneration({ jobId: slow.id })).canceled === true);
   const canceled = await waitIdle(slow.id);
@@ -214,7 +214,7 @@ try {
   const withImage = await gw.getSfxJob({ jobId: refJob.id });
   check("参考图已入库并带 URL", withImage.refs.image?.name === "角色.png" && typeof withImage.refs.image.url === "string", JSON.stringify(withImage.refs.image));
   await expectThrow("参考图与参考音频互斥", () => gw.uploadSfxRef({ jobId: refJob.id, kind: "audio", name: "a.wav", data: toneBytes.toString("base64") }), "不能同时使用");
-  await gw.runSfxGeneration({ jobId: refJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: refJob.id });
   await waitIdle(refJob.id);
   const imageReq = requests.filter((entry) => entry.path === "/api/v3/tts/create").at(-1);
   check("请求里带 image_data", typeof imageReq.body.references?.[0]?.image_data === "string", JSON.stringify(Object.keys(imageReq.body.references?.[0] ?? {})));
@@ -223,7 +223,7 @@ try {
   await gw.uploadSfxRef({ jobId: refJob.id, kind: "audio", name: "a.wav", data: toneBytes.toString("base64") });
   const withAudio = await gw.getSfxJob({ jobId: refJob.id });
   check("参考音频已入库并量出时长", withAudio.refs.audios.length === 1 && Number(withAudio.refs.audios[0].duration) > 2.5, JSON.stringify(withAudio.refs.audios[0]));
-  await gw.runSfxGeneration({ jobId: refJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: refJob.id });
   await waitIdle(refJob.id);
   const audioReq = requests.filter((entry) => entry.path === "/api/v3/tts/create").at(-1);
   check("请求里带 audio_data", typeof audioReq.body.references?.[0]?.audio_data === "string", JSON.stringify(Object.keys(audioReq.body.references?.[0] ?? {})));
@@ -241,20 +241,20 @@ try {
 
   section("6) 错误处理");
   const grantJob = await gw.createSfxJob({ prompt: "GRANT 测试" });
-  await gw.runSfxGeneration({ jobId: grantJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: grantJob.id });
   const grantView = await waitIdle(grantJob.id);
   check("10074 给出开通提示", grantView.status === "error" && /开通/u.test(grantView.error ?? ""), grantView.error);
   check("失败不新增 take", grantView.takes.length === 0);
   const corruptJob = await gw.createSfxJob({ prompt: "CORRUPT 测试" });
-  await gw.runSfxGeneration({ jobId: corruptJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: corruptJob.id });
   const corruptView = await waitIdle(corruptJob.id);
   check("伪音频被拒绝", corruptView.status === "error" && /不是可识别的音频/u.test(corruptView.error ?? ""), corruptView.error);
   const emptyJob = await gw.createSfxJob({ prompt: "NOAUDIO 测试" });
-  await gw.runSfxGeneration({ jobId: emptyJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: emptyJob.id });
   const emptyView = await waitIdle(emptyJob.id);
   check("空响应报错", emptyView.status === "error" && /没有返回音频/u.test(emptyView.error ?? ""), emptyView.error);
   const urlJob = await gw.createSfxJob({ prompt: "URL 回退测试" });
-  await gw.runSfxGeneration({ jobId: urlJob.id });
+  await gw.runSfxGeneration({ confirm: true, jobId: urlJob.id });
   const urlView = await waitIdle(urlJob.id);
   check("URL 返回也能下载落盘", urlView.status === "ready" && urlView.takes.length === 1 && urlView.takes[0].format === "wav", urlView.error ?? `${urlView.takes.length}`);
 
@@ -276,7 +276,7 @@ try {
   routeServer.close();
 
   section("8) testSfx / 重启恢复 / 删除");
-  const test = await gw.testSfx();
+  const test = await gw.testSfx({ confirm: true });
   check("testSfx 返回统计", test.ok === true && Number(test.bytes) > 1000 && String(test.endpoint).endsWith("/api/v3/tts/create"), JSON.stringify(test));
   await G.patchSfxJob(job.id, (current) => { current.status = "running"; });
   await G.resumeSfxJobs();

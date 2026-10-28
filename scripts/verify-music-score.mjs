@@ -319,12 +319,12 @@ try {
   await gw.saveConfig({ musicApiKey: 'sk-test', musicBaseUrl: base });
   let noConfirm = '';
   try {
-    await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: first.scoreId });
+    await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: first.scoreId });
   } catch (error) {
     noConfirm = String(error.message ?? error);
   }
   check('没有 confirm 时拒绝提交', /confirm/u.test(noConfirm) && /MIDI/u.test(noConfirm), noConfirm.slice(0, 160));
-  const submitted = await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: first.scoreId, confirm: true });
+  const submitted = await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: first.scoreId, confirm: true });
   check('提交启动并带 scoreId', submitted.started === true && submitted.scoreId === first.scoreId && submitted.mode === 'cover', JSON.stringify(submitted).slice(0, 240));
   const rightAfter = await gw.getMusicJob({ jobId: created.id });
   check(
@@ -344,18 +344,18 @@ try {
   check('Suno 生成完成并下载 2 首', settled.songs.length === 2 && settled.songs.every((song) => song.status === 'succeeded' && typeof song.localFile === 'string'), JSON.stringify(settled.songs).slice(0, 240));
   const generation = settled.generations.find((entry) => entry.scoreId === first.scoreId);
   check('generation 记录了来源 scoreId 与参考音频 id', generation !== undefined && generation.sourceClipId === 'upload-song-1', JSON.stringify({ scoreId: generation?.scoreId, sourceClipId: generation?.sourceClipId }));
-  const submitAgain = await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: second.scoreId, confirm: true });
+  const submitAgain = await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: second.scoreId, confirm: true });
   check('已有歌曲时再提交必须 regenerate', submitAgain.started === false && /regenerate/u.test(submitAgain.reason ?? ''), JSON.stringify(submitAgain).slice(0, 200));
-  const regenerate = await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: second.scoreId, confirm: true, regenerate: true });
+  const regenerate = await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: second.scoreId, confirm: true, regenerate: true });
   check('显式 regenerate 后可以再提交', regenerate.started === true);
   await waitIdle(created.id);
 
   // 版权通道：标准上传被拒 -> 需要用户确认 -> copyrightAudio:true 走付费通道
   uploadMode = 'copyright-reject';
-  const needsConsent = await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: first.scoreId, confirm: true, regenerate: true });
+  const needsConsent = await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: first.scoreId, confirm: true, regenerate: true });
   check('Suno 判定版权时返回 needsCopyrightConsent', needsConsent.started === false && needsConsent.needsCopyrightConsent === true && /版权/u.test(needsConsent.reason ?? ''), JSON.stringify(needsConsent).slice(0, 240));
   const consentCoverBefore = requests.filter((entry) => entry.path === '/v1/suno/generate/cover').length;
-  const consent = await gw.submitMusicScoreToSuno({ jobId: created.id, scoreId: first.scoreId, confirm: true, regenerate: true, copyrightAudio: true });
+  const consent = await gw.submitMusicScoreToSuno({ confirm: true, jobId: created.id, scoreId: first.scoreId, confirm: true, regenerate: true, copyrightAudio: true });
   check('确认后走版权通道并提交 cover', consent.started === true && consent.copyrightAudio === true && consent.uploadedClipId === 'upload-song-copyright', JSON.stringify(consent).slice(0, 240));
   for (let i = 0; i < 50 && requests.filter((entry) => entry.path === '/v1/suno/generate/cover').length <= consentCoverBefore; i++) await sleep(100);
   const copyrightCover = requests.filter((entry) => entry.path === '/v1/suno/generate/cover').at(-1);

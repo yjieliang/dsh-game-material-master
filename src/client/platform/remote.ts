@@ -15,7 +15,7 @@ export function createRemote(deps: any) {
     const REMOTE_METHODS = [
       ["getConfig", false],
       ["saveConfig", true],
-      ["testArk", false],
+      ["testArk", true],
       ["testCustomImage", false],
       ["testMinimax", false],
       ["testComfy", false],
@@ -205,7 +205,7 @@ export function createRemote(deps: any) {
       ["deleteMusicVersion", true],
       ["exportMusic", true],
       // 音效生成（模块八）。
-      ["testSfx", false],
+      ["testSfx", true],
       ["listSfxJobs", false],
       ["createSfxJob", true],
       ["getSfxJob", true],

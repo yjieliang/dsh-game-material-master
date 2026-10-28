@@ -28,6 +28,14 @@ import { randomUUID } from "node:crypto";
 import { loadConfig, sfxJobsRoot } from "./config.js";
 import { appendJobLog, messageOf, readJson, sweepTempFiles, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
+  busyOf,
+  cancelScope,
+  finishJob,
+  resetModule as resetModuleJobs,
+  signalOf,
+  startJob
+} from "./jobs.js";
+import {
   SFX_LIMITS,
   SfxApiError,
   buildSfxBody,
@@ -442,60 +450,47 @@ export async function deleteSfxJob(id: string): Promise<void> {
 
 // ── 后台任务表 ──────────────────────────────────────────────────────────
 
-const running = new Map<string, Set<string>>();
-const controllers = new Map<string, AbortController>();
 let disposed = false;
 
 /** DSH 重载插件时模块级 disposed 会留着，apply 时靠它复位。 */
 export function activateSfx(): void {
   disposed = false;
-  running.clear();
-  for (const controller of controllers.values()) controller.abort();
-  controllers.clear();
+  resetModuleJobs("sfx", "插件已重载，旧任务作废");
 }
 
 export function disposeSfx(): void {
   disposed = true;
-  for (const controller of controllers.values()) controller.abort();
-  controllers.clear();
-  running.clear();
+  resetModuleJobs("sfx", "插件已卸载，旧任务作废");
 }
 
 export function sfxBusy(id: string, job?: SfxJob): boolean {
-  if ((running.get(id)?.size ?? 0) > 0) return true;
+  if (busyOf("sfx", id)) return true;
   return job?.status === "running";
 }
 
-function trackSfxTask(id: string, key: string, run: () => Promise<void>): boolean {
+function trackSfxTask(id: string, key: string, run: (signal: AbortSignal) => Promise<void>): boolean {
   if (disposed) return false;
-  const set = running.get(id) ?? new Set<string>();
-  if (set.has(key)) return false;
-  running.set(id, set);
-  set.add(key);
-  const controller = new AbortController();
-  controllers.set(`${id}:${key}`, controller);
-  void run()
-    .catch((error) => {
+  const started = startJob({ module: "sfx", scope: id, taskKey: key, label: key, lane: key === "generation" ? "paid" : "local" });
+  if (!started.started) return false;
+  void (async () => {
+    let state: "succeeded" | "failed" = "succeeded";
+    let detail: string | undefined;
+    try {
+      await run(started.signal);
+    } catch (error) {
+      state = "failed";
+      detail = messageOf(error);
       void patchSfxJob(id, (job) => sfxLog(job, "error", `${key} 失败：${messageOf(error)}`)).catch(() => undefined);
-    })
-    .finally(() => {
-      set.delete(key);
-      controllers.delete(`${id}:${key}`);
-      if (set.size === 0 && running.get(id) === set) running.delete(id);
-    });
+    } finally {
+      finishJob(started.id, state, detail);
+    }
+  })();
   return true;
-}
-
-function controllerOf(id: string): AbortController | undefined {
-  return controllers.get(`${id}:generation`);
 }
 
 export async function cancelSfxGeneration(id: string): Promise<boolean> {
   assertJobId(id);
-  const controller = controllerOf(id);
-  if (controller === undefined) return false;
-  controller.abort();
-  return true;
+  return cancelScope("sfx", id, { taskKey: "generation", reason: "已停止本地请求；远端可能仍会完成并计费" }) > 0;
 }
 
 // ── 参考素材 ────────────────────────────────────────────────────────────
@@ -674,7 +669,7 @@ export async function startSfxGeneration(id: string): Promise<StartSfxGeneration
 
 async function runSfxGeneration(id: string, refs: { image?: Buffer; audios: Buffer[] }): Promise<void> {
   const config = await loadConfig();
-  const controller = controllerOf(id);
+  const signal = signalOf("sfx", id, "generation");
   const job = await readSfxJob(id);
   if (job === undefined) return;
   try {
@@ -690,7 +685,7 @@ async function runSfxGeneration(id: string, refs: { image?: Buffer; audios: Buff
         settings: job.settings,
         refs
       },
-      controller?.signal
+      signal
     );
     const takeId = `k${now().toString(36)}${randomUUID().slice(0, 6)}`;
     const relative = `takes/${takeId}.${result.ext}`;

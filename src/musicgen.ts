@@ -32,6 +32,14 @@ import { createHash, randomUUID } from "node:crypto";
 import { loadConfig, musicJobsRoot } from "./config.js";
 import { appendJobLog, messageOf, readJson, sweepTempFiles, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
 import {
+  busyOf,
+  cancelScope,
+  finishJob,
+  resetModule as resetModuleJobs,
+  signalOf,
+  startJob
+} from "./jobs.js";
+import {
   MUSIC_EDIT_FORMATS,
   MUSIC_ENGINES,
   MUSIC_TOOL_KINDS,
@@ -522,13 +530,7 @@ export function summarizeMusicJob(job: MusicJob): MusicJobSummary {
 
 export async function deleteMusicJob(id: string): Promise<void> {
   assertJobId(id);
-  for (const [key, controller] of [...controllers.entries()]) {
-    if (key.startsWith(`${id}:`)) {
-      controller.abort();
-      controllers.delete(key);
-    }
-  }
-  cancelMusicGeneration(id);
+  cancelScope("music", id, { reason: "任务已删除" });
   scoreRuns.delete(id);
   await rm(musicJobDir(id), { recursive: true, force: true });
   jobQueues.delete(id);
@@ -536,7 +538,7 @@ export async function deleteMusicJob(id: string): Promise<void> {
 
 export function musicBusy(id: string, job?: MusicJob): boolean {
   if (scoreRuns.has(id)) return true;
-  if ((running.get(id)?.size ?? 0) > 0) return true;
+  if (busyOf("music", id)) return true;
   if (job === undefined) return false;
   if (job.generations.some((generation) => generation.status === "submitting" || generation.status === "polling")) return true;
   // ⚠️ 不要把「歌曲还是 pending」单独算忙：等待超时后 generation 已标成 timeout，
@@ -548,46 +550,45 @@ export function musicBusy(id: string, job?: MusicJob): boolean {
 
 // ── 后台任务表 ──────────────────────────────────────────────────────────
 
-const running = new Map<string, Set<string>>();
-const controllers = new Map<string, AbortController>();
-/** 正在跑谱曲脚本的 job（runMusicScore 是同步的，用一个集合挡住并发）。 */
+/** 正在跑谱曲脚本的 job（runMusicScore 是脚本型任务，用一个集合挡住同任务并发）。 */
 const scoreRuns = new Set<string>();
 let disposed = false;
+
+/** 任务通道：提交生成走付费通道，其余（编辑 / 工具 / 谱曲）走本地通道。 */
+function laneOfTask(key: string): "paid" | "local" {
+  return key === "generation" ? "paid" : "local";
+}
 
 /** DSH 重载插件时模块级 disposed 会留着，apply 时靠它复位。 */
 export function activateMusic(): void {
   disposed = false;
-  running.clear();
   scoreRuns.clear();
-  for (const controller of controllers.values()) controller.abort();
-  controllers.clear();
+  resetModuleJobs("music", "插件已重载，旧任务作废");
 }
 
 export function disposeMusic(): void {
   disposed = true;
-  for (const controller of controllers.values()) controller.abort();
-  controllers.clear();
-  running.clear();
   scoreRuns.clear();
+  resetModuleJobs("music", "插件已卸载，旧任务作废");
 }
 
-function trackMusicTask(id: string, key: string, run: () => Promise<void>): boolean {
+function trackMusicTask(id: string, key: string, run: (signal: AbortSignal) => Promise<void>): boolean {
   if (disposed) return false;
-  const set = running.get(id) ?? new Set<string>();
-  if (set.has(key)) return false;
-  running.set(id, set);
-  set.add(key);
-  const controller = new AbortController();
-  controllers.set(`${id}:${key}`, controller);
-  void run()
-    .catch((error) => {
+  const started = startJob({ module: "music", scope: id, taskKey: key, label: key, lane: laneOfTask(key) });
+  if (!started.started) return false;
+  void (async () => {
+    let state: "succeeded" | "failed" = "succeeded";
+    let detail: string | undefined;
+    try {
+      await run(started.signal);
+    } catch (error) {
+      state = "failed";
+      detail = messageOf(error);
       musicLogSafe(id, "error", `${key} 失败：${messageOf(error)}`);
-    })
-    .finally(() => {
-      set.delete(key);
-      controllers.delete(`${id}:${key}`);
-      if (set.size === 0 && running.get(id) === set) running.delete(id);
-    });
+    } finally {
+      finishJob(started.id, state, detail);
+    }
+  })();
   return true;
 }
 
@@ -867,7 +868,7 @@ export async function startMusicGeneration(
 async function runGeneration(id: string, generationId: string, request: GenerationRequest): Promise<void> {
   const config = await loadConfig();
   const api = apiConfigOf(config);
-  const controller = controllers.get(`${id}:generation`);
+  const signal = signalOf("music", id, "generation");
   const deadline = now() + Math.max(60000, config.musicPollTimeoutMs || 900000);
   let submitted: Awaited<ReturnType<typeof submitGeneration>>;
   try {
@@ -905,7 +906,7 @@ async function runGeneration(id: string, generationId: string, request: Generati
   const songIds = submitted.songs.map((song) => song.id);
   let lastError: string | undefined;
   for (;;) {
-    if (controller?.signal.aborted === true) {
+    if (signal?.aborted === true) {
       await patchMusicJob(id, (job) => {
         const generation = job.generations.find((entry) => entry.id === generationId);
         if (generation !== undefined) {
@@ -935,13 +936,13 @@ async function runGeneration(id: string, generationId: string, request: Generati
       payloads = await querySongs(api, songIds);
     } catch (error) {
       if (error instanceof MusicApiError && error.status === 429) {
-        await sleep(15000, controller?.signal);
+        await sleep(15000, signal);
         continue;
       }
       lastError = messageOf(error);
       // 查询失败不立刻判死：可能是网络抖动，继续重试到 deadline。
       musicLogSafe(id, "warn", `查询失败，稍后重试：${lastError}`);
-      await sleep(8000, controller?.signal);
+      await sleep(8000, signal);
       continue;
     }
 
@@ -1008,7 +1009,7 @@ async function runGeneration(id: string, generationId: string, request: Generati
       return;
     }
 
-    await sleep(5000, controller?.signal);
+    await sleep(5000, signal);
   }
 }
 
@@ -1249,10 +1250,7 @@ export async function refreshMusicJob(id: string): Promise<Record<string, unknow
 }
 
 export function cancelMusicGeneration(id: string): boolean {
-  const controller = controllers.get(`${id}:generation`);
-  if (controller === undefined) return false;
-  controller.abort();
-  return true;
+  return cancelScope("music", id, { taskKey: "generation", reason: "已停止本地等待；已提交的远端生成仍可能完成并计费" }) > 0;
 }
 
 // ── 谱曲模式 ────────────────────────────────────────────────────────────
@@ -1599,10 +1597,10 @@ async function resumeGeneration(id: string, generationId: string): Promise<void>
   if (generation === undefined || generation.songIds.length === 0) return;
   const config = await loadConfig();
   const api = apiConfigOf(config);
-  const controller = controllers.get(`${id}:generation`);
+  const signal = signalOf("music", id, "generation");
   const deadline = now() + Math.max(60000, config.musicPollTimeoutMs || 900000);
   for (;;) {
-    if (controller?.signal.aborted === true) return;
+    if (signal?.aborted === true) return;
     if (now() >= deadline) {
       await patchMusicJob(id, (current) => {
         const entry = current.generations.find((item) => item.id === generationId);
@@ -1626,10 +1624,10 @@ async function resumeGeneration(id: string, generationId: string): Promise<void>
       }
     } catch (error) {
       if (error instanceof MusicApiError && error.status === 429) {
-        await sleep(15000, controller?.signal);
+        await sleep(15000, signal);
         continue;
       }
-      await sleep(8000, controller?.signal);
+      await sleep(8000, signal);
       continue;
     }
     const latest = await readMusicJob(id);
@@ -1649,7 +1647,7 @@ async function resumeGeneration(id: string, generationId: string): Promise<void>
       });
       return;
     }
-    await sleep(5000, controller?.signal);
+    await sleep(5000, signal);
   }
 }
 

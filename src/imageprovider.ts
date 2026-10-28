@@ -16,6 +16,16 @@ import { assertToapisReady, generateToapisImage } from "./toapis.js";
 import { generateImage, type ArkResult } from "./ark.js";
 import { CUSTOM_PROTOCOL_DEFAULTS, loadConfig, type Config } from "./config.js";
 import { CustomImageError, generateCustomImage } from "./customimage.js";
+import { noteQueued, withSlot } from "./jobs.js";
+import {
+  assessPaidFailure,
+  beginPaidCall,
+  currentPaidIntent,
+  digest,
+  markPaidFailed,
+  markPaidResolved,
+  markPaidUncertain
+} from "./receipts.js";
 
 export interface ProviderImageRequest {
   prompt: string;
@@ -111,46 +121,85 @@ export function imageProviderSummary(config: Config): string {
   return `自定义 · ${label} · ${config.customBaseUrl}${model}`;
 }
 
-/** 调一次生图，自动按当前后端分发。 */
+/**
+ * 调一次生图，自动按当前后端分发。
+ *
+ * 所有生图都会先过**全局付费并发池**（超限排队，不拒绝）：批量抽帧 / 八方向同时跑时，
+ * 真正压垮账号配额的是这些并发请求。火山方舟这一路还要落 receipt（见 receipts.ts）；
+ * ToAPIs 的提交在 `toapis.ts` 内部已有 receipt（那里才能按 taskId 对账），不重复记账；
+ * 自定义后端是用户自己的服务，不经过我们的计费，也不记账。
+ */
 export async function generateImageWithProvider(request: ProviderImageRequest, signal?: AbortSignal): Promise<ProviderImageResult> {
   const config = await loadConfig();
   assertImageProviderReady(config);
-  if (config.imageProvider === "toapis") return generateToapisImage(config, request, signal);
-  if (isCustomProvider(config)) {
-    return generateCustomImage(
-      {
-        protocol: config.customProtocol,
-        baseUrl: config.customBaseUrl,
-        apiKey: config.customApiKey,
-        model: request.model?.trim() || config.customModel,
-        prompt: request.prompt,
-        images: request.images,
-        size: request.size,
-        timeoutMs: request.timeoutMs ?? config.customTimeoutMs,
-        negativePrompt: config.customNegativePrompt,
-        steps: config.customSteps,
-        cfgScale: config.customCfgScale,
-        sampler: config.customSampler,
-        denoising: config.customDenoising,
-        seed: config.customSeed,
-        workflow: config.customWorkflow
-      },
-      signal
-    );
-  }
-  return generateImage(
-    {
-      baseUrl: config.arkBaseUrl,
-      apiKey: config.arkApiKey,
-      model: request.model?.trim() || config.arkModel,
-      prompt: request.prompt,
-      images: request.images,
-      size: request.size,
-      watermark: request.watermark,
-      timeoutMs: request.timeoutMs ?? config.arkTimeoutMs
-    },
-    signal
-  );
+  const provider = config.imageProvider;
+  const model = request.model?.trim() || imageModelOf(config);
+  const label = provider === "ark" ? `生图 · 火山方舟 · ${model}` : provider === "toapis" ? `生图 · ToAPIs · ${model}` : `生图 · 自定义后端 · ${model}`;
+  return withSlot("paid", { label, module: "sprite", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
+    const ticket =
+      provider === "ark"
+        ? await beginPaidCall({
+            provider: "ark",
+            identity: {
+              model,
+              size: request.size,
+              watermark: request.watermark,
+              prompt: request.prompt,
+              images: request.images.map((image) => digest(image))
+            }
+          })
+        : undefined;
+    try {
+      const result =
+        provider === "toapis"
+          ? await generateToapisImage(config, request, signal)
+          : isCustomProvider(config)
+            ? await generateCustomImage(
+                {
+                  protocol: config.customProtocol,
+                  baseUrl: config.customBaseUrl,
+                  apiKey: config.customApiKey,
+                  model,
+                  prompt: request.prompt,
+                  images: request.images,
+                  size: request.size,
+                  timeoutMs: request.timeoutMs ?? config.customTimeoutMs,
+                  negativePrompt: config.customNegativePrompt,
+                  steps: config.customSteps,
+                  cfgScale: config.customCfgScale,
+                  sampler: config.customSampler,
+                  denoising: config.customDenoising,
+                  seed: config.customSeed,
+                  workflow: config.customWorkflow
+                },
+                signal
+              )
+            : await generateImage(
+                {
+                  baseUrl: config.arkBaseUrl,
+                  apiKey: config.arkApiKey,
+                  model,
+                  prompt: request.prompt,
+                  images: request.images,
+                  size: request.size,
+                  watermark: request.watermark,
+                  timeoutMs: request.timeoutMs ?? config.arkTimeoutMs
+                },
+                signal
+              );
+      if (ticket !== undefined) {
+        await markPaidResolved(ticket.key, { detail: `已返回 ${result.bytes.length} 字节` }).catch(() => undefined);
+      }
+      return result;
+    } catch (error) {
+      if (ticket !== undefined) {
+        const assessment = assessPaidFailure(error);
+        if (assessment.state === "failed") await markPaidFailed(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+        else await markPaidUncertain(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      }
+      throw error;
+    }
+  });
 }
 
 /**

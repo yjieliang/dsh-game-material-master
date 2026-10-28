@@ -17,6 +17,15 @@
  */
 
 import { createWriteStream } from "node:fs";
+import { noteQueued, withSlot } from "./jobs.js";
+import {
+  assessPaidFailure,
+  beginPaidCall,
+  currentPaidIntent,
+  markPaidFailed,
+  markPaidSubmitted,
+  markPaidUncertain
+} from "./receipts.js";
 import { mkdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -447,21 +456,46 @@ export interface SubmitResult {
   raw: any;
 }
 
+/**
+ * 提交一次生成（真实计费）。
+ *
+ * 两层护栏：
+ *   1. 全局付费并发池（超限排队，不拒绝）——谱乐 AI 的账号配额是共享的；
+ *   2. receipt：同一笔请求第二次提交在本地就被挡住，不发远端。
+ * 失败按「远端是否可能已经收单」分成 failed / uncertain（见 assessPaidFailure）。
+ */
 export async function submitGeneration(config: MusicApiConfig, request: GenerationRequest): Promise<SubmitResult> {
-  const payload = await requestJson(config, request.endpoint, { method: "POST", body: request.body });
-  const songs: MusicSongPayload[] = Array.isArray(payload?.songs)
-    ? payload.songs
-        .filter((song: any) => typeof song?.id === "string" && song.id !== "")
-        .map((song: any) => ({ ...song, id: String(song.id), status: typeof song.status === "string" ? song.status : "pending" }))
-    : [];
-  if (songs.length === 0) {
-    throw new MusicApiError(`谱乐 AI 没有返回歌曲 id：${JSON.stringify(payload).slice(0, 400)}`);
-  }
-  return {
-    taskId: typeof payload?.task_id === "string" ? payload.task_id : undefined,
-    songs,
-    raw: payload
-  };
+  return withSlot("paid", { label: "音乐 · 谱乐 AI", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
+    const ticket = await beginPaidCall({
+      provider: "suno",
+      identity: { endpoint: request.endpoint, body: request.body }
+    });
+    try {
+      const payload = await requestJson(config, request.endpoint, { method: "POST", body: request.body });
+      const songs: MusicSongPayload[] = Array.isArray(payload?.songs)
+        ? payload.songs
+            .filter((song: any) => typeof song?.id === "string" && song.id !== "")
+            .map((song: any) => ({ ...song, id: String(song.id), status: typeof song.status === "string" ? song.status : "pending" }))
+        : [];
+      if (songs.length === 0) {
+        await markPaidUncertain(ticket.key, { detail: "谱乐 AI 没有返回歌曲 id" }).catch(() => undefined);
+        throw new MusicApiError(`谱乐 AI 没有返回歌曲 id：${JSON.stringify(payload).slice(0, 400)}`);
+      }
+      const taskId = typeof payload?.task_id === "string" ? payload.task_id : undefined;
+      await markPaidSubmitted(ticket.key, { ...(taskId === undefined ? {} : { taskId }) }).catch(() => undefined);
+      return {
+        taskId,
+        songs,
+        raw: payload
+      };
+    } catch (error) {
+      if (error instanceof MusicApiError && /没有返回歌曲 id/.test(error.message)) throw error;
+      const assessment = assessPaidFailure(error);
+      if (assessment.state === "failed") await markPaidFailed(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      else await markPaidUncertain(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      throw error;
+    }
+  });
 }
 
 /**

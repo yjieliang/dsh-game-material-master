@@ -15,6 +15,7 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { encodePng } from "./png.js";
 import { ffmpegPath } from "./media.js";
+import { withSlot } from "./jobs.js";
 
 /** 解码出来的位图：RGBA8，逐行紧密排列，长度 = width * height * 4。 */
 export interface Bitmap {
@@ -91,8 +92,15 @@ async function probeDecodedSize(file: string, maxEdge: number): Promise<{ width:
   return size;
 }
 
+/**
+ * 解一张图。
+ *
+ * 与 `media.runFfmpeg` 共用**同一个 local 通道**（默认 2–4 并发）：PNG 解码是 CPU 密集的，
+ * 地图 / AI 素材批量整理时几十张图一起解会把抽帧 / 合成的活抢干。排队不拒绝——
+ * 调用方本来就等在 await 上。
+ */
 function runFfmpeg(args: string[]): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
+  return withSlot("local", { label: "image-decode", module: "bitmap" }, () => new Promise<Buffer>((resolve, reject) => {
     const child = spawn(ffmpegPath(), args, { stdio: ["ignore", "pipe", "pipe"] });
     const chunks: Buffer[] = [];
     const errors: Buffer[] = [];
@@ -103,7 +111,7 @@ function runFfmpeg(args: string[]): Promise<Buffer> {
       if (code === 0) resolve(Buffer.concat(chunks));
       else reject(new Error(`ffmpeg 解码失败（退出码 ${code}）：${Buffer.concat(errors).toString("utf8").slice(0, 400)}`));
     });
-  });
+  }));
 }
 
 /** 读盘 + 解码。 */

@@ -21,6 +21,16 @@
 
 import { randomUUID } from "node:crypto";
 import { sniffBinary } from "./musicapi.js";
+import { noteQueued, withSlot } from "./jobs.js";
+import {
+  assessPaidFailure,
+  beginPaidCall,
+  currentPaidIntent,
+  digest,
+  markPaidFailed,
+  markPaidResolved,
+  markPaidUncertain
+} from "./receipts.js";
 
 /** 当前唯一支持的生成式音频模型。 */
 export const SFX_DEFAULT_MODEL = "seed-audio-1.0";
@@ -358,7 +368,43 @@ function sleep(ms: number): Promise<void> {
  * 成功时一定返回**能按文件头识别的音频字节**；解码失败 / 不是音频容器都会抛错，
  * 不把坏字节交给调用方落盘。
  */
+/**
+ * 生成一条音效（**真实计费**）。
+ *
+ * 全局付费并发池 + receipt 两层护栏：每个任务一次请求 = 一条 take，网络超时
+ * 也可能已经扣费，所以失败要按「远端是否可能收单」分成 failed / uncertain 落盘。
+ */
 export async function generateSfx(
+  config: SfxApiConfig,
+  request: SfxRequest,
+  signal?: AbortSignal
+): Promise<SfxResult> {
+  return withSlot("paid", { label: "音效 · 火山引擎 Seed-Audio", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
+    const refs = request.refs;
+    const ticket = await beginPaidCall({
+      provider: "seed-audio",
+      identity: {
+        model: config.model,
+        prompt: request.prompt,
+        settings: request.settings,
+        image: refs?.image === undefined ? undefined : digest(refs.image),
+        audios: (refs?.audios ?? []).map((audio) => digest(audio))
+      }
+    });
+    try {
+      const result = await generateSfxRequest(config, request, signal);
+      await markPaidResolved(ticket.key, { detail: `已返回 ${result.bytes.length} 字节音频` }).catch(() => undefined);
+      return result;
+    } catch (error) {
+      const assessment = assessPaidFailure(error);
+      if (assessment.state === "failed") await markPaidFailed(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      else await markPaidUncertain(ticket.key, { detail: assessment.detail }).catch(() => undefined);
+      throw error;
+    }
+  });
+}
+
+async function generateSfxRequest(
   config: SfxApiConfig,
   request: SfxRequest,
   signal?: AbortSignal

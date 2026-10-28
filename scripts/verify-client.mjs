@@ -802,8 +802,11 @@ function checkRigContracts(text, label) {
   // “api.xxx is not a function”——编译期完全看不出来（api 是隐式 any）。
   const declared = [...text.matchAll(/\["([A-Za-z0-9_]+)",\s*(?:true|false)\]/g)].map((m) => m[1]);
   const unique = [...new Set(declared)];
-  // 实现侧的判据是「出现了 call("方法名")」，与缩进无关（src 与打包后的 lib 缩进不同）。
-  const missing = unique.filter((name) => !text.includes(`call("${name}"`));
+  // 实现侧的判据是「出现了 call("方法名") 或 callPaid("方法名")」，与缩进无关
+  // （src 与打包后的 lib 缩进不同）。付费方法走 callPaid：它自动带 confirm + requestId。
+  const missing = unique.filter(
+    (name) => !text.includes(`call("${name}"`) && !text.includes(`callPaid("${name}"`)
+  );
   check(
     `${label}：REMOTE_METHODS 的每个方法都有 api 实现（共 ${unique.length} 个）`,
     missing.length === 0,

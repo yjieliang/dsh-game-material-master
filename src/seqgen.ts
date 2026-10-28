@@ -29,6 +29,13 @@ import { extractFrames, fileSize, mimeOf, toJpegDataUri } from "./media.js";
 import { composeSheet, keyGreen, type SheetRow } from "./chroma.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
+import {
+  finishJob,
+  isJobRunning,
+  resetModule as resetModuleJobs,
+  startJob,
+  tasksOf
+} from "./jobs.js";
 import { safeName, sniffImage } from "./imagegen.js";
 import type { NodeStatus, VideoBackend } from "./store.js";
 
@@ -362,45 +369,51 @@ export function buildSequencePrompt(job: SequenceJob): { prompt: string } | { er
 
 // ── 后台任务与轮询 ──────────────────────────────────────────────────────
 
-const jobsRunning = new Map<string, Set<string>>();
+// 后台任务表已经收口到 jobs.ts（P8 统一任务服务）；这里只保留本模块自己的轮询器表。
 const pollers = new Map<string, ReturnType<typeof setInterval>>();
 let disposed = false;
+
+/** 任务通道：提交视频走付费通道，抽帧 / 抠像 / 合成走本地通道。 */
+function laneOfTask(taskKey: string): "paid" | "local" {
+  return taskKey === "video:submit" ? "paid" : "local";
+}
 
 export function disposeSequence(): void {
   disposed = true;
   for (const timer of pollers.values()) clearInterval(timer);
   pollers.clear();
-  jobsRunning.clear();
+  resetModuleJobs("sequence", "插件已卸载，旧任务作废");
 }
 
 /** 复位后台任务表（理由同 pipeline.activatePipeline：重载会让 disposed 永远停在 true）。 */
 export function activateSequence(): void {
   disposed = false;
-  jobsRunning.clear();
+  resetModuleJobs("sequence", "插件已重载，旧任务作废");
 }
 
 export function listSequenceTasks(jobId: string): string[] {
-  return [...(jobsRunning.get(jobId) ?? [])];
+  return tasksOf("sequence", jobId);
 }
 
-function kick(jobId: string, taskKey: string, fn: () => Promise<void>): boolean {
+function kick(jobId: string, taskKey: string, fn: (signal: AbortSignal) => Promise<void>): boolean {
   if (disposed) return false;
-  const set = jobsRunning.get(jobId) ?? new Set<string>();
-  jobsRunning.set(jobId, set);
-  if (set.has(taskKey)) return false;
-  set.add(taskKey);
+  const started = startJob({ module: "sequence", scope: jobId, taskKey, label: taskKey, lane: laneOfTask(taskKey) });
+  if (!started.started) return false;
   void (async () => {
+    let state: "succeeded" | "failed" = "succeeded";
+    let detail: string | undefined;
     try {
-      await fn();
+      await fn(started.signal);
     } catch (error) {
+      state = "failed";
+      detail = messageOf(error);
       const job = await readSequenceJob(jobId);
       if (job !== undefined) {
         appendJobLog(job.log, "error", `${taskKey} 失败：${messageOf(error)}`);
         await writeSequenceJob(job);
       }
     } finally {
-      set.delete(taskKey);
-      if (set.size === 0) jobsRunning.delete(jobId);
+      finishJob(started.id, state, detail);
     }
   })();
   return true;
@@ -408,7 +421,7 @@ function kick(jobId: string, taskKey: string, fn: () => Promise<void>): boolean 
 
 /** 拒绝重复提交：同类型的后台任务已在跑时直接报错，避免覆盖 taskId 变成孤儿。 */
 function assertIdle(jobId: string, taskKey: string, what: string): void {
-  if (jobsRunning.get(jobId)?.has(taskKey) === true) throw new Error(`${what}已在进行中，请等它跑完`);
+  if (isJobRunning("sequence", jobId, taskKey)) throw new Error(`${what}已在进行中，请等它跑完`);
 }
 
 // ── 视频生成 ────────────────────────────────────────────────────────────

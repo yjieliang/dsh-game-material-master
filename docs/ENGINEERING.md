@@ -2038,6 +2038,7 @@ DSH 只把 `locale` 服务挂在**浏览器半区**（`ctx.provide("locale", …
 ```
 <DSH_HOME>/game-material-master/
 ├── config.json
+├── receipts/                     付费提交凭证（P8：只加不删，重启对账靠它；见「宿主半区」一节）
 ├── projects/<项目 id>/          模块一：八方向图
 │   ├── source/  images/  videos/  frames/  keyed/  preview/  out/
 │   ├── turn/                    转圈截帧（阶段①的默认生成方式）
@@ -2077,6 +2078,126 @@ DSH 只把 `locale` 服务挂在**浏览器半区**（`ctx.provide("locale", …
 > 取不到就红。
 
 ---
+
+## 宿主半区：统一任务表 / 并发池 / 付费 receipt（P8）
+
+客户端只管好不好用，**钱和任务**这两件事在宿主半区。P8 之前五个模块各管一套后台任务表
+（`pipeline` / `seqgen` / `riggen` / `musicgen` / `sfxgen`：五套 Map、五种取消方式、五个
+「重载后要复位」的坑），付费提交只有 ToAPIs 那条链路有 receipt。这一节记录收口后的三个模块
+以及它们之间的约定。
+
+### 文件
+
+| 文件 | 作用 |
+|---|---|
+| `src/jobs.ts` | 统一任务表（登记 / 查重 / 取消 / 复位）+ 全局并发池（paid / local 双通道） |
+| `src/receipts.ts` | 付费提交的落盘凭证：幂等键、内容指纹、状态机、重启对账 |
+| `src/index.ts` 的 `PAID_METHODS` / `requirePaid()` / `paidEntry()` | 付费方法的清单与入口校验（confirm + requestId） |
+| `src/wire.ts` 的 `withPaidFields()` | 给 14 个付费方法的 payload schema 加 `confirm` / `requestId` |
+| `src/client/platform/api.ts` 的 `PAID_METHODS` / `preparePaidPayload()` | 客户端同一份清单：付费调用必须带 confirm，自动补 requestId |
+| `scripts/verify-jobs.mjs` | 三块的自检（54 项，纯本地、不联网、不花钱、不需要 ffmpeg） |
+
+⚠️ **三处付费清单必须同时改**：`src/index.ts`、`src/wire.ts`、`src/client/platform/api.ts`。
+`verify-jobs.mjs` 第 4 节逐条比对，漏一处就是某个付费入口既没有确认也没有幂等键——
+**不报错，只重复计费**。
+
+### 任务表（jobs.ts）
+
+模块只保留自己的业务实现，登记 / 查重 / 取消 / 复位统一走这里：
+
+```ts
+const started = jobs.startJob({ module: "music", scope: id, taskKey: "generation", label: "生成" });
+if (!started.started) return false;                      // 同 module:scope:taskKey 已在跑
+void (async () => {
+  try { await run(started.signal); } finally { jobs.finishJob(started.id); }
+})();
+```
+
+- **重复提交**与旧 `kick()` 语义一致：同键第二次返回 `started: false`，模块据此给出
+  「已在生成中」这类人话原因。
+- **取消**：`cancelJob(id)` / `cancelScope(module, scope)` 会 abort 注册表持有的
+  `AbortController`，模块把它透传给可中断的远程调用 / sleep。收起任务时**只停本地等待**，
+  已提交的远端付费任务仍会完成并计费——文案必须写清（music / sfx 的取消按钮都写了）。
+- **复位**：五个模块的 `activate*()` / `dispose*()` 都调 `resetModule(module)`，
+  保持「每次 apply 复位」的既有约定；`apply()` 里还先调一次 `activateJobs()`。
+  不这么做的老症状是：`disposed` 停在 true，所有生成类调用静默变成「任务已在进行中」。
+- **排障**：`recentJobs()` 保留最近 50 条结束记录（状态 / 失败原因），运行表只放心跳中的任务。
+
+### 全局并发池（jobs.ts）
+
+两条通道，**超限排队、不拒绝**：
+
+| 通道 | 上限 | 谁在用 |
+|---|---|---|
+| `paid` | `config.concurrency`（设置页「并发请求数」，1–8，默认 3） | 生图（方舟 / ToAPIs / 自定义）、图生视频（MiniMax / ToAPIs）、音乐生成、音效生成 |
+| `local` | `clamp(concurrency, 2, 4)` | 本机 ffmpeg：抽帧 / 抠像 / 合成 / 音频剪辑（`media.run()` 单点收口） |
+
+- `withSlot(lane, meta, run)` 拿名额跑一次就释放；排队时 `meta.onQueued` 会收到
+  「第 N 位 · 预计约 X 秒」（预计值来自实际耗时的 EMA，只是参考，不是承诺）。
+- `poolSnapshot()` 回 `{lane, limit, running, queued, etaMs, averageMs}`，排障与自检读它。
+- ⚠️ 通道名额**必须且只能释放一次**（`withSlot` 已封装 try/finally）；自己 `acquireSlot()`
+  忘了 `release()` 会让通道永久少一个名额，表现是所有付费调用越来越慢。
+- ⚠️ **不要在持有一个 local 名额时再申请 local**：`media.run()` 是叶子调用，没有嵌套；
+  以后要加「先解码再转码」这类组合操作，两次 `runFfmpeg` 要顺序 await，不能包在同一个名额里。
+
+### 付费 receipt（receipts.ts）
+
+凭证落在 `<DSH_HOME>/game-material-master/receipts/<key>.json`，`key = sha256(method|requestId|slot|内容指纹)`。
+
+**状态机**：`submitting`（已建盘、还没拿到远端答复）→ `submitted`（有 taskId）→
+`resolved` / `failed`；`submitting` 出错且不确定远端是否收单时标 `uncertain`。
+
+规则（每一条都对应一次真实的重复计费或误锁死）：
+
+1. **先建盘再提交**：`beginPaidCall()` 用 `wx`（不存在才创建）独占建文件，并发的两笔
+   只有一笔能赢；输了的那笔发不出请求。
+2. **同一 requestId 永不重复提交**：带幂等键且凭证已存在时一律拒绝（终态也一样）——
+   重试应当回已有任务。宿主抛 `PaidDuplicateError`，回执里带着已有记录（含 taskId）。
+3. **没带 requestId 按内容指纹兜底**：只在上一笔「还没确定结果」（submitting / submitted /
+   uncertain）时拦；`resolved` / `failed` 允许用户显式重新生成（否则同一句提示词永远发不出去）。
+4. **凭证只加不删**：取消本地等待、进程重载、任务失败都只改状态。删掉凭证等于把
+   「可能已经付过钱」这件事抹掉——那是下一个重复提交的许可证。
+5. **失败按「远端是否可能收单」分两类**（`assessPaidFailure`）：明确的 4xx（408 / 429 除外）、
+   DNS / 连接被拒 / TLS 握手前断开 → `failed`（不会计费）；超时、5xx、连接中途断开 →
+   `uncertain`（可能已计费）。判错的代价不对称：宁可多一步「先核对」，不要多花一次钱。
+6. **重启对账**：`apply()` 读 `pendingReceipts()`（`submitting` / `uncertain`），往 stderr
+   打一行「有 N 笔付费提交尚未结清，先核对账单不要重发」。**绝不自动重发。**
+   `submitted` 有 taskId，按 id 续查即可，不算风险（`settleReceiptByTaskId()` 在轮询到终态时收尾）。
+
+**requestId 是怎么到提交层的**：网关在付费方法入口用 `runPaidIntent()` 建一个
+`AsyncLocalStorage` 上下文（`{requestId, method, module, jobId}`），kick 出来的后台任务
+自然继承，付费提交层（`imageprovider` / `videogen` / `musicapi` / `sfxapi` / `toapis`）
+调 `beginPaidCall()` 时直接取，不必层层改签名。批量方向各算各的内容指纹，不会互相顶掉。
+
+**接入点**：`imageprovider.generateImageWithProvider`（火山方舟；ToAPIs 在 `toapis.ts`
+内部记账，自定义后端不记账）、`videogen.submitVideoTask`（MiniMax）、
+`musicapi.submitGeneration`（谱乐 AI / Suno）、`sfxapi.generateSfx`（火山引擎 Seed-Audio）。
+谱曲交 Suno 也走 `submitGeneration`，天然覆盖。
+
+### 付费方法的 wire 契约
+
+14 个方法挂 `withPaidFields()`：`testArk` / `testSfx` / `runImage` / `runImages` /
+`runTurnVideo` / `runVideos` / `runImageJob` / `runSequenceVideo` / `runRigRedraw` /
+`runRigSheet` / `runMusicGeneration` / `runMusicTool` / `submitMusicScoreToSuno` /
+`runSfxGeneration`。
+
+- 宿主 `requirePaid()`：`confirm` 必须为 `true`（否则直接拒绝，不发任何请求），
+  `requestId` 可选但给了必须合法（8–128 个 `A-Za-z0-9_-`）。
+- 客户端：`api` 对象里这些方法全部注册成 `callPaid`（自动 `confirm: true` + 平台层补
+  `requestId`），平台层 `preparePaidPayload()` 再校验一次，缺 confirm 就抛
+  `confirm-required`（错误码带在 `ApiFailure.code`）。
+- **工具面**：`game_material({action:"call", method:"testSfx"})` 这类付费调用必须自己带
+  `payload:{confirm:true}`，宿主会拒绝并提示；免费方法不受影响。
+
+### 自检与运行注意
+
+- `node scripts/verify-jobs.mjs`：任务表（重复 kick / 取消 / 五个 `activate*` 复位）、
+  并发池（上限 1 时串行与 FIFO、排队位次与 ETA、快照）、receipt（同 requestId 第二次被拒且
+  远端调用计数为 1、指纹兜底、终态可重生成、取消不删记录、按 taskId 收敛、失败归类）、
+  静态契约（三处清单一致、wire 字段、五个模块复位、四个提交层走 paid 通道）。
+- 改完宿主半区**必须重启 DSH**（`lib/` 是冻结的模块图）；客户端改动刷新浏览器即可。
+- `receipts/` 是**运维数据**：不要为了「清理」删掉它。确实要重发某笔提交，先核对远端账单，
+  再删对应那一份凭证，并用新的 requestId 重新提交。
 
 ## 开发
 

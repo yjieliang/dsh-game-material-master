@@ -53,7 +53,7 @@ console.log(`重跑方向：${keys.join("、")}`);
 console.log(`预计花费：${keys.length} × ${config.minimaxDuration} 秒 × ${config.minimaxResolution === "2K" ? "0.8" : "0.5"} 元/秒\n`);
 
 // 1) 提交新视频：regenerate 让宿主先把旧视频与它们的帧作废再提交
-const kicked = await studio.runVideos({ projectId, keys, regenerate: true });
+const kicked = await studio.runVideos({ confirm: true, projectId, keys, regenerate: true });
 console.log(`提交：${JSON.stringify(kicked)}`);
 if (kicked.started !== true) {
   console.error(`启动失败：${kicked.reason}`);

@@ -80,7 +80,7 @@ await studio.saveImageJob({
   keying: { enabled: true, keyLow: 14, keyHigh: 80, despill: 0.65, bgTolerance: 90, edgeShrink: 0 }
 });
 console.log(`  任务 ${imageId}，开始生成 2 张…`);
-await studio.runImageJob({ jobId: imageId });
+await studio.runImageJob({ confirm: true, jobId: imageId });
 const images = await waitFor(
   "images",
   async () => {
@@ -116,7 +116,7 @@ await studio.saveSequenceJob({
   keying: { keyLow: 14, keyHigh: 80, despill: 0.65, bgTolerance: 90, edgeShrink: 0 }
 });
 console.log(`  任务 ${seqId}，提交视频（5 秒 768P，约 2.5 元）…`);
-console.log(`  ${JSON.stringify(await studio.runSequenceVideo({ jobId: seqId }))}`);
+console.log(`  ${JSON.stringify(await studio.runSequenceVideo({ confirm: true, jobId: seqId }))}`);
 const videoJob = await waitFor(
   "video",
   async () => {

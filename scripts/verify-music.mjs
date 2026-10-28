@@ -264,15 +264,15 @@ try {
   check("任务落盘", (await stat(join(HOME, "game-material-master", "music-jobs", made.id, "job.json"))).isFile());
   check("新建任务视图带 assetBase", made.assetBase === `/dsh-game-material-master/music-assets/${made.id}/`, made.assetBase);
   check("新建任务无歌曲", made.songs.length === 0 && made.songsTotal === 0);
-  const gen = await gw.runMusicGeneration({ jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "a short bright test tone" } });
+  const gen = await gw.runMusicGeneration({ confirm: true, jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "a short bright test tone" } });
   check("提交返回 started", gen.started === true, JSON.stringify(gen));
-  const again = await gw.runMusicGeneration({ jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "a short bright test tone" } });
+  const again = await gw.runMusicGeneration({ confirm: true, jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "a short bright test tone" } });
   check("并发/已提交时拒绝重复提交", again.started === false && /已有|在跑|计费/.test(again.reason ?? ""), again.reason);
   let settled = await waitIdle(made.id);
   check("生成结束且不再是 busy", settled.busy === false);
   check("Suno 返回 2 首并下载到本地", settled.songs.length === 2 && settled.songs.every((song) => song.status === "succeeded" && song.file), JSON.stringify(settled.songs.map((song) => [song.id, song.status, song.file])));
   check("歌曲 URL 走 music-assets 路由", settled.songs.every((song) => String(song.url).includes(`/music-assets/${made.id}/songs/`)));
-  const blocked = await gw.runMusicGeneration({ jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "again" } });
+  const blocked = await gw.runMusicGeneration({ confirm: true, jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "again" } });
   check("已有歌曲后再提交必须 regenerate:true", blocked.started === false && /regenerate/.test(blocked.reason ?? ""), blocked.reason);
   check("歌曲已下载文件可读", (await stat(join(HOME, "game-material-master", "music-jobs", made.id, settled.songs[0].file))).isFile());
   // 模拟线上真实故障：文件在、但 CDN 返回的是随机字节。界面不能继续当可播放。
@@ -357,32 +357,32 @@ try {
   routeServer.close();
 
   section("7) 工具任务");
-  const stems = await gw.runMusicTool({ jobId: made.id, kind: "stems", params: { songId: settled.songs[0].id, stemCount: 4, outputFormat: "mp3" } });
+  const stems = await gw.runMusicTool({ confirm: true, jobId: made.id, kind: "stems", params: { songId: settled.songs[0].id, stemCount: 4, outputFormat: "mp3" } });
   check("分轨提交", stems.started === true, JSON.stringify(stems));
   const afterStems = await waitIdle(made.id);
   const stemTool = afterStems.tools.find((entry) => entry.id === stems.toolId);
   check("分轨下载 2 个音轨", stemTool?.status === "succeeded" && stemTool.files?.length === 2, JSON.stringify(stemTool).slice(0, 300));
-  const style = await gw.runMusicTool({ jobId: made.id, kind: "style-analysis", params: { songId: settled.songs[0].id } });
+  const style = await gw.runMusicTool({ confirm: true, jobId: made.id, kind: "style-analysis", params: { songId: settled.songs[0].id } });
   const afterStyle = await waitIdle(made.id);
   check("风格分析结果入库", afterStyle.tools.find((entry) => entry.id === style.toolId)?.result?.genres?.[0] === "chiptune");
-  const midi = await gw.runMusicTool({ jobId: made.id, kind: "midi", params: { songId: settled.songs[0].id } });
+  const midi = await gw.runMusicTool({ confirm: true, jobId: made.id, kind: "midi", params: { songId: settled.songs[0].id } });
   const afterMidi = await waitIdle(made.id);
   check("音频转 MIDI 产物入库", afterMidi.tools.find((entry) => entry.id === midi.toolId)?.status === "succeeded");
-  const convert = await gw.runMusicTool({ jobId: made.id, kind: "convert", params: { songId: settled.songs[0].id, targetFormat: "wav" } });
+  const convert = await gw.runMusicTool({ confirm: true, jobId: made.id, kind: "convert", params: { songId: settled.songs[0].id, targetFormat: "wav" } });
   const afterConvert = await waitIdle(made.id);
   check("转码任务完成", afterConvert.tools.find((entry) => entry.id === convert.toolId)?.status === "succeeded");
 
   section("7.5) 平台错误落到任务状态");
   const errorJob = await gw.createMusicJob({ name: "错误自检", source: { kind: "prompt", prompt: "trigger-402" } });
-  await gw.runMusicGeneration({ jobId: errorJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-402" } });
+  await gw.runMusicGeneration({ confirm: true, jobId: errorJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-402" } });
   const errorView = await waitIdle(errorJob.id);
   check("402 变成 failed + 积分不足", errorView.stages.generate.status === "error" && /积分不足/.test(errorView.stages.generate.error ?? ""), JSON.stringify(errorView.stages.generate));
   const rateJob = await gw.createMusicJob({ name: "限流自检", source: { kind: "prompt", prompt: "trigger-429" } });
-  await gw.runMusicGeneration({ jobId: rateJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-429" } });
+  await gw.runMusicGeneration({ confirm: true, jobId: rateJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-429" } });
   const rateView = await waitIdle(rateJob.id);
   check("429 变成 failed + 请求过频", rateView.stages.generate.status === "error" && /频繁/.test(rateView.stages.generate.error ?? ""), JSON.stringify(rateView.stages.generate));
   const badJsonJob = await gw.createMusicJob({ name: "坏 JSON 自检", source: { kind: "prompt", prompt: "trigger-bad-json" } });
-  await gw.runMusicGeneration({ jobId: badJsonJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-bad-json" } });
+  await gw.runMusicGeneration({ confirm: true, jobId: badJsonJob.id, engine: "suno", mode: "prompt", params: { prompt: "trigger-bad-json" } });
   const badJsonView = await waitIdle(badJsonJob.id);
   check("坏 JSON 有可读错误", badJsonView.stages.generate.status === "error" && /JSON/.test(badJsonView.stages.generate.error ?? ""), JSON.stringify(badJsonView.stages.generate));
   await gw.deleteMusicJob({ jobId: errorJob.id });

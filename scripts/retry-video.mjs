@@ -37,7 +37,7 @@ if (soft) {
   console.log("已换成中性提示词");
 }
 
-const kicked = await studio.runVideos({ projectId, keys: [key] });
+const kicked = await studio.runVideos({ confirm: true, projectId, keys: [key] });
 console.log(`提交 ${key}：${JSON.stringify(kicked)}`);
 if (kicked.started !== true) process.exit(1);
 

@@ -43,6 +43,13 @@ import {
 import { decodeToRgba, mimeOf, toDataUri } from "./media.js";
 import { encodePng } from "./png.js";
 import { appendJobLog, messageOf, readJson, writeJsonAtomic, type JobLogEntry } from "./jsonio.js";
+import {
+  finishJob,
+  isJobRunning,
+  resetModule as resetModuleJobs,
+  startJob,
+  tasksOf
+} from "./jobs.js";
 import { safeName, sniffImage } from "./imagegen.js";
 import {
   alphaBounds,
@@ -1641,52 +1648,58 @@ function invalidateFrom(job: RigJob, stage: AnyStage): void {
 
 // ── 后台任务 ────────────────────────────────────────────────────────────
 
-const running = new Map<string, Set<string>>();
+// 后台任务表已经收口到 jobs.ts（P8 统一任务服务）；这里只保留本模块自己的轮询器表。
 const pollers = new Map<string, ReturnType<typeof setInterval>>();
 let disposed = false;
+
+/** 任务通道：部件重绘 / 拆件生图走付费通道，其余（分割 / 装配 / 骨骼 / 图集）走本地通道。 */
+function laneOfTask(taskKey: string): "paid" | "local" {
+  return taskKey === REDRAW_TASK_KEY || taskKey === "sheet" ? "paid" : "local";
+}
 
 export function disposeRig(): void {
   disposed = true;
   for (const timer of pollers.values()) clearInterval(timer);
   pollers.clear();
-  running.clear();
+  resetModuleJobs("rig", "插件已卸载，旧任务作废");
 }
 
 /** 复位后台任务表（理由同 pipeline.activatePipeline：重载会让 disposed 永远停在 true）。 */
 export function activateRig(): void {
   disposed = false;
-  running.clear();
+  resetModuleJobs("rig", "插件已重载，旧任务作废");
 }
 
 export function listRigTasks(jobId: string): string[] {
-  return [...(running.get(jobId) ?? [])];
+  return tasksOf("rig", jobId);
 }
 
-function kick(jobId: string, taskKey: string, fn: () => Promise<void>): boolean {
+function kick(jobId: string, taskKey: string, fn: (signal: AbortSignal) => Promise<void>): boolean {
   if (disposed) return false;
-  const set = running.get(jobId) ?? new Set<string>();
-  running.set(jobId, set);
-  if (set.has(taskKey)) return false;
-  set.add(taskKey);
+  const started = startJob({ module: "rig", scope: jobId, taskKey, label: taskKey, lane: laneOfTask(taskKey) });
+  if (!started.started) return false;
   void (async () => {
+    let state: "succeeded" | "failed" = "succeeded";
+    let detail: string | undefined;
     try {
-      await fn();
+      await fn(started.signal);
     } catch (error) {
+      state = "failed";
+      detail = messageOf(error);
       const job = await readRigJob(jobId);
       if (job !== undefined) {
         appendJobLog(job.log, "error", `${taskKey} 失败：${messageOf(error)}`);
         await writeRigJob(job);
       }
     } finally {
-      set.delete(taskKey);
-      if (set.size === 0) running.delete(jobId);
+      finishJob(started.id, state, detail);
     }
   })();
   return true;
 }
 
 function assertIdle(jobId: string, taskKey: string, what: string): void {
-  if (running.get(jobId)?.has(taskKey) === true) throw new Error(`${what}已在进行中，请等它跑完`);
+  if (isJobRunning("rig", jobId, taskKey)) throw new Error(`${what}已在进行中，请等它跑完`);
 }
 
 /** 生图任务要轮询，占位保持接口形状（当前只在任务内轮询，不需要外部驱动）。 */

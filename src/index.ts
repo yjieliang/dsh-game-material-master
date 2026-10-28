@@ -16,6 +16,14 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import { appendJobLog } from "./jsonio.js";
+import { activateJobs, configurePools, disposeJobs, poolSnapshot } from "./jobs.js";
+import {
+  assertRequestId,
+  pendingReceipts,
+  runPaidIntent,
+  summarizePendingReceipts,
+  type PaidIntent
+} from "./receipts.js";
 import { ROUTE_PREFIX, handleAsset } from "./assets.js";
 import { buildConfigPatch } from "./configpatch.js";
 import { ARK_MODEL_PRESETS, CUSTOM_PROTOCOLS, CUSTOM_PROTOCOL_DEFAULTS, DEFAULT_CONFIG, ROW_ORDER_VERSION, MINIMAX_HOST_PRESETS, MINIMAX_MODEL_PRESETS, loadConfig, maskConfig, migrateLegacyDataRoot, projectsRoot, saveConfig } from "./config.js";
@@ -226,6 +234,65 @@ async function readImageBase64FromPath(path: string): Promise<string> {
   return base64;
 }
 
+/**
+ * 付费方法清单（宿主加固 · P8）。
+ *
+ * 三处必须一致：这里、`wire.ts` 里给这些方法挂 `withPaidFields()`、
+ * 客户端 `platform/api.ts` 的 `PAID_METHODS`。`scripts/verify-jobs.mjs` 会逐条比对，
+ * 漏一处就是「某个付费入口没有 confirm / 没有幂等键」——不报错，只是重复计费。
+ */
+export const PAID_METHODS: readonly string[] = [
+  "testArk",
+  "testSfx",
+  "runImage",
+  "runImages",
+  "runTurnVideo",
+  "runVideos",
+  "runImageJob",
+  "runSequenceVideo",
+  "runRigRedraw",
+  "runRigSheet",
+  "runMusicGeneration",
+  "runMusicTool",
+  "submitMusicScoreToSuno",
+  "runSfxGeneration"
+];
+
+export function isPaidMethod(method: string): boolean {
+  return PAID_METHODS.includes(method);
+}
+
+/**
+ * 付费方法的统一入口校验（宿主侧的最后一道闸）。
+ *
+ *   · `confirm` 必须为 true —— 客户端平台层会先挡一次，这里是防止老客户端 /
+ *     工具面 / 手写 payload 绕过；
+ *   · `requestId` 可选，但给了就必须合法（8–128 个 URL 安全字符）。
+ *
+ * 校验通过后把 requestId 交给 `runPaidIntent`，后台任务（kick 出来的 async 链）
+ * 会自动继承这个上下文，付费提交层据此算 receipt 的键。
+ */
+export function requirePaid(method: string, payload: unknown): { requestId?: string } {
+  const input = payload !== null && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  if (input.confirm !== true) {
+    throw new Error(`${method} 是付费操作：必须显式确认（confirm:true）。先向用户说明这次会真实计费，确认后再带 confirm 重试。`);
+  }
+  return { requestId: assertRequestId(input.requestId) };
+}
+
+/** 付费方法统一入口：校验 + 把幂等上下文挂到 AsyncLocalStorage 上。 */
+function paidEntry<T>(method: string, module: PaidIntent["module"], payload: unknown, run: () => T): T {
+  const paid = requirePaid(method, payload);
+  const input = payload !== null && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const scope = ["projectId", "jobId", "scoreId"]
+    .map((key) => input[key])
+    .find((value) => typeof value === "string" && value !== "");
+  return runPaidIntent(
+    { requestId: paid.requestId, method, module, ...(typeof scope === "string" ? { jobId: scope } : {}) },
+    run
+  );
+}
+
 export class GameStudioGateway extends TypertRemoteService {
   ffmpegCache;
   constructor(ctx) {
@@ -325,17 +392,21 @@ export class GameStudioGateway extends TypertRemoteService {
     this.ffmpegCache = undefined;
     // 谱曲依赖路径可能变了；下一次 getConfig / testMusicScore 重新探测。
     clearScoreDepsCache();
+    // 并发通道跟着配置走（付费通道=concurrency，本机 ffmpeg 通道=2–4）。
+    configurePools(paidPoolsFor(saved));
     return this.decorateConfig(saved);
   }
-  async testArk() {
-    const config = await loadConfig();
-    if (config.arkApiKey.trim() === "")
-      throw new Error("尚未配置火山方舟 API Key");
-    return testArk({
-      baseUrl: config.arkBaseUrl,
-      apiKey: config.arkApiKey,
-      model: config.arkModel,
-      timeoutMs: config.arkTimeoutMs
+  async testArk(payload) {
+    return paidEntry("testArk", "sprite", payload, async () => {
+      const config = await loadConfig();
+      if (config.arkApiKey.trim() === "")
+        throw new Error("尚未配置火山方舟 API Key");
+      return testArk({
+        baseUrl: config.arkBaseUrl,
+        apiKey: config.arkApiKey,
+        model: config.arkModel,
+        timeoutMs: config.arkTimeoutMs
+      });
     });
   }
   /** 测自定义生图后端。与 testArk 对称，各自测各自那一组配置。 */
@@ -441,21 +512,23 @@ export class GameStudioGateway extends TypertRemoteService {
    * 没有免费的探活端点；读历史 / 模型列表都不能证明「Key 能生成」。设置页按钮
    * 必须写明会产生少量费用。
    */
-  async testSfx() {
-    const config = await loadConfig();
-    const blocker = sfxBlocker(config);
-    if (blocker !== undefined) throw new Error(blocker);
-    const result = await testSfxConnection({
-      baseUrl: config.sfxBaseUrl,
-      apiKey: config.sfxApiKey,
-      model: config.sfxModel,
-      timeoutMs: Math.min(config.sfxTimeoutMs, 180000)
+  async testSfx(payload) {
+    return paidEntry("testSfx", "sfx", payload, async () => {
+      const config = await loadConfig();
+      const blocker = sfxBlocker(config);
+      if (blocker !== undefined) throw new Error(blocker);
+      const result = await testSfxConnection({
+        baseUrl: config.sfxBaseUrl,
+        apiKey: config.sfxApiKey,
+        model: config.sfxModel,
+        timeoutMs: Math.min(config.sfxTimeoutMs, 180000)
+      });
+      return {
+        ...result,
+        baseUrl: config.sfxBaseUrl,
+        model: config.sfxModel
+      };
     });
-    return {
-      ...result,
-      baseUrl: config.sfxBaseUrl,
-      model: config.sfxModel
-    };
   }
   /**
    * 浏览器半区上报自己的 `location.origin` 与应用路径前缀。
@@ -1275,20 +1348,25 @@ export class GameStudioGateway extends TypertRemoteService {
   }
   // ── 流水线控制 ──────────────────────────────────────────────────────────
   async runImage(payload) {
-    const input = asRecord(payload);
-    const projectId = asString(input.projectId);
-    const key = asString(input.key);
-    if (directionOf(key) === undefined)
-      throw new Error(`未知方向：${key}`);
-    return startImage(projectId, key, {
-      prompt: typeof input.prompt === "string" ? input.prompt : undefined
+    return paidEntry("runImage", "sprite", payload, () => {
+      const input = asRecord(payload);
+      const projectId = asString(input.projectId);
+      const key = asString(input.key);
+      if (directionOf(key) === undefined)
+        throw new Error(`未知方向：${key}`);
+      return startImage(projectId, key, {
+        prompt: typeof input.prompt === "string" ? input.prompt : undefined
+      });
     });
   }
   async runImages(payload) {
-    const input = asRecord(payload);
-    return startAllImages(asString(input.projectId), input.force === true);
+    return paidEntry("runImages", "sprite", payload, () => {
+      const input = asRecord(payload);
+      return startAllImages(asString(input.projectId), input.force === true);
+    });
   }
   async runVideos(payload) {
+    return paidEntry("runVideos", "sprite", payload, async () => {
     const input = asRecord(payload);
     const projectId = asString(input.projectId);
     const project = await readProject(projectId);
@@ -1336,6 +1414,7 @@ export class GameStudioGateway extends TypertRemoteService {
       throw new Error("这些方向的视频都已经生成完成；要重做请点该方向的「重新生成」");
     }
     return startVideos(projectId, submittable);
+    });
   }
   async pollVideos(payload) {
     const projectId = asString(asRecord(payload).projectId);
@@ -1422,16 +1501,18 @@ export class GameStudioGateway extends TypertRemoteService {
   }
   /** 生成转圈视频（**花钱**：一次 MiniMax 调用）。整圈只有这一段视频。 */
   async runTurnVideo(payload) {
-    const projectId = asString(asRecord(payload).projectId);
-    const project = await readProject(projectId);
-    if (project === undefined)
-      throw new Error(`项目不存在：${projectId}`);
-    if (project.source === null && project.images?.front?.file === undefined)
-      throw new Error("还没有源图，请先上传角色设定图");
-    const running = project.turn?.video?.status === "running";
-    if (running)
-      throw new Error("转圈视频正在生成中，请等它跑完（重复提交会覆盖正在跑的任务）");
-    return startTurnVideo(projectId);
+    return paidEntry("runTurnVideo", "sprite", payload, async () => {
+      const projectId = asString(asRecord(payload).projectId);
+      const project = await readProject(projectId);
+      if (project === undefined)
+        throw new Error(`项目不存在：${projectId}`);
+      if (project.source === null && project.images?.front?.file === undefined)
+        throw new Error("还没有源图，请先上传角色设定图");
+      const running = project.turn?.video?.status === "running";
+      if (running)
+        throw new Error("转圈视频正在生成中，请等它跑完（重复提交会覆盖正在跑的任务）");
+      return startTurnVideo(projectId);
+    });
   }
   /** 抽取转圈候选帧（本机 ffmpeg，不花钱），并按当前截帧位置切出八张方向图。 */
   async runTurnFrames(payload) {
@@ -1593,22 +1674,24 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runImageJob(payload) {
-    const input = asRecord(payload);
-    const jobId = asString(input.jobId);
-    const job = await imagegen.readImageJob(jobId);
-    if (job === undefined) throw new Error(`任务不存在：${jobId}`);
-    if (job.prompt.trim() === "") throw new Error("提示词为空，请先填写");
-    const count = clampInt(input.count, job.settings.count, 1, 8);
-    if (count !== job.settings.count) {
-      job.settings.count = count;
-      await imagegen.writeImageJob(job);
-    }
-    let started = 0;
-    for (let i = 0; i < count; i++) {
-      if (kickImageItem(jobId, i)) started++;
-    }
-    if (started === 0) throw new Error("这些图片已经在生成中，请等它们跑完");
-    return { started: true, count: started };
+    return paidEntry("runImageJob", "image", payload, async () => {
+      const input = asRecord(payload);
+      const jobId = asString(input.jobId);
+      const job = await imagegen.readImageJob(jobId);
+      if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+      if (job.prompt.trim() === "") throw new Error("提示词为空，请先填写");
+      const count = clampInt(input.count, job.settings.count, 1, 8);
+      if (count !== job.settings.count) {
+        job.settings.count = count;
+        await imagegen.writeImageJob(job);
+      }
+      let started = 0;
+      for (let i = 0; i < count; i++) {
+        if (kickImageItem(jobId, i)) started++;
+      }
+      if (started === 0) throw new Error("这些图片已经在生成中，请等它们跑完");
+      return { started: true, count: started };
+    });
   }
 
   async keyImageJob(payload) {
@@ -1718,23 +1801,25 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runSequenceVideo(payload) {
-    const jobId = asString(asRecord(payload).jobId);
-    const job = await seqgen.readSequenceJob(jobId);
-    if (job === undefined) throw new Error(`任务不存在：${jobId}`);
-    if (job.video.status === "running" && typeof job.video.taskId === "string") {
-      throw new Error("视频已经在生成中，请等它跑完（重复提交会白花一次生成的钱）");
-    }
-    // 素材缺失同步报错，否则只会落进日志、界面上看着像「点了没反应」。
-    if (job.mode === "frames" && job.refs.firstFrame === undefined) {
-      throw new Error("首尾帧模式必须上传一张首帧图");
-    }
-    if (job.mode === "reference" && job.refs.referenceImages.length === 0 && job.refs.referenceVideos.length === 0) {
-      throw new Error("参考模式至少要上传一张参考图或一段参考视频");
-    }
-    if (job.frames.raw !== undefined && job.video.status === "empty") {
-      throw new Error("清空视频后才能重新生成");
-    }
-    return seqgen.startSequenceVideo(jobId);
+    return paidEntry("runSequenceVideo", "sequence", payload, async () => {
+      const jobId = asString(asRecord(payload).jobId);
+      const job = await seqgen.readSequenceJob(jobId);
+      if (job === undefined) throw new Error(`任务不存在：${jobId}`);
+      if (job.video.status === "running" && typeof job.video.taskId === "string") {
+        throw new Error("视频已经在生成中，请等它跑完（重复提交会白花一次生成的钱）");
+      }
+      // 素材缺失同步报错，否则只会落进日志、界面上看着像「点了没反应」。
+      if (job.mode === "frames" && job.refs.firstFrame === undefined) {
+        throw new Error("首尾帧模式必须上传一张首帧图");
+      }
+      if (job.mode === "reference" && job.refs.referenceImages.length === 0 && job.refs.referenceVideos.length === 0) {
+        throw new Error("参考模式至少要上传一张参考图或一段参考视频");
+      }
+      if (job.frames.raw !== undefined && job.video.status === "empty") {
+        throw new Error("清空视频后才能重新生成");
+      }
+      return seqgen.startSequenceVideo(jobId);
+    });
   }
 
   async pollSequenceVideo(payload) {
@@ -1913,7 +1998,7 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runRigSheet(payload) {
-    return riggen.startSheetGeneration(asString(asRecord(payload).jobId));
+    return paidEntry("runRigSheet", "rig", payload, () => riggen.startSheetGeneration(asString(asRecord(payload).jobId)));
   }
 
   /**
@@ -2164,9 +2249,11 @@ export class GameStudioGateway extends TypertRemoteService {
 
   /** AI 逐部件重绘（花钱）。生图要几十秒，所以走后台任务 + `game_material({action:'wait'})`。 */
   async runRigRedraw(payload) {
-    const input = asRecord(payload);
-    return riggen.startRigRedraw(asString(input.jobId), asString(input.name), asString(input.prompt), {
-      erode: typeof input.erode === "number" ? input.erode : undefined
+    return paidEntry("runRigRedraw", "rig", payload, () => {
+      const input = asRecord(payload);
+      return riggen.startRigRedraw(asString(input.jobId), asString(input.name), asString(input.prompt), {
+        erode: typeof input.erode === "number" ? input.erode : undefined
+      });
     });
   }
 
@@ -2251,6 +2338,7 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async submitMusicScoreToSuno(payload: any) {
+    return paidEntry("submitMusicScoreToSuno", "score", payload, () => {
     const input = asRecord(payload);
     return musicgen.submitMusicScoreToSuno(asString(input.jobId), {
       scoreId: typeof input.scoreId === "string" ? input.scoreId : undefined,
@@ -2260,6 +2348,7 @@ export class GameStudioGateway extends TypertRemoteService {
       regenerate: input.regenerate === true,
       copyrightAudio: input.copyrightAudio === true,
       audioWeight: typeof input.audioWeight === "number" ? input.audioWeight : undefined
+    });
     });
   }
 
@@ -2359,6 +2448,7 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runMusicGeneration(payload: any) {
+    return paidEntry("runMusicGeneration", "music", payload, () => {
     const input = asRecord(payload);
     return musicgen.startMusicGeneration(asString(input.jobId), {
       engine: input.engine,
@@ -2367,6 +2457,7 @@ export class GameStudioGateway extends TypertRemoteService {
       params: asRecord(input.params),
       regenerate: input.regenerate === true,
       by: "ai"
+    });
     });
   }
 
@@ -2413,8 +2504,10 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runMusicTool(payload: any) {
-    const input = asRecord(payload);
-    return musicgen.runMusicTool(asString(input.jobId), asString(input.kind), asRecord(input.params));
+    return paidEntry("runMusicTool", "music", payload, () => {
+      const input = asRecord(payload);
+      return musicgen.runMusicTool(asString(input.jobId), asString(input.kind), asRecord(input.params));
+    });
   }
 
   async musicPeaks(payload: any) {
@@ -2534,7 +2627,7 @@ export class GameStudioGateway extends TypertRemoteService {
   }
 
   async runSfxGeneration(payload: any) {
-    return sfxgen.startSfxGeneration(asString(asRecord(payload).jobId));
+    return paidEntry("runSfxGeneration", "sfx", payload, () => sfxgen.startSfxGeneration(asString(asRecord(payload).jobId)));
   }
 
   async cancelSfxGeneration(payload: any) {
@@ -2692,14 +2785,41 @@ function mapHave(value: unknown): string[] | undefined {
 }
 
 // ── cordis 插件体 ────────────────────────────────────────────────────────
+/**
+ * 并发通道上限：付费生成跟着设置里的「并发请求数」（1–8），本机 ffmpeg 夹在 2–4。
+ *
+ * ffmpeg 太少会让抽帧 / 合成排长队，太多则互相抢 CPU（实测 4 以上总耗时反而上升）。
+ */
+export function paidPoolsFor(config: { concurrency: number }): { paid: number; local: number } {
+  const concurrency = Number.isFinite(config.concurrency) ? Math.min(8, Math.max(1, Math.round(config.concurrency))) : 3;
+  return { paid: concurrency, local: Math.min(4, Math.max(2, concurrency)) };
+}
+
 export function apply(ctx) {
   // 插件被重载时，模块缓存会把上一次的 disposed 标记原样留下来，于是所有生成类调用都
-  // 静默变成「任务已在进行中」——每次 apply 都要把三个后台任务表复位。
+  // 静默变成「任务已在进行中」——每次 apply 都要把后台任务表复位（P8 起收口在 jobs.ts）。
+  activateJobs();
   activatePipeline();
   seqgen.activateSequence();
   riggen.activateRig();
   musicgen.activateMusic();
   sfxgen.activateSfx();
+  // 并发通道先按默认值起来，配置读出来后立刻校正（loadConfig 是异步的）。
+  void loadConfig()
+    .then((config) => configurePools(paidPoolsFor(config)))
+    .catch(() => undefined);
+  /**
+   * 上次退出时还没结清的付费提交（`submitting` / `uncertain`）：**只报警，不重发**。
+   *
+   * 这两种状态说明连远端 taskId 都没拿到，远端可能已经收下并计费；自动重试就是
+   * 再买一次。把凭证路径打到 stderr，人和日志都能找到去哪儿对账。
+   */
+  void pendingReceipts()
+    .then((records) => {
+      const message = summarizePendingReceipts(records);
+      if (message !== undefined) process.stderr.write(`${message}\n`);
+    })
+    .catch(() => undefined);
 
   // 旧版本的数据目录叫 8dir-sprites，插件改名后搬一次，已有项目无缝接上。
   void migrateLegacyDataRoot()
@@ -2762,5 +2882,6 @@ export function apply(ctx) {
     riggen.disposeRig();
     musicgen.disposeMusic();
     sfxgen.disposeSfx();
+    disposeJobs();
   }, "dsh-game-material-master: pipeline cleanup");
 }

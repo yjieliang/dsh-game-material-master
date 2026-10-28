@@ -22,6 +22,16 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { loadConfig, type Config } from "./config.js";
 import {
+  finishJob,
+  getJob,
+  isJobRunning,
+  jobIdOf,
+  listJobs as listRunningJobs,
+  resetModule as resetModuleJobs,
+  startJob,
+  updateJob
+} from "./jobs.js";
+import {
   DEFAULT_TURN_PROMPT,
   DIRECTIONS,
   DIRECTION_KEYS,
@@ -91,7 +101,7 @@ export interface JobInfo {
   targets?: string[];
 }
 
-const jobs = new Map<string, Map<string, JobInfo>>();
+// 后台任务表已经收口到 jobs.ts（P8 统一任务服务）；这里只保留本模块自己的轮询器表。
 const pollers = new Map<string, ReturnType<typeof setInterval>>();
 let disposed = false;
 
@@ -99,7 +109,7 @@ export function disposePipeline(): void {
   disposed = true;
   for (const timer of pollers.values()) clearInterval(timer);
   pollers.clear();
-  jobs.clear();
+  resetModuleJobs("pipeline", "插件已卸载，旧任务作废");
 }
 
 /**
@@ -112,7 +122,7 @@ export function disposePipeline(): void {
  */
 export function activatePipeline(): void {
   disposed = false;
-  jobs.clear();
+  resetModuleJobs("pipeline", "插件已重载，旧任务作废");
 }
 
 /**
@@ -127,30 +137,41 @@ function kickFailure(detail: string): { started: boolean; reason: string } {
 }
 
 export function listJobs(projectId: string): JobInfo[] {
-  return [...(jobs.get(projectId)?.values() ?? [])];
+  return listRunningJobs({ module: "pipeline", scope: projectId }).map((record) => ({
+    key: record.taskKey,
+    label: record.label,
+    startedAt: record.startedAt,
+    ...(record.targets === undefined ? {} : { targets: [...record.targets] })
+  }));
 }
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 任务通道：生成类走付费通道，抽帧 / 抠像 / 合成走本地通道（只影响统计与排障口径）。 */
+function laneOfTask(taskKey: string): "paid" | "local" {
+  return /^(image|images|turn:video|videos)/.test(taskKey) ? "paid" : "local";
+}
+
 /** 把一个后台任务登记进运行表并立刻返回；重复的 taskKey 会被拒绝。 */
-function kick(projectId: string, taskKey: string, label: string, fn: () => Promise<void>): boolean {
+function kick(projectId: string, taskKey: string, label: string, fn: (signal: AbortSignal) => Promise<void>): boolean {
   if (disposed) return false;
-  const map = jobs.get(projectId) ?? new Map<string, JobInfo>();
-  jobs.set(projectId, map);
-  if (map.has(taskKey)) return false;
-  map.set(taskKey, { key: taskKey, label, startedAt: Date.now() });
+  const started = startJob({ module: "pipeline", scope: projectId, taskKey, label, lane: laneOfTask(taskKey) });
+  if (!started.started) return false;
   void (async () => {
+    let state: "succeeded" | "failed" = "succeeded";
+    let detail: string | undefined;
     try {
-      await fn();
+      await fn(started.signal);
     } catch (error) {
+      state = "failed";
+      detail = messageOf(error);
       await patchProject(projectId, (project) => {
         log(project, "error", `${label}失败：${messageOf(error)}`);
       }).catch(() => undefined);
     } finally {
-      map.delete(taskKey);
-      if (map.size === 0) jobs.delete(projectId);
+      finishJob(started.id, state, detail);
     }
   })();
   return true;
@@ -177,15 +198,14 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T, index: numbe
  * 界面第一次轮询就能看到，不会出现「本地 pending 撤了、宿主列表还没写」的空窗。
  */
 function setJobTargets(projectId: string, taskKey: string, targets: string[]): void {
-  const info = jobs.get(projectId)?.get(taskKey);
-  if (info !== undefined) info.targets = [...targets];
+  updateJob(jobIdOf("pipeline", projectId, taskKey), { targets });
 }
 
 /** 某个方向的产物已经可见，从任务的覆盖面里摘掉，界面不再盖着它。 */
 function dropJobTarget(projectId: string, taskKey: string, key: string): void {
-  const info = jobs.get(projectId)?.get(taskKey);
+  const info = getJob(jobIdOf("pipeline", projectId, taskKey));
   if (info === undefined || info.targets === undefined) return;
-  info.targets = info.targets.filter((item) => item !== key);
+  updateJob(info.id, { targets: info.targets.filter((item) => item !== key) });
 }
 
 // ── 阶段 1：八方向绿幕图 ──────────────────────────────────────────────────
@@ -197,7 +217,7 @@ export interface StartImageOptions {
 export function startImage(projectId: string, key: string, options: StartImageOptions = {}): { started: boolean; reason?: string } {
   const direction = directionOf(key);
   if (direction === undefined) return { started: false, reason: `未知方向：${key}` };
-  if (jobs.get(projectId)?.has(`image:${key}`) === true) return { started: false, reason: "该方向正在生成中" };
+  if (isJobRunning("pipeline", projectId, `image:${key}`)) return { started: false, reason: "该方向正在生成中" };
 
   const started = kick(projectId, `image:${key}`, `生成「${direction.label}」`, () => generateOne(projectId, key, options.prompt));
   return started ? { started: true } : kickFailure("任务已在进行中");
@@ -382,7 +402,7 @@ async function turnFirstFrame(
 }
 
 export function startTurnVideo(projectId: string): { started: boolean; reason?: string } {
-  if (jobs.get(projectId)?.has("turn:video") === true) return { started: false, reason: "转圈视频正在生成中" };
+  if (isJobRunning("pipeline", projectId, "turn:video")) return { started: false, reason: "转圈视频正在生成中" };
   const started = kick(projectId, "turn:video", "生成转圈视频", () => submitTurnVideo(projectId));
   return started ? { started: true } : kickFailure("任务已在进行中");
 }
@@ -511,7 +531,7 @@ async function pollTurnVideoOnce(projectId: string, config: Config): Promise<voi
 }
 
 export function startTurnFrames(projectId: string, count?: number): { started: boolean; reason?: string } {
-  if (jobs.get(projectId)?.has("turn:frames") === true) return { started: false, reason: "抽帧已在进行中" };
+  if (isJobRunning("pipeline", projectId, "turn:frames")) return { started: false, reason: "抽帧已在进行中" };
   const started = kick(projectId, "turn:frames", "抽取转圈候选帧", async () => {
     // 第一个 await 之前公布覆盖面：抽完候选帧才会逐个切出八张方向图，
     // 那段空窗里八个格子全靠这张表盖着（与批量抽帧同一套约定）。

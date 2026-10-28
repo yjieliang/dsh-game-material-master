@@ -1,9 +1,15 @@
 /** Optional ToAPIs asynchronous media transport. No automatic paid POST retries. */
-import { createHash } from "node:crypto";
-import { mkdir, readFile, open, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { writeJsonAtomic } from "./jsonio.js";
-import { dataRoot, type Config } from "./config.js";
+import { type Config } from "./config.js";
+import {
+  PaidDuplicateError,
+  beginPaidCall,
+  digest,
+  markPaidSubmitted,
+  markPaidUncertain,
+  receiptsRoot,
+  settleReceiptByTaskId
+} from "./receipts.js";
 import type {
   ProviderImageRequest,
   ProviderImageResult,
@@ -68,19 +74,15 @@ async function api(
     throw new Error(`ToAPIs ${path.split("/")[0]}: HTTP ${response.status}`);
   return response.json();
 }
-const digest = (value: string) =>
-  createHash("sha256").update(value).digest("hex");
-async function readJson(path: string): Promise<any> {
-  try {
-    return JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-}
 const terminal = (state: string) =>
   ["completed", "failed", "cancelled", "expired"].includes(state);
-/** A persistent guard closes the gap between paid submission and the host storing taskId. */
+/**
+ * A persistent guard closes the gap between paid submission and the host storing taskId.
+ *
+ * 凭证现在落在通用的 `receipts/` 目录（见 `receipts.ts`）：`beginPaidCall` 用 wx 独占
+ * 建盘，同一笔请求的第二次提交连远端都摸不到；提交成功补 taskId，失败标 uncertain
+ * 并把「去哪对账」写进回执。
+ */
 async function submit(
   config: Config,
   kind: "images" | "videos",
@@ -88,76 +90,50 @@ async function submit(
   signal: AbortSignal,
   identity: unknown = body,
 ): Promise<any> {
-  const dir = join(dataRoot(), "toapis-receipts");
-  await mkdir(dir, { recursive: true });
   const root = toapisRoot(config.toapisBaseUrl);
-  const file = join(
-    dir,
-    digest(
-      JSON.stringify([root, digest(config.toapisApiKey), kind, identity]),
-    ) + ".json",
-  );
-  const previous = await readJson(file);
-  if (previous?.delivered === true) await unlink(file);
-  else if (previous) {
-    if (!previous.id)
+  const scope = [root, digest(config.toapisApiKey), kind, identity];
+  let ticket;
+  try {
+    ticket = await beginPaidCall({ provider: "toapis", method: `toapis.${kind}`, identity: scope });
+  } catch (error) {
+    if (!(error instanceof PaidDuplicateError)) throw error;
+    const previous = error.receipt;
+    const file = join(receiptsRoot(), `${previous.key}.json`);
+    if (previous.taskId === undefined)
       throw new Error(
         `ToAPIs: previous submission uncertain; reconcile receipt ${file} before resubmitting`,
       );
     const old = await api(
       config,
-      `${kind}/generations/${encodeURIComponent(previous.id)}`,
+      `${kind}/generations/${encodeURIComponent(previous.taskId)}`,
       signal,
     );
     if (!terminal(old.status)) return old;
     // Recover completed output after restart/cancellation before allowing an explicit regeneration.
-    if (old.status === "completed") return old;
+    if (old.status === "completed") {
+      await settleReceiptByTaskId(previous.taskId, "resolved", { detail: "recovered completed output" });
+      return old;
+    }
     throw new Error(
-      `ToAPIs: previous task ${previous.id} is ${old.status}; reconcile receipt ${file} before an explicit regeneration`,
+      `ToAPIs: previous task ${previous.taskId} is ${old.status}; reconcile receipt ${file} before an explicit regeneration`,
     );
   }
-  const handle = await open(file, "wx");
-  await handle.writeFile(
-    JSON.stringify({ state: "submitting", kind, createdAt: Date.now() }),
-  );
-  await handle.close();
   try {
     const task = await api(config, kind + "/generations", signal, body);
-    if (typeof task.id !== "string" || !task.id.trim())
+    if (typeof task.id !== "string" || !task.id.trim()) {
+      await markPaidUncertain(ticket.key, { detail: "no task ID returned" }).catch(() => undefined);
       throw new Error("ToAPIs: no task ID; do not repeat the paid submission");
-    await writeJsonAtomic(file, {
-      id: task.id,
-      kind,
-      state: task.status,
-      createdAt: Date.now(),
-    });
+    }
+    await markPaidSubmitted(ticket.key, { taskId: task.id });
     return task;
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Request failed";
+    // 上面「没有 task id」那一支已经标过 uncertain，这里不覆盖它的说明。
+    if (!message.includes("no task ID"))
+      await markPaidUncertain(ticket.key, { detail: message }).catch(() => undefined);
     throw new Error(
-      `ToAPIs submission may have been accepted; do not retry automatically. Reconcile ${file}. ${error instanceof Error ? error.message : "Request failed"}`,
+      `ToAPIs submission may have been accepted; do not retry automatically. Reconcile ${join(receiptsRoot(), `${ticket.key}.json`)}. ${message}`,
     );
-  }
-}
-async function updateReceipt(
-  kind: string,
-  field: string,
-  value: string,
-  patch: object,
-): Promise<void> {
-  const dir = join(dataRoot(), "toapis-receipts");
-  let files: string[];
-  try {
-    files = await readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-    throw error;
-  }
-  for (const name of files) {
-    if (!/^[a-f0-9]{64}\.json$/.test(name)) continue;
-    const file = join(dir, name),
-      record = await readJson(file);
-    if (record?.kind === kind && record[field] === value)
-      await writeJsonAtomic(file, { ...record, ...patch });
   }
 }
 function outputUrl(task: any): string | undefined {
@@ -246,10 +222,6 @@ export async function downloadToapis(
         : !(bytes.length >= 12 && bytes.toString("ascii", 4, 8) === "ftyp")
     )
       throw new Error("ToAPIs: result is not a supported image/MP4 file");
-    if (kind === "video")
-      await updateReceipt("videos", "outputHash", digest(input), {
-        delivered: true,
-      });
     return bytes;
   }
   throw new Error("ToAPIs: too many output redirects");
@@ -353,7 +325,7 @@ export async function generateToapisImage(
   const url = outputUrl(task);
   if (!url) throw new Error("ToAPIs: completed image task has no output URL");
   const bytes = await downloadToapis(config, url, "image", combined);
-  await updateReceipt("images", "id", task.id, { delivered: true });
+  await settleReceiptByTaskId(task.id, "resolved", { detail: "image delivered" });
   return {
     bytes,
     ext: imageExt(bytes)!,
@@ -414,7 +386,7 @@ export async function queryToapisVideo(
   if (task.status === "completed") {
     const url = outputUrl(task);
     if (!url) throw new Error("ToAPIs: completed video task has no output URL");
-    await updateReceipt("videos", "id", taskId, { outputHash: digest(url) });
+    await settleReceiptByTaskId(taskId, "resolved", { detail: "video ready" });
     return { status: "succeeded", remoteStatus: task.status, url };
   }
   if (["failed", "cancelled", "expired"].includes(task.status))
