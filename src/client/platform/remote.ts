@@ -35,6 +35,7 @@ export function createRemote(deps: any) {
       // 本地自选视频（转圈 / 某个方向）与中间图片打包。
       ["uploadVideo", true],
       ["exportImages", true],
+      ["exportSprite", true],
       ["runImage", true],
       ["runImages", true],
       ["setImageMode", true],

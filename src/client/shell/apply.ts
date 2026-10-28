@@ -122,6 +122,7 @@ export function createApply(deps: ApplyDeps) {
         revealProject: (payload) => call("revealProject", payload),
         uploadVideo: (payload) => call("uploadVideo", payload),
         exportImages: (payload) => call("exportImages", payload),
+        exportSprite: (payload) => call("exportSprite", payload),
         runImage: (payload) => callPaid("runImage", payload),
         runImages: (payload) => callPaid("runImages", payload),
         setImageMode: (payload) => call("setImageMode", payload),

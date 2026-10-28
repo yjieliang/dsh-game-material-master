@@ -14,6 +14,7 @@
 
 import { markRender } from "./platform/perf.js";
 import { shallowEqual } from "./platform/store.js";
+import { createEngineExportCard } from "./shell/components/engine-export-card.js";
 
 export interface StudioPanelRuntime {
   React: any;
@@ -63,6 +64,8 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
   const actions = store.actions;
   /** 没有项目时的阶段完成标记（stageDone 不能对 null 求值）。 */
   const NO_STAGE_FLAGS = STAGES.map(() => false);
+  /** 引擎导出卡（与模块③ 共用同一份实现，只是传 projectId / jobId 不同）。 */
+  const EngineExportCard = createEngineExportCard({ React, h, T, Btn, BusyBtn, msg });
 
   /**
    * 只比较项目快照里与「这块界面」相关的几段字段。
@@ -392,6 +395,8 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
           props.stage === "sheet"
             ? h(renderSheetStage, { api: props.api, start: props.start, setNotice: props.setNotice, loadProject: props.loadProject, saveSettings: props.saveSettings, tasks: props.tasks })
             : null,
+          // 整图出来之后才谈得上「进引擎」：卡片挂在阶段④ 下方（模块③ 里挂在合成卡之后）。
+          props.stage === "sheet" ? h(SpriteEngineExport, { api: props.api, setNotice: props.setNotice }) : null,
           props.stage === "preview" ? h(WalkPreview, { tasks: props.tasks }) : null
         )
       ),
@@ -459,6 +464,34 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
       ),
       h(Btn, { onClick: () => void props.api.revealProject({ projectId: view.id }) }, T("在访达中打开项目目录"))
     );
+  }
+
+  /**
+   * 阶段④（sheet）下方的「引擎导出」卡。
+   *
+   * 只订阅「当前项目 id / 产物基址 / 整图是否就绪 / 上次导出记录」这几段：
+   * 生成视频、抽帧这些无关变更不该把这个卡片拖着重渲染。
+   */
+  function SpriteEngineExport(props: any) {
+    markRender("SpriteEngineExport");
+    const view = store.use(
+      (state: any) => ({
+        id: state.project?.id ?? null,
+        assetBase: state.project?.assetBase ?? "",
+        ready: state.project?.sheet?.status === "ready",
+        lastExport: state.project?.export ?? null
+      }),
+      shallowEqual
+    );
+    if (view.id === null) return null;
+    return h(EngineExportCard, {
+      api: props.api,
+      assetBase: view.assetBase,
+      target: { projectId: view.id },
+      ready: view.ready,
+      lastExport: view.lastExport,
+      setNotice: props.setNotice
+    });
   }
 
   /** 没有项目时的空态 / 载入态。 */

@@ -420,6 +420,25 @@ export interface Config {
 
   /** 并发请求数（生图 / 视频 / 抽帧各自受限）。 */
   concurrency: number;
+
+  /**
+   * 引擎导出卡片的默认勾选（设计 §9.1 的 `exportDefaults`；默认只勾 manifest）。
+   *
+   * 取值是 exportman 的格式 id 子集：sheet / frames / manifest / godot / aseprite / zip。
+   * 卡片首次打开按它勾选，用户点导出时把这次的选择写回来（只改这一个键，不动别的配置）。
+   */
+  exportDefaults: string[];
+}
+
+/** 引擎导出可勾选的内容 id（真源在 exportman.ts；这里是配置归一化用的白名单）。 */
+const EXPORT_FORMAT_DEFAULTS = ["sheet", "frames", "manifest", "godot", "aseprite", "zip"] as const;
+
+/** 收敛 `exportDefaults`：只留已知 id、去重、保持固定顺序；空 / 非法回落到默认。 */
+function normalizeExportDefaults(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_CONFIG.exportDefaults];
+  const wanted = raw.map(String);
+  const valid = EXPORT_FORMAT_DEFAULTS.filter((id) => wanted.includes(id));
+  return valid.length > 0 ? valid : [...DEFAULT_CONFIG.exportDefaults];
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -533,7 +552,9 @@ export const DEFAULT_CONFIG: Config = {
   rowOrder: [...DEFAULT_ROW_ORDER],
   rowOrderVersion: ROW_ORDER_VERSION,
   hiddenModules: [],
-  concurrency: 3
+  concurrency: 3,
+
+  exportDefaults: ["manifest"]
 };
 
 export const ARK_MODEL_PRESETS = [
@@ -723,7 +744,8 @@ export function normalizeConfig(input: unknown): Config {
     rowOrder,
     rowOrderVersion: ROW_ORDER_VERSION,
     hiddenModules: normalizeHiddenModules(raw.hiddenModules),
-    concurrency: asInt(raw.concurrency, DEFAULT_CONFIG.concurrency, 1, 8)
+    concurrency: asInt(raw.concurrency, DEFAULT_CONFIG.concurrency, 1, 8),
+    exportDefaults: normalizeExportDefaults(raw.exportDefaults)
   };
 }
 

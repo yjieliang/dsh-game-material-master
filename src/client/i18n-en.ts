@@ -2073,5 +2073,22 @@ export const EN: Record<string, string> = {
   "有未保存的改动": "Unsaved changes",
   "正在自动保存…": "Auto-saving…",
   "预计 1 次视频调用 · 约 1–6 分钟": "About one video call · roughly 1-6 minutes",
+  // ── 引擎导出卡（模块① 阶段④ / 模块③，设计 §7）──
+  "引擎导出": "Engine export",
+  "把整图导出成引擎直接能用的格式：运行时 manifest、Godot SpriteFrames、Aseprite JSON、逐帧 PNG，可再打成一个 zip。全部在本机完成，不消耗任何额度。":
+    "Export the sheet in engine-ready formats: a runtime manifest, Godot SpriteFrames, Aseprite JSON, per-frame PNGs, optionally zipped. Everything runs locally and costs nothing.",
+  "整图 PNG": "Sprite sheet PNG",
+  "逐帧序列": "Frame sequence",
+  "manifest 清单": "manifest",
+  "Godot SpriteFrames": "Godot SpriteFrames",
+  "Aseprite JSON": "Aseprite JSON",
+  "打包成 zip": "Pack into a zip",
+  "导出到引擎": "Export for engines",
+  "至少勾选一种内容": "Pick at least one item",
+  "还没有可导出的整图：先完成合成": "No sheet to export yet — compose it first",
+  "上次导出：{n0} 个文件（{n1}）": "Last export: {n0} file(s) ({n1})",
+  "已导出 {n0} 个文件：{n1} 帧 / {n2} 个动画，{n3} fps": "Exported {n0} file(s): {n1} frames / {n2} animation(s) at {n3} fps",
+  "下载 zip 包": "Download the zip",
+  "引擎导出完成：{n0} 个文件（{n1} 帧）": "Engine export finished: {n0} file(s), {n1} frames",
 };
 /*! i18n-ignore-end */

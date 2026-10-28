@@ -8,6 +8,7 @@
 
 import { markRender } from "./platform/perf.js";
 import { onceTimer } from "./platform/lifecycle.js";
+import { createEngineExportCard } from "./shell/components/engine-export-card.js";
 
 export interface SequenceRuntime {
   React: any;
@@ -52,6 +53,9 @@ export interface SequenceRuntime {
 
 export function createSequenceModule(rt: SequenceRuntime) {
   const { React, h, T, scheduler, useLocaleTick, useStudioIntent, msg, mergeDrafts, askNewName, Chip, StatusChip, Btn, NumField, useGlobalConfig, GlobalModelField, ZoomableImage, usePendingTasks, LoadingOverlay, MediaBox, BusyBtn, BusyBadge, ReviewModeBar, ApproveBtn, readFileBase64, UploadBox, KeyingFields, CopyIdButton, JobSidebar, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, RefRow, SequencePlayer, JobLogPanel } = rt;
+
+  /** 引擎导出卡（与模块① 阶段④ 共用同一份实现，这里传 jobId）。 */
+  const EngineExportCard = createEngineExportCard({ React, h, T, Btn, BusyBtn, msg });
 
 function SequenceModule(props) {
   markRender("SequenceModule");
@@ -544,6 +548,16 @@ function SequenceModule(props) {
                       )
                     )
               ),
+              job.sheet?.file === undefined
+                ? null
+                : h(EngineExportCard, {
+                    api,
+                    assetBase: job.assetBase,
+                    target: { jobId: job.id },
+                    ready: job.sheet?.status === "ready",
+                    lastExport: job.export ?? null,
+                    setNotice
+                  }),
               h(
                 "div",
                 { className: "SPR_card" },
