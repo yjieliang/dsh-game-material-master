@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "scope": "sprite",
+  "frameCount": 8,
+  "sampled": 1,
+  "metrics": [
+    {
+      "key": "transparentRatio",
+      "label": "透明像素占比",
+      "value": 0.6496,
+      "threshold": 0.05,
+      "thresholdMax": 0.95,
+      "comparison": "min",
+      "verdict": "pass"
+    },
+    {
+      "key": "fringeRatio",
+      "label": "边缘彩边比例",
+      "value": 0.0004,
+      "threshold": 0.15,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "bboxCv",
+      "label": "包围盒宽度 CV",
+      "value": 4.88,
+      "threshold": 5,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "heightCv",
+      "label": "身高 CV",
+      "value": 0,
+      "threshold": 1,
+      "comparison": "max",
+      "verdict": "pass"
+    },
+    {
+      "key": "headWidthCv",
+      "label": "头宽 CV",
+      "value": 4.85,
+      "threshold": 2,
+      "comparison": "max",
+      "verdict": "warn"
+    },
+    {
+      "key": "loopSeamIou",
+      "label": "循环缝 IoU",
+      "value": 0.846,
+      "threshold": 0.35,
+      "comparison": "min",
+      "verdict": "pass"
+    },
+    {
+      "key": "loopSeamDiff",
+      "label": "循环缝 RGB 差",
+      "value": 31.4,
+      "threshold": 24,
+      "comparison": "max",
+      "verdict": "warn"
+    },
+    {
+      "key": "centroidJitter",
+      "label": "相邻帧质心位移最大值",
+      "value": 8.22,
+      "verdict": "info"
+    },
+    {
+      "key": "centroidJitterMedian",
+      "label": "相邻帧质心位移中位数",
+      "value": 3.64,
+      "verdict": "info"
+    }
+  ],
+  "issues": [
+    {
+      "code": "headWidthCv",
+      "message": "头宽 CV 4.85% 超过 2%：头部大小在帧间变化偏大",
+      "level": "warn"
+    },
+    {
+      "code": "loopSeamDiff",
+      "message": "循环缝位置平均 RGB 差 31.4 超过 24：首尾帧颜色不一致（打光 / 色偏漂移）",
+      "level": "warn"
+    }
+  ],
+  "verdict": "warn",
+  "thresholds": {
+    "transparentRatioMin": 0.05,
+    "transparentRatioMax": 0.95,
+    "fringeRatioMax": 0.15,
+    "bboxCvMax": 5,
+    "heightCvMax": 1,
+    "headWidthCvMax": 2,
+    "loopSeamIouMin": 0.35,
+    "loopSeamDiffMax": 24
+  },
+  "generatedAt": 1793210879605,
+  "elapsedMs": 3
+}

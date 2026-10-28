@@ -74,6 +74,7 @@ DSH 插件「墨盒」：从一张角色设定图出发批量产出游戏素材�
 | 音效模块：后台任务表 **`activateSfx()` 每次 apply 都要复位**，`resumeSfxJobs()` 把残留 running 标失败 | 与 `pipeline` / `seqgen` / `riggen` / `musicgen` 同一个坑。同步接口没有远端 taskId 可续查，重启后只能标失败并提示「可能已计费」 |
 | 音效模块：**静态资源 scope 四处 + MIME** | `AssetScope` 加 `sfx-assets`、`resolveAssetTarget` 分支、`SCOPES` 数组、`SERVABLE_SFX_DIRS`（唯一真源在 `sfxgen.ts`）四处同步；子目录 `refs` / `takes` / `out` 少一个就是 403 |
 | 音效模块：**界面轮询不许覆盖草稿** | 生成中每 2.5 秒拉一次 `getSfxJob`；提示词与参数走 `mergeDrafts()`，只有「草稿 === 上次宿主值」才跟随更新，切任务才 `force`。`verify-sfx-client.mjs` 有静态契约 |
+| **产物体检报告固定落 `<目标目录>/qa/report.json`**：三个 scope（projects / image-jobs / sequence-jobs）的白名单都要有 `qa`；改指标/阈值要同步 `src/qa.ts` 注释、`docs/产物QA报告-设计.md` 与 `verify-qa.mjs` | 白名单漏一条就是「徽标有、点导出 403」；报告路径/口径改了而文档与自检没跟上，下一个人会按旧口径调阈值。阈值判定（warn / fail）决定 fail-closed 是否阻断，改错不会报错，只会静默放开或误拦 |
 | 新增产物子目录时，`SERVABLE_DIRS`（`src/index.ts`）必须同步加一条 | 静态资源路由按**第一段路径**比对白名单，漏掉就 403。界面只表现为「图裂了」、不报错——转圈截帧的 `turn/` 就踩过。模块六的子目录白名单**唯一真源是 `mapgen.SERVABLE_MAP_DIRS`**（`index.ts` 的资源路由直接引用它，别再各写一份）；scope 级那三处（`AssetScope` 类型 / `resolveAssetTarget` 分支 / `SCOPES` 数组）改 scope 时要同步。`verify-map-gateway.mjs` 会真调一遍路由（含 `ai/` 的 200 与未列入目录的 403） |
 | 模块五：**AI 生成素材首版只做 ground / object**，`autotile` 4×4 仍手工导入；`composeIsoAsset` 只整理到 `ai/`、不自动进素材列表，`ai/` 必须留在 `SERVABLE_ISO_DIRS` | 单张 AI 图无法可靠推导 16 种接法；`ai/` 漏白名单就是回链图片 403；自动导入会替用户拍板「属性一次定死」的素材 |
 | 模块五：**物件大小 `objectScale` 在导入时烘进存图**（`footprint.cols × cell.width × objectScale`），渲染 / 导出都不读它；`importIsoTileset` 的 `objectScale` 必须留在 wire schema 里，越界要报错、不静默夹 | 少一行 schema 就是「滑杆调了、点确定还是原大小」；改成运行期缩放则地图与导出会各算一套 |
@@ -129,6 +130,7 @@ node scripts/verify-comfy.mjs      # 本地 ComfyUI 后端（124 项，自起 mo
 node scripts/verify-custom-image.mjs  # 自定义生图后端三协议（68 项：起本地假服务端，离线、零计费）
 node scripts/verify-toapis.mjs       # ToAPIs 可选异步图片 / 视频后端（43 项，mock HTTP、零付费调用）
 node scripts/verify-jobs.mjs         # 宿主加固：统一任务表 / 全局并发池 / 付费 receipt / 三处清单一致（54 项，纯本地、零付费调用）
+node scripts/verify-qa.mjs           # 产物体检（QA）：黄金 fixture / 阈值边界 / 降采样 / PNG 解码 / 落盘 / 网关 / fail-closed（102 项，纯本地、零付费调用）
 node scripts/verify-music.mjs      # 音乐生成编辑：mock 谱乐 AI 的生成/轮询/下载/编辑/导出/工具/路由（86 项）
 node scripts/verify-music-score.mjs   # 谱曲模式：方案 / 假 Python / 内置试听 / 乐谱包 / Suno 上传+cover mock（46 项，纯本地）
 node scripts/verify-music-gateway.mjs  # 音乐走真实网关：wire schema 不丢键、工具面、深链接、隐藏模块、谱曲字段（52 项）
