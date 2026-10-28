@@ -603,16 +603,20 @@ h("span", null, T("正在装配定位…"))                       // plain copy
 T("第 {n0} 帧", { n0: index + 1 })                        // with interpolation; English may reorder freely
 ```
 
-Then add an English entry to the string table in `src/client.ts` (between `i18n-ignore-start` /
+Then add an English entry to the string table in `src/client/i18n-en.ts` (between `i18n-ignore-start` /
 `i18n-ignore-end`); if you miss one nothing crashes, but `verify-i18n.mjs` will catch it. To wrap legacy code
-in bulk, use `node scripts/i18n-wrap.mjs src/client.ts --write` (lexical, idempotent, safe to run repeatedly).
+in bulk, use `node scripts/i18n-wrap.mjs src/client/<file>.ts --write` (lexical, idempotent, safe to run repeatedly).
 
 How changes take effect after you edit code:
 
 | What you changed | How it takes effect |
 |---|---|
-| `src/client.ts` (browser half) | Just refresh the browser |
+| `src/client/**` (browser half; entry point is `src/client.ts`) | Just refresh the browser |
 | `src/*.ts` host half | Restart DSH (or hot-reload with `--patch`) |
+
+The browser half is split into four layers (`entry → shell → features → platform`). Adding a module,
+the dependency direction and the assembly order are documented in the "客户端分层" (client layering)
+section of [`docs/ENGINEERING.md`](docs/ENGINEERING.md).
 
 The screenshots in this document were taken by Playwright against the real UI; the originals live in
 [`docs/images/`](https://github.com/universe-st/dsh-game-material-master/tree/main/docs/images).

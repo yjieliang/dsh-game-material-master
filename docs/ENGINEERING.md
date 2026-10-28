@@ -1110,8 +1110,9 @@ AI 给的图是 1024² / 2048²，一格只有 32px，要缩小 32~64 倍。第�
 
 ### 界面里唯一允许复刻的东西
 
-`src/client.ts` 模块六段落里的四个 `MAP_*` 函数：`MAP_pointToCell` / `MAP_cellAnchor` /
-`MAP_cellTopLeft` / `MAP_lineCells`（宿主对应在 `mapgeom.ts` / `mapdoc.ts`）。
+模块六切片里的四个 `MAP_*` 函数：`MAP_pointToCell` / `MAP_cellAnchor` /
+`MAP_cellTopLeft` / `MAP_lineCells`（源码在 `src/client/map-module.ts`，拆分前在 `src/client.ts`；
+宿主对应在 `mapgeom.ts` / `mapdoc.ts`）。
 
 判据是**与宿主真实现逐点相同**，不是「我推的公式对不对」：
 `verify-map-client.mjs` 拿宿主的真函数对同一组输入逐点比对（环绕与非环绕两组 ×
@@ -1251,8 +1252,9 @@ zip 由 `src/zip.ts` 手写（store / deflate，`node:zlib` 够用，零依赖�
 
 ### 术语黑名单是硬约束
 
-`src/client.ts` **全文**里 `地形族 / 掩码 / 优先级 / 切分 / chunk / 图集 / 变体种子 / 高度偏移 /
-Tiled / 等距` 十个词 **0 命中，注释里也不许出现**（`verify-map.mjs` 按文本扫）。
+模块六的源码（`src/client/map-module.ts`）里 `地形族 / 掩码 / 优先级 / 切分 / chunk / 图集 /
+变体种子 / 高度偏移 / Tiled / 等距` 十个词 **0 命中，注释里也不许出现**（`verify-map.mjs` 按文本扫）。
+⚠️ 拆分后自检会**把旧入口 `src/client.ts` 与模块六切片两处都扫一遍** —— 只扫一处时，搬迁会让黑名单静默失去覆盖。
 
 为什么是硬约束：第一版收到的反馈就是「**门槛太高、专业名词太多**」——
 用户要先学会「图集 / 切分 / 地形族 / 掩码 / 优先级 / 变体种子 / 高度偏移」，
@@ -1328,8 +1330,13 @@ AsLib 自带的 `Picture/MapChip/*_pipo.png` 是**第三方版权素材，不打
 - **图以内联 data URI 的形式跟浏览器束走**：浏览器半区必须是经典脚本（不能 import），宿主也没有
   「随便给个静态文件」的路由（`/plugins/<包>/<文件>` 一律 404，束走带 `rev` 的模块图 URL）。
   三张图合计约 3 KB，base64 之后约 4 KB —— 比为它开一条宿主路由（改 wire / 网关 / 重启 DSH）便宜得多。
-  生成器是 `scripts/make-map-guide-art.mjs`，它整块改写 `src/client.ts` 里的 `MAP_GUIDE_ART` 标记块；
-  `--check` 断言确定性、标记块是最新的、已经构建进 `lib/client.js`。
+  生成器是 `scripts/make-map-guide-art.mjs`，它整块改写 `MAP_GUIDE_ART` 标记块
+  （拆分后那段在 `src/client/map-module.ts`）。⚠️ **已知问题：拆分后这个生成器跑不起来**——
+  ① 它用 `await import(join(REPO, "lib", …))` 加载绝对路径，ESM 要求 `file://` URL，本机直接报
+  `Only URLs with a scheme in: file, data, and node are supported … Received protocol 'c:'`
+  （`lib/` 是有的，提示「先跑一次 build」是误报）；② 路径常量 `CLIENT` 还指着旧入口 `src/client.ts`，
+  而 `MAP_GUIDE_ART` 已经搬到 `src/client/map-module.ts`，就算修好①也会报「找不到标记块」。
+  改说明图之前先把这两处一起修掉。
 - **网格线的位置由生成器给的数字现算**（`100 / cols`、`100 / rows`、再按 `sub` 细分），
   不写死在 CSS 里：图从 4×2 改成别的排法，网格跟着走，不会出现「图变了、网格还在老位置」。
 - **方向位序是契约，靠自检把 PNG 解回来量**：说明窗口照它教用户排图，所以 `--check` 会把整格那张图
@@ -1891,10 +1898,13 @@ const staticTextRebuilders = [() => { DIRECTIONS = make_DIRECTIONS(); }, …, ()
 800+ 条文案靠手改必漏，所以有一个纯词法的改写脚本：
 
 ```bash
-node scripts/i18n-wrap.mjs src/client.ts --keys /tmp/keys.json   # 只出清单，不改文件
-node scripts/i18n-wrap.mjs src/client.ts --write                 # 真正改写（幂等，可反复跑）
-node scripts/i18n-wrap.mjs src/client.ts --dump /tmp/keys.json   # 从已包好的文件里回收 key
+node scripts/i18n-wrap.mjs src/client/<文件>.ts --keys /tmp/keys.json   # 只出清单，不改文件
+node scripts/i18n-wrap.mjs src/client/<文件>.ts --write                 # 真正改写（幂等，可反复跑）
+node scripts/i18n-wrap.mjs src/client/<文件>.ts --dump /tmp/keys.json   # 从已包好的文件里回收 key
 ```
+
+> 拆分后脚本仍是**单文件**参数（一次一个 `.ts`）：`src/client/` 下哪个文件加了文案就对哪个跑。
+> 英文词条表本身在 `src/client/i18n-en.ts`（`i18n-ignore-*` 区间内），不要对它跑 codemod。
 
 它不建语法树（TypeScript 7 是原生编译器，没有可用的 JS 编译器 API），只做
 「字符串 / 模板 / 注释 / 正则」四态扫描——这里够用。三条规则值得知道：
@@ -1913,7 +1923,7 @@ node scripts/i18n-wrap.mjs src/client.ts --dump /tmp/keys.json   # 从已包好�
 `node scripts/verify-i18n.mjs` 钉住五件事：**每个 `T()` 都有英文条目**、**没有没人用的死条目**、
 **中英两侧 `{nN}` 占位符一一对应**（少一个界面上就少一段文字）、**译文里不残留汉字 / 全角标点**
 （`·`、箭头、`▲▼`、`¥`、`≤` 这些故意保留的符号在白名单里）、**`lib/client.js` 与
-`src/client.ts` 的词条表一致**（忘了 `npm run build` 就发版，界面会整体退回中文）。
+`src/client/i18n-en.ts` 的词条表一致**（忘了 `npm run build` 就发版，界面会整体退回中文）。
 
 ---
 
@@ -2205,7 +2215,7 @@ void (async () => {
 
 | 改了哪里 | 怎么生效 |
 |---|---|
-| `src/client.ts`（浏览器半区） | 刷新页面即可——客户端 bundle 由宿主按请求从磁盘读，带上 `rev` 指纹 |
+| `src/client/**`（浏览器半区；入口是 `src/client.ts`） | 刷新页面即可——客户端 bundle 由宿主按请求从磁盘读，带上 `rev` 指纹 |
 | `src/*.ts` 的宿主半区（网关、路由、工具、流水线） | **正式环境必须重启 Harness**（菜单 `Harness → 重启 Harness`）。宿主半区是进程启动时冻结的模块图，改 YAML / 碰文件都不会让它重新 import |
 
 #### 开发时的宿主半区热重载（不必重启）
@@ -2335,9 +2345,9 @@ node scripts/dsh-web-cookie.mjs 127.0.0.1:43121 --json
 | `node scripts/verify-comfy.mjs` | 本地 ComfyUI 后端（**124 项**，纯本地、不联网、不花钱、**不需要真装 ComfyUI**）：脚本自己用 `node:http` 在随机端口起一个 mock，覆盖地址归一化与注入点解析、`parseComfyWorkflow` 的 **UI 格式自动转换**（官方 All-in-One 形状的夹具：控件值按 `widgets_values` 顺序取、`randomize` 不当种子、连线写成 `[来源节点, 槽位]`、没连的 `first` 留给探测、便签与静音节点丢掉、`droppedWidgets` 计数、新版对象形式的 `links`）、探测的**四级顺序**（显式覆盖回退 / 已有字面量量 / 已有 `LoadImage` / `object_info` 声明的 optional IMAGE）、两个 `LoadImage` 时首尾各用其一、注入的纯函数性与「插入节点只写 `image` 一个键」、`first_frame_reference` 自动打开、无首帧位置报错、以及 HTTP 层（`/system_stats`、`/queue` 排队中、`/history` 执行失败带出 node_type、上传 multipart、`node_errors` / `error` 两条失败路径、从 outputs 挑 mp4 而不挑 png、只有图片时判失败、Cookie 的归一化与「每个请求都真的带上了这个头」） |
 | `node scripts/verify-host.mjs` | 宿主半区全链路（**387 项**）：六个模块的本地链路、**阶段①的转圈截帧（合成一段「转动」视频跑真实 ffmpeg，覆盖截帧位置、按比例换算、下游作废、切换生成方式）**、**换源图后由旧源图派生的产物整体作废（状态清空 + 磁盘文件真的删掉）**、**转圈首帧的时间兜底（正面图比源图旧时改用源图）**、**模块五的资源路由（真起一台 server 走 HTTP 取回 `iso-assets` 的素材图，并验证 403 与目录穿越）**、资源路由（含 `turn/` 白名单）、预览页的 `text/html`、目录穿越与 id 前缀校验、**本地自选视频（真实 ffmpeg 造的 MP4 走 `uploadVideo`：容器嗅探 / 槽位校验 / 下游作废 / 转圈导入后自动抽帧 / 摘掉在跑的远端任务号）与中间图片 zip（自检里带一个真解包的 ZIP 读取器：逐条比 CRC 与长度、断言八方向图 / 转圈候选帧 / 绿幕帧 / 抠像帧 / 整图都在包里，并真起一台 server 把 zip 下载回来）** |
 | `node scripts/find-missing-i18n.mjs` | **工具**（不是断言）：列出所有还没进词条表的 `T("…")` 原文，直接输出可粘贴的条目 |
-| `node scripts/verify-i18n.mjs` | 中英词条表契约：**每个 `T()` 都有英文条目 / 没有死条目 / `{nN}` 占位符两侧一致 / 译文不残留汉字与全角标点 / `lib/client.js` 与 `src/client.ts` 的词条表一致（忘了 build 就发版会整体退回中文）** |
-| `node scripts/i18n-wrap.mjs` | 词法级 codemod：把 `src/client.ts` 里含中日韩字符的字面量包成 `T(...)`（模板字面量拆成 `{nN}` 占位符，幂等，`i18n-ignore-*` 区间不碰） |
-| `node scripts/verify-tools.mjs` / `verify-client.mjs` / `verify-pipeline.mjs` | 对话调用面（**196 项**，含六个模块 status/review 的文字渲染与「隐藏的模块必须拒绝调用」、本地自选视频的槽位校验、**「AI 生成素材」回链的 dialog/asset/frames/shape 往返与坏值丢弃**）、浏览器半区契约（**362 项**，含「每个远程方法都有 api 实现」「本地自选视频与中间图片打包的调用点必须带 loading 反馈」「手动装配的四条回归」「功能管理 / 侧栏菜单的类名与接线」）、抠像回归（40 项） |
+| `node scripts/verify-i18n.mjs` | 中英词条表契约：**每个 `T()` 都有英文条目 / 没有死条目 / `{nN}` 占位符两侧一致 / 译文不残留汉字与全角标点 / `lib/client.js` 与 `src/client/i18n-en.ts` 的词条表一致（忘了 build 就发版会整体退回中文）** |
+| `node scripts/i18n-wrap.mjs` | 词法级 codemod：把 `src/client/<文件>.ts` 里含中日韩字符的字面量包成 `T(...)`（模板字面量拆成 `{nN}` 占位符，幂等，`i18n-ignore-*` 区间不碰；拆分后仍是单文件参数） |
+| `node scripts/verify-tools.mjs` / `verify-client.mjs` / `verify-pipeline.mjs` | 对话调用面（**196 项**，含六个模块 status/review 的文字渲染与「隐藏的模块必须拒绝调用」、本地自选视频的槽位校验、**「AI 生成素材」回链的 dialog/asset/frames/shape 往返与坏值丢弃**）、浏览器半区契约（**366 项**，含「每个远程方法都有 api 实现」「本地自选视频与中间图片打包的调用点必须带 loading 反馈」「手动装配的四条回归」「功能管理 / 侧栏菜单的类名与接线」）、抠像回归（40 项） |
 
 
 
@@ -2351,7 +2361,7 @@ node scripts/verify-pipeline.mjs   # 抽帧/抠像/合成链路（40 项，含�
 node scripts/verify-host.mjs       # 宿主冒烟（387 项，真实 cordis + 真实 HTTP；含内置默认提示词的语言切换、hiddenModules 落盘与收敛、生图后端两组配置与阻塞判断、模块五资源路由）
 node scripts/verify-custom-image.mjs # 自定义生图后端三协议（68 项，本地假服务端；离线、零计费）
 node scripts/verify-comfy.mjs      # 本地 ComfyUI 后端（124 项，自起 mock ComfyUI，纯本地、不用装 ComfyUI）
-node scripts/verify-client.mjs     # 浏览器半区契约（362 项：阶段 ctx 键必须被转发、每个生成类调用点都带 loading 反馈、转圈时间轴与八圆圈、手动装配的四个坑、拆件质检 / IK 约束组件、功能管理 / 侧栏菜单的文本与样式契约）
+node scripts/verify-client.mjs     # 浏览器半区契约（366 项：阶段 ctx 键必须被转发、每个生成类调用点都带 loading 反馈、转圈时间轴与八圆圈、手动装配的四个坑、拆件质检 / IK 约束组件、功能管理 / 侧栏菜单的文本与样式契约）
 node scripts/verify-feedback.mjs   # 浏览器半区渲染（203 项：真加载 lib/client.js，断言遮罩真的出现 / 空闲时真的不出现 / 转圈模式两种生成方式与八圆圈都在 / **「选择本地视频」入口真的在（label + 隐藏 file input，只收 video/*）与每一处「保存」链接（八方向图 / 条带 / 成片 / 预览带 / 整包出口），且没有产物时不渲染空链接** / 深链接点击真的切面板 / 隐藏模块后页签与菜单真的消失、设置页勾选真的写回宿主 / **生图后端：ark 与自定义两组同屏、协议下拉、ComfyUI 工作流文本框只在选中 ComfyUI 时出现、改工作流不立刻发请求** / 语义校验失败没有误报成功）
 node scripts/verify-tools.mjs      # 对话调用面（196 项：工具 schema、方法覆盖、**客户端清单的 payload 标记与宿主 manifest 逐条一致**、返回值无损 JSON 审计、固定流程（含阶段①生成方式必问）、审核模式、深链接契约（含 AI 素材回链的 dialog / asset / frames / shape）、转圈模式的 status/review 渲染、**功能管理（每个方法都归了模块 / 隐藏后一律拒绝 / 可见性不许模型改）**）
 node scripts/verify-i18n.mjs       # 中英词条表契约（9 项：覆盖 / 死条目 / 占位符 / 译文纯净度 / 产物同步）
@@ -2511,10 +2521,200 @@ running 落在下一次 `getProject` 里**：
 | `src/links.ts` | 深链接：意图编解码、origin 记录、面板 key（与浏览器半区共用同一套约定） |
 | `src/tools.ts` | 对话调用面：`game_material_*` 工具、固定流程第 0 步、系统提示词段 |
 | `src/index.ts` | 宿主半区：远程服务 + 资源路由 + 工具注册 |
-| `src/client.ts` | 浏览器半区：六个模块的界面（模块六是那个 `<canvas>` 地图编辑器） |
+| `src/client.ts` | 浏览器半区**入口**（19 行）：只做 `__ModuleLoader__.load` 注册、取宿主给的 `React`，其余交给 `shell/bootstrap.ts`。分层见下面「客户端分层」一节 |
+| `src/client/shell/` | 浏览器半区组合根：`bootstrap`（装配顺序与依赖注入）· `composition`（各 feature + 面板）· `apply`（与宿主接线）· `chrome`（侧栏图标） |
+| `src/client/features/` | 8 个业务模块切片（`sprite` / `image` / `sequence` / `rig` / `iso` / `map` / `music` / `sfx`），**互相零 import** |
+| `src/client/platform/` | 浏览器半区基础设施（13 文件）：runtime / store / scheduler / lifecycle / api / remote / i18n / meta / hidden / intents / session-bridge / errors / perf |
+| `src/client/infra/prompts.ts` · `src/client/ui.ts` · `src/client/styles.ts` | 共享纯函数与基础件：提示词构造器、通用组件、样式 |
+| `lib/client.js` | **产物**：esbuild 把整张模块图内联回的单文件经典脚本，由宿主提供给浏览器 |
 
-`src/client.ts` 由宿主直接以 `/plugins/dsh-game-material-master/client.js` 提供给浏览器，
+`lib/client.js` 由宿主直接以 `/plugins/dsh-game-material-master/client.js` 提供给浏览器，
 因此**必须是经典脚本**（无 `import` / `export`），所有 React 元素用 `React.createElement` 构造。
+源码按层拆在 `src/client/`，构建时由 `scripts/bundle-client.mjs`（esbuild）+ `scripts/strip-client-export.mjs` 内联回单文件。
+
+---
+
+## 客户端分层（入口 / shell / features / platform）
+
+> 2026-10-27～28 的 P0–P10 重构把 **8,340 行**的 `src/client.ts` 拆成四层
+> （逐阶段实测见 [`客户端架构方案-性能与可用性.md`](客户端架构方案-性能与可用性.md)）。
+> **产物仍是单文件经典脚本**：分层买的是「可读、可 review、可并行」，不是运行时收益。
+> 不靠自觉的部分全部交给 `scripts/verify-arch.mjs`（17 项）与
+> `verify-client` / `verify-feedback` / `verify-i18n`，下面只解释「为什么」。
+
+### 1. 四层职责与硬边界
+
+| 层 | 位置（当前行数） | 职责 | 硬边界 |
+|---|---|---|---|
+| **入口** | `src/client.ts`（19 行） | 只做 `__ModuleLoader__.load({ id, factory })` + 取宿主给的 `React`，然后把控制权交给 `shell/bootstrap.ts` | 不放装配、文案表、组件 |
+| **shell** | `src/client/shell/`（bootstrap 681 · composition 606 · apply 348 · chrome 175） | 组合根：`bootstrap` 负责装配顺序与依赖注入；`composition` 把各 feature 与面板装成整台机器；`apply` 与宿主接线（slots / remote / settings / sidebar / main）；`chrome` 是侧栏图标等纯展示件 | `shell/` 是**唯一**能 import 全部 features 的地方；不许被 `platform` 反向 import |
+| **features** | `src/client/features/<module>/`（8 个模块，各自 `descriptor.ts` + `index.ts`） | 业务模块：sprite / image / sequence / rig / iso / map / music / sfx。`index.ts` 的 `createX(deps)` 是工厂，根组件统一套 `createFeatureBoundary` | features **之间零 import**；只准 import `platform/*`（同 feature 内部随意） |
+| **platform** | `src/client/platform/`（13 文件） | 与业务无关的基础设施：`runtime`（`installRuntime` / `useStudio`）· `store`（可订阅 store + `useStore(selector)`）· `scheduler`（PollScheduler）· `lifecycle`（`onceTimer` / `repeatTimer`）· `api`（重试 / 超时 / 取消 / 付费前置）· `remote`（远程方法清单）· `i18n` · `meta`（模块表 / 方向 / 阶段）· `hidden`（功能管理）· `intents`（深链接）· `session-bridge`（新对话桥）· `errors`（错误边界）· `perf` | 不许 import `features/*` / `shell/*`；不许在模块顶层 import react（由 runtime 注入） |
+| 共享纯函数 | `src/client/infra/prompts.ts`、`src/client/ui.ts`、`src/client/styles.ts`、`src/client/studio-panel.ts`、`src/client/*-module.ts` | 提示词构造器、基础组件、样式、工作台面板、各模块实现主体 | 仍在迁移期（`*-module.ts` 是 P5 之后留下的实现文件）；新代码优先加在 `platform/` 或对应 feature 切片里 |
+
+### 2. 依赖方向（用自检钉死，不靠自觉）
+
+```text
+   src/client.ts（入口，19 行）
+        │
+        ▼
+   shell/  ←─ 唯一允许 import 全部 features 的地方
+   ┌────┴─────┐
+   ▼          ▼
+features/   platform/
+（8 个，互不引用）  （基础设施，不反向依赖上面两层）
+```
+
+`scripts/verify-arch.mjs` 逐条断言的规则：
+
+1. `features/*` 只能 import `platform/*`，**同 feature 内部随意**；
+2. `features/A` 不许 import `features/B`；
+3. `platform/*` 不许 import `features/*` 或 `shell/*`（依赖只能单向 `shell → features → platform`）；
+4. 客户端源码**不许 import 第三方包**（React 只能由组合根 `require("react")` 注入，否则产物里会有两份 React）；
+5. `platform` 不许在模块顶层 `import react`（必须走 runtime 注入 —— 自检装的是假 React）；
+6. 组件里不许裸 `fetch` / 裸 `setInterval` / 裸 `addEventListener`：分别走 `platform/api`、`platform/scheduler`、`platform/lifecycle`。
+
+> **为什么不能从 platform import shell/features**：esbuild 会把整张图内联成**单个经典脚本**。
+> 反向 import 会成环，而环在打包后**不报错**、只是求值顺序错乱 —— 典型表现是打开面板直接白屏，
+> 控制台一句 `Cannot access 'xxx' before initialization`（TDZ）。这条没有运行时兜底，只能靠自检。
+
+### 3. 装配顺序（`shell/bootstrap.ts` 是唯一真源）
+
+`src/client/shell/bootstrap.ts` 的文件头注释就是顺序清单，代码照着排：
+
+```text
+React → i18n（T）→ platform 运行时 → 轮询调度器 / perf
+      → 远程方法清单（remote）→ 模块表 / 方向 / 阶段（meta）
+      → 提示词构建器（prompts）→ 功能管理（hidden）→ 新对话桥（sessionBridge）
+      → 意图 / 深链接（intents）→ ui kit（ui）→ 共享 store（store）
+      → 侧栏图标 / 外壳（chrome）→ 组合（composition：各 feature + 面板）
+      → 注册（apply）
+```
+
+顺序错一步不是「样式不对」，而是下面这些：
+
+| 顺序 | 错了会怎样 |
+|---|---|
+| `T` 必须最早 | 后面所有文案表在**创建时**求值；`T` 不可用 → `Cannot access 'T' before initialization`，白屏 |
+| ui kit 必须晚于 `T` | 组件的默认文案是 `undefined`：界面还在，只是空白（静默坏） |
+| 面板（`StudioPanel`）必须晚于各 feature | `composition` 拿到 `undefined` 组件，React 报 `Element type is invalid` |
+| 模块级工具函数早于组件 | 实测坑：组件渲染早期就要用 `shapeFromRect`，而组件内的 `const` 还在暂时性死区 → `Cannot access 'shapeFromRect' before initialization`，**整块白屏**（`bootstrap.ts:326` 有原注释） |
+
+> 改装配顺序时**先改文件头注释再改代码**：那份注释是后来者唯一能看到的「为什么」。
+
+### 4. 新增一个模块要动哪些文件
+
+以「再加第 9 个模块」为例，从上到下改完即可，**不用动 `bootstrap.ts` 的装配顺序**：
+
+| # | 文件 | 改什么 |
+|---|---|---|
+| 1 | `src/client/features/<m>/descriptor.ts` | `{ key, order, label, icon }`：`key` 与宿主 `links.ts` 的 `STUDIO_MODULES` 一致，`order` 是页签顺序，`label` 写中文原文（走 `T()`） |
+| 2 | `src/client/features/<m>/index.ts` | `createX(deps)` 工厂；根组件用 `createFeatureBoundary(...)` 包一层（单模块渲染崩了不拖垮外壳） |
+| 3 | `src/client/features/registry.ts` | 加一行 import + 数组里加一项（`order` 决定顺序） |
+| 4 | `src/client/shell/composition.ts` | 调 `createX(...)`，把组件交给 `createStudioPanel` |
+| 5 | `src/client/platform/meta.ts` 的 `make_MODULES()` | 页签标题 / 副标题（中文原文走 `T()`）。`composition.ts` 启动时会比对 `featureKeys()` 与 `MODULES` 的顺序，不一致只 `console.warn` |
+| 6 | `src/client/styles.ts` | `SPR_` 前缀的新样式 |
+| 7 | `src/client/i18n-en.ts` | 新文案的英文条目（漏了不报错，`verify-i18n.mjs` 拦） |
+| 8 | 宿主半区 | `src/links.ts` 的 `STUDIO_MODULES` · `src/wire.ts` 的 `module` 枚举 / 新方法 · `src/index.ts` 的资源 scope 白名单 · `src/toolguides.ts` 的手册主题 |
+| 9 | 自检 | `verify-arch`（自动覆盖 descriptor / registry / FeatureBoundary）+ `verify-client` / `verify-feedback` / `verify-i18n`（+ 该模块自己的 `verify-*-client`） |
+
+> ⚠️ `descriptor.label` 目前**没有**接进页签渲染（页签读的是 `platform/meta.ts` 的 `MODULES`），
+> 所以第 1 与第 5 步都要写。这是已知缺口，见第 7 节末尾。
+
+### 5. 自检：`verify-arch` 的 17 项各自防什么
+
+`node scripts/verify-arch.mjs` 是**架构适配度自检**（fitness functions）。规则光写进文档一年后必然失效，能自动拦的全部做成门禁：
+
+| # | 检查 | 防什么 |
+|---|---|---|
+| 1 | 客户端源码没有 import 第三方包 | 产物里打进第二份 React / 依赖被内联 |
+| 2 | features 之间零 import | 8 个模块互相纠缠，改一个坏八个 |
+| 3 | platform 不反向依赖 features | 环形依赖 → 打包后 TDZ 白屏 |
+| 4 | platform 不依赖 shell（单向依赖） | 同上 |
+| 5 | `client.ts` 入口 ≤ 400 行（当前 19） | 装配代码又长回入口 |
+| 6 | platform 不在模块顶层 `import react` | 自检桩无法注入自己的假 React；也说明有隐性全局依赖 |
+| 7 | platform 顶层标识符避开通用名（`current` / `next` / `data` …） | esbuild 单文件打包把重名标识符改成 `xxx2`，而一批自检按**源码文本**钉调用点（实测：runtime 的 `current` 把 `mergeDrafts` 的参数改成了 `current2`） |
+| 8 | 非 platform 定时器 ≤ `BASELINE.legacyTimers`（当前 0） | 轮询散落在 features 里、绕过调度器 |
+| 9 | 非 platform 裸 `fetch(` ≤ 3 | 绕过 `platform/api` 的超时 / 重试 / 付费前置 |
+| 10 | 非 platform `addEventListener` ≤ 30 | 监听器泄漏（走 `platform/lifecycle` 的 `useResources()`） |
+| 11 | 每个 feature 有 `descriptor.ts` | 模块元数据散回 shell 里 |
+| 12 | `registry` 覆盖全部 features | 新增模块忘了注册（页签不出现） |
+| 13 | 每个 feature 根组件被 `FeatureBoundary` 包裹 | 一个模块渲染崩掉拖垮整个工作台 |
+| 14 | `lib/client.js` raw ≤ 1,200,000 B（当前 1,119,623） | 体积回归 |
+| 15 | `lib/client.js` gzip ≤ 320 KB（当前 297,182） | 同上 |
+| 16 | 产物是经典脚本（没有 `import` / `export`） | 宿主按普通脚本加载，混入模块语法直接语法错 |
+| 17 | `lib/client.js` 存在 | 忘了 build 就提交 |
+
+**棘轮（ratchet）**：`verify-arch.mjs` 顶部的 `BASELINE` 允许历史遗留先存在，但**只许降、不许涨**：
+
+```js
+const BASELINE = { legacyTimers: 0, legacyFetch: 3, legacyListeners: 30 };
+```
+
+每迁完一个模块就把数字调低；**不要为了变绿调高**（P10 已把裸定时器清零：新代码里出现 `setInterval` /
+`setTimeout` 直接红，注释里写一个也会被数到）。体积预算在同一文件的 `BUDGET`：
+`rawBytes: 1_200_000` / `gzipBytes: 320 * 1024`，超了只报「删死代码或收敛重复实现」。
+
+### 6. 自检命令（可直接复制）
+
+```bash
+node scripts/verify-arch.mjs        # 架构 17 项：依赖方向 / 棘轮 / 体积 / 经典脚本
+node scripts/verify-client.mjs      # 浏览器半区契约 366 项
+node scripts/verify-feedback.mjs    # 浏览器半区真渲染 217 项（含功能管理、草稿合并）
+node scripts/verify-i18n.mjs        # 中英词条表 9 项（含产物与源分词条表一致）
+node scripts/perf-baseline.mjs      # 挂载期渲染计数基线
+node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改后两份产物，见架构方案 §2.8）
+```
+
+本机沙箱里有两个**环境**坑（与代码无关）：
+
+| 命令 | 症状 | 处置 |
+|---|---|---|
+| `npm run build` 里的 `bundle-client.mjs` | esbuild 的 **JS API** 要 spawn 服务进程 → 沙箱 `EPERM`；失败时还会把 `lib/client.js` 截断 | 用 `node scripts/tmp/bundle-cli.mjs`（直接跑 `node_modules/@esbuild/win32-x64/esbuild.exe`，`stdio: inherit`），再 `node scripts/strip-client-export.mjs`。`scripts/tmp/` 已在 `.gitignore` |
+| `verify-host.mjs` / `verify-tools.mjs` / `verify-pipeline.mjs` | 会 spawn `ffmpeg` / `ffprobe` → `EPERM`（它们在测宿主半区，与客户端无关） | 提权执行；跑不了时按 `node scripts/gate.mjs --except=…` 显式豁免并在报告里写明「环境豁免」 |
+
+### 7. 真机验收记录（2026-10-28 · 客户端分层重构后）
+
+| 项 | 值 |
+|---|---|
+| 日期 / 时间 | 2026-10-28 11:52–12:03（本地）· **2026-10-28 03:52–04:03 UTC** |
+| DSH 版本 | `0.2.1-rc.3-15907e6-dirty`（Web GUI 标题处显示；本仓库声明 `engines.dsh: >=0.2.0-rc.2 <0.3.0-0`） |
+| 宿主 | 本机正在跑的 DSH Web（`http://127.0.0.1:3080`），插件 link 到本仓库、`lib/client.js` 按请求从磁盘读 |
+| 浏览器 | 本机 Edge 155.0.4283.60（Playwright 无头；用 `scripts/dsh-web-cookie.mjs` 派生会话 cookie 注入，不需要启动 token） |
+| 刷新方式 | **整页刷新**（等价 Ctrl+R）：`location.reload()` 后重新进面板。**没有重启 DSH** —— 客户端束本来就是刷新即生效 |
+| 结论 | **8 个模块全部进入并渲染出内容，0 个未捕获异常**；一次零计费「一键生成」成功；切英文暴露 1 个回归（见末尾） |
+
+逐模块结果（刷新后依次点开页签；按钮与文案均按真实 DOM 读取）：
+
+| 模块 | 实际结果 |
+|---|---|
+| 八方向图生成 | 左侧项目列表（测试1）+ 五个阶段全部渲染；已存项目状态与宿主数据一致 |
+| 图片生成 | 空态正常：「图片任务（0）…新建」+「请选择或新建一个图片任务」 |
+| 序列帧生成 | 空态正常：「序列帧任务（0）…新建」 |
+| 骨骼动画生成 | 进入即弹「实验性」说明（符合预期），面板正常渲染 |
+| 45°地图编辑器 | 空态正常：「还没有 45° 地图项目…新建项目 / 用自带素材试试」 |
+| 俯视地图编辑器 | 空态正常；点「用自带素材试试」建出 32×32 / 3 层项目（`mmvrl2yy9e2823c`，验收后已删），画布 828×586 正常绘制；内置素材 5 张（草地 / 土路 / 水 / 石墙 / 道具，标注 2/2/2/2/5 帧） |
+| 音乐生成编辑 | 新建卡正常：AI 生成 / 谱曲模式两个页签、灵感 / 歌词、引擎偏好 |
+| 音效生成 | 空态正常：「音效任务（0）…新建音效」 |
+
+一次真实生成动作（**零计费**，全本地链路）：模块六 →「用自带素材试试」→ 工具条「一键生成」→
+选「内置 · 草地」→「生成」。画布像素内容签名（`canvas.toDataURL().length`）从 **15,854 B → 115,034 B**，
+地图被随机铺满；无异常、无计费。
+
+语言切换：设置 → 通用设置 → 语言 → **English**：面板标题与工具栏立即变英文
+（`Game Material Master` / `Refresh list` / `Rename` / `Delete project`），**切回中文立即恢复**，
+阶段名 / 按钮等中性文案跟随正常。
+
+⚠️ **发现 1 个回归（本次文档任务不修，待另开需求）**：切英文后 8 个模块**页签标题与副标题仍为中文**，
+刷新页面也一样。根因：`platform/hidden.ts` 在工厂创建时按**值**解构了 `platform/meta.ts` 的 `MODULES`
+数组；`meta.rebuildStaticText()` 在语言切换时重建的是**新数组**，而 `hidden.ts` 仍持有旧数组 →
+`visibleModulesOf()` 永远返回中文标题。修复方向：把 `MODULES` 改成 **getter** 传进
+`createHiddenModules`（或让 `hidden.ts` 通过 `meta` 实时取），并在 `verify-feedback` 补一条
+「切语言后页签标题变英文」的断言。
+
+> 复现（不需要 Computer Use）：`node scripts/dsh-web-cookie.mjs 127.0.0.1:3080 --json` 拿 cookie，
+> Playwright 起系统 Edge 注入 cookie 打开 `http://127.0.0.1:3080/`；工作台在侧栏「游戏素材大师」，
+> 模块页签是 `.SPR_module`，工具按钮都带 `aria-label`，可直接元素级点击 / 读 `innerText`。
 
 ---
 

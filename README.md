@@ -507,16 +507,19 @@ h("span", null, T("正在装配定位…"))                       // 纯文案
 T("第 {n0} 帧", { n0: index + 1 })                        // 带插值，英文可自由换语序
 ```
 
-然后在 `src/client.ts` 的词条表（`i18n-ignore-start` / `i18n-ignore-end` 之间）补一条英文；
+然后在 `src/client/i18n-en.ts` 的英文词条表（`i18n-ignore-start` / `i18n-ignore-end` 之间）补一条英文；
 漏了也不会崩，`verify-i18n.mjs` 会拦下来。批量包老代码用
-`node scripts/i18n-wrap.mjs src/client.ts --write`（词法级、幂等，可反复跑）。
+`node scripts/i18n-wrap.mjs src/client/<文件>.ts --write`（词法级、幂等，可反复跑）。
 
 改代码后如何生效：
 
 | 改了哪里 | 怎么生效 |
 |---|---|
-| `src/client.ts`（浏览器半区） | 刷新浏览器即可 |
+| `src/client/**`（浏览器半区，入口是 `src/client.ts`） | 刷新浏览器即可 |
 | `src/*.ts` 宿主半区 | 重启 DSH（或 `--patch` 热重载） |
+
+浏览器半区按 `入口 → shell → features → platform` 分四层，新增模块 / 依赖方向 / 装配顺序见
+[`docs/ENGINEERING.md`](docs/ENGINEERING.md) 的「客户端分层」一节。
 
 本文截图由 Playwright 对着真实界面拍摄，原图在
 [`docs/images/`](https://github.com/universe-st/dsh-game-material-master/tree/main/docs/images)。

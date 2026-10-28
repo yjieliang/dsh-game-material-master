@@ -40,6 +40,7 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 | 约束 | 原因 |
 |---|---|
 | **产物** `lib/client.js` 必须是经典脚本（不能有 `import` / `export`）；源码可以按模块拆，React 元素一律 `React.createElement` | 宿主把 `lib/client.js` 当**普通脚本**直接发给浏览器（没有模块加载器）。`tsc` 只会产出 ESM，所以 `scripts/bundle-client.mjs`（esbuild）负责把 `src/client.ts` + `src/client/*.ts` 内联回单文件；`scripts/strip-client-export.mjs` 最后再确认一次。React 由宿主 `require("react")` 提供，**任何客户端源码都不许 import 第三方包**（会打进包、页面里出现两份 React），`verify-tools.mjs` 拦这条 |
+| **客户端分四层，依赖只能单向 `shell → features → platform`**：`features/*` 只能 import `platform/*`，features 之间零 import，`platform/*` 不许反向 import features / shell；新能力放 `platform/`，别在 feature 里 import 另一个 feature | 反向依赖被 esbuild 内联成单文件后**不报错**，只会在打开面板时 TDZ 白屏（`Cannot access 'xxx' before initialization`）。`scripts/verify-arch.mjs` 17 项逐条钉住（依赖方向、入口行数、裸定时器 / 裸 fetch / 裸监听器**棘轮只许降不许涨**、feature 结构、产物体积与经典脚本），分层说明与「加一个模块要改哪些文件」见 `docs/ENGINEERING.md` 的「客户端分层」一节 |
 | 改完 `lib/` 里的**宿主半区**必须重启 DSH | 宿主半区是进程启动时冻结的模块图。开发时可另起测试宿主 + `scripts/dev-overlay.yml` 拿 `patchReload` 热重载，见 ENGINEERING.md「开发时的宿主半区热重载」 |
 | 改完 `lib/client.js` 只需刷新浏览器 | 客户端束由宿主按请求从磁盘读，带 `rev` 指纹 |
 | **没有任何运行时依赖** | `zod` / `cordis` / dsh-typert-protocol 等一律从 DSH 自身安装树解析；`node_modules` 与 lock 文件不入库 |
@@ -81,7 +82,7 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 | 模块六：**界面文案不许出现旧术语** | 用户对第一版的反馈就是「门槛太高、专业名词太多」。`verify-map.mjs` 与 `verify-map-client.mjs` 各扫一遍**模块六那一段**（`模块六 · 地图编辑器` 到下一个分节注释），`地形族 / 掩码 / 优先级 / 切分 / 图集 / 变体种子 / 高度偏移 / Tiled / 等距` 0 命中，`chunk` 按**词边界**判（所以协议字段 `"chunks"` 可以照实写 —— 曾经为了骗过这条自检写出过 `"chu" + "nks"`，那种写法比术语本身更坏）。⚠️ **只有模块六这一段**：`图集`（模块④ Spine 图集）与 `等距`（模块⑤ 45° 地块）在别处是正确的词，全文件扫会误伤 |
 | 模块六：**派生数据不落盘**（形状判定 / 动画帧 / 视口范围 / chunk 一律现算） | 落盘的只有素材原图、`project.json`、`map.json`（每层每格的语义序号）。旧模块存了 `buildings` / `buildingGround` / `map.pixel` 三份缓存，各自都出过「过期后凭空多出一栋楼」这类 bug |
 | 模块六：A2 素材在**图层数据里存的是「代表序号」**，一小格不是一笔 | 调色板对 A2 素材只出一个笔刷（`MapViewTileset.palette`），`maprender` 见到所属素材 `shape === "a2quad"` 就展开成 4 条象限 op。少了这条分支，用户拿自动连接笔刷刷下去只会画出一个 16px 小格 —— 不报错 |
-| 界面文案一律写 `T("中文原文")`，并往 `src/client.ts` 的词条表补英文 | 中文原文就是 key；漏翻不会报错，只是那一条一直是中文。`verify-i18n.mjs` 会拦 |
+| 界面文案一律写 `T("中文原文")`，并往 `src/client/i18n-en.ts` 的词条表补英文 | 中文原文就是 key；漏翻不会报错，只是那一条一直是中文。`verify-i18n.mjs` 会拦 |
 | **模块级**（工厂顶层）出现 `T()` 的文案表要同步加进 `staticTextRebuilders` | 模块顶层的 `T()` 在插件 load 时就求值了，那时 locale 服务还没挂上，此后永远停在中文。实测表现：切英文后方向名 / 模块页签不动。函数体内的 `T()` 不受影响 |
 | 浏览器半区往宿主加字段时，`src/wire.ts` 里那条方法的 `payload:` schema 必须同步加 | typert 按声明的 schema 校验 payload，**schema 里没有的键会被静默丢掉**。实测：给 `getProject` 带上 `lang` 却没进 schema，宿主永远读到 `undefined`，表现是「切了英文提示词还是中文」且不报任何错 |
 | 新增配置字段必须同时在 `src/index.ts` 的 `saveConfig` `directKeys` 白名单里加一条 | 白名单外的键会被**静默丢掉**：界面显示已保存、`config.json` 没变、不报任何错。`comfy*` 那十个键是这么加的。⚠️ 唯一例外是**凭据类**字段（`arkApiKey` / `minimaxApiKey` / `comfyCookies`）：它们**不进**白名单——白名单是原样透传，凭据要先归一化 / trim，所以在 `saveConfig` 函数体里单独处理 |
@@ -118,7 +119,7 @@ node scripts/gate.mjs --record --compare   # 记基线 / 与上次比检查项�
 
 ```bash
 node scripts/verify-host.mjs       # 宿主全链路（387 项）
-node scripts/verify-client.mjs     # 浏览器半区契约（362 项）
+node scripts/verify-client.mjs     # 浏览器半区契约（366 项）
 node scripts/verify-tools.mjs      # 对话调用面（196 项，含常驻工具面 ≤6,000 B 预算）
 node scripts/verify-pipeline.mjs   # 抽帧 / 抠像 / 合成（40 项）
 node scripts/verify-feedback.mjs   # 浏览器半区真渲染（217 项，含功能管理、侧栏菜单、生图后端设置页、语义保存错误与草稿合并）
@@ -216,6 +217,46 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 | `0.10.1` | 2026-10-24 07:18 | **45° 地图编辑器修复**（`fix(iso)`）：「一键生成 · 大陆」的高度场中点插值把 `grid[8.5]` 当成格子写，点一次必抛 `TypeError`；现在 `step < 2` 时跳过这段（step = 1 的第一段已经把每格补满，中点那段本来就是重复的）。`verify-iso-pipeline` 54 → **55**（新增 continent 回归）。⚠️ 宿主半区改动，需重启 DSH。 |
 | `0.10.2` | 2026-10-24 07:23 | **ToAPIs 后端验收修复**（`fix(toapis)`，[PR #8](https://github.com/universe-st/dsh-game-material-master/pull/8) by [@YamiAnn](https://github.com/YamiAnn)）：生图新增**背景**选项（`auto` / `transparent` / `opaque`，GPT Image 原生透明 PNG，下载原图不再二次抠像）；图生视频新增**画幅比例**（默认 16:9，方形角色用 1:1），透明首帧先铺白再交给视频模型；补真实 DSH 八方向 / 精灵导出验收文档，新增 `verify-toapis-alpha`（原生透明、白底首帧、ZIP 原字节）与 Windows 临时文件锁回归 `verify-project-windows-lock`；`verify-toapis` 42 → **43**、`verify-feedback` 214 → **217**。⚠️ 宿主半区改动，需重启 DSH。 |
 | `0.11.0` | 2026-10-26 04:32 | **两套地图编辑器补上 Agent 闭环**（`feat(map)`）：新增 `mapInspect` / `isoInspect`（按区域、按预算读逐格 / 物件 / 整图 / 标记 / 通行性，默认 4096 格，超了回 `truncated` + `nextRange`）与 `mapRender` / `isoRender`（同步检查图：区域裁切、1~4 倍、透明 / 棋盘 / 白 / 深底、可叠 markers / grid / axes / pass / outlines，返回 `localPath` 给 `read_image`）；新增 `guide` 主题 `map-agent`。`applyMapOps` / `applyIsoOps` 新增 **`dryRun`** 与 **`ifRevision`**，项目视图带 `revision`。标记新增 **kind / color / note / tags** 与 `marker update`，导出格式 `dsh-gem-map@5` / `dsh-gem-iso-map@2`。整图新增 `stampMove` / `stampRotate`（越界或被别的整图占住会跳过，不静默顶掉）、最小占格 2 → **1**，素材属性里可改 `stampPass`；45° 物件新增 `duplicate`；`importMapTileset` / `importIsoTileset` 支持 **`path`**；`compose*` 返回 `localPath` / `previewPath`；所有模块的项目 / 任务标题旁与侧栏行都能**一键复制 projectId / jobId**。修复整图多格笔刷被标记 / 橡皮 / 油漆桶 / 吸管借用。wire 184 → **188**；新增 `verify-map-agent` 35。自检：host 387 / client 362 / tools 196 / feedback 217 / map 239 / map-pipeline 429 / map-gateway 228 / map-client 474 / iso 42 / iso-pipeline 55 / iso-gateway 64 / iso-client 83。⚠️ 宿主半区改动，需重启 DSH。 |
+
+### 下一版发布说明（0.12.0 · 未发布）
+
+> 版本号按 **`0.12.0`** 准备，截至 **2026-10-28 04:25 UTC 尚未发布到 npm**（`package.json` 仍是 `0.11.0`）。
+> 真正发布时：把 `package.json` 提到 0.12.0 → 发布 → 在「已发布版本」表里追加一行（补真实 UTC 时间）→
+> 删掉本提示。内容如需细分，照下面的 0.11.0 小节格式另起小节。
+
+相对已发布的 0.11.0，这条分支（`refactor/client-module-split`）是**客户端分层重构 + 宿主 P8 加固**，
+用户可见功能不变：
+
+#### ① 客户端分层（`refactor(client)`，P0–P10）
+
+- `src/client.ts` **8,340 行 → 19 行入口**；装配搬进 `shell/bootstrap.ts`，其余拆成
+  `shell/`（bootstrap 681 · composition 606 · apply 348 · chrome 175）、
+  `features/<m>/`（8 个模块，互不 import）、`platform/`（13 文件：runtime / store / scheduler /
+  lifecycle / api / remote / i18n / meta / hidden / intents / session-bridge / errors / perf）。
+- 新增架构自检 `scripts/verify-arch.mjs`（**17 项**，含棘轮与体积预算）：依赖方向、features 零 import、
+  入口行数、裸定时器 / 裸 fetch / 裸监听器计数、feature 结构、产物经典脚本与体积全部变成构建门禁。
+- 轮询全部收编到 `platform/scheduler`（P3b / P10）：非 platform 裸定时器 **16 → 0**，棘轮同步降到 0。
+- 项目快照搬进 `platform/store` 按 selector 订阅（P9）：一次轮询重渲染的产品组件从「整棵树」降到 **3 个**；
+  轮询回包内容没变时不 `setState`。
+- 产物 `lib/client.js` **1,119,623 B / gzip 297,182 B**（预算 1.2 MB / 320 KB 内），仍是经典脚本。
+- 文档：`docs/ENGINEERING.md` 新增「客户端分层」一节（四层职责、依赖方向、装配顺序、加模块清单、
+  verify-arch 17 项、棘轮与体积预算、**2026-10-28 真机验收记录**）；`AGENTS.md` 增一条分层硬约束；
+  `README.md` / `README.en.md` 的「加一条界面文案」与生效表改到新路径
+  （`src/client/i18n-en.ts` / `src/client/**`）。
+
+#### ② 宿主 P8（`feat(host)`）
+
+- `src/jobs.ts` 统一任务表 + 全局并发池；`src/receipts.ts` 付费 receipt；五个模块的
+  `activate*` / `dispose*` 统一走 `resetModule`；付费方法三处清单必须一致
+  （`PAID_METHODS` / `withPaidFields` / 客户端 `platform/api.ts`）。
+  详见 `docs/ENGINEERING.md`「宿主半区：统一任务表 / 并发池 / 付费 receipt（P8）」与 `verify-jobs.mjs`（54 项）。
+
+#### 本次复跑的自检（文档任务只跑这几项）
+
+`verify-arch` **17** · `verify-client` **366** · `verify-feedback` **217** · `verify-i18n` **9**，
+全部通过。其余脚本本次未复跑（`verify-host` / `verify-tools` / `verify-pipeline` 在沙箱里 spawn `ffmpeg` 会 `EPERM`）。
+
+⚠️ 宿主半区有改动（`src/index.ts` / `jobs.ts` / `receipts.ts` 等）：**升级后要重启 DSH**；浏览器半区刷新即可。
 
 ### 0.11.0 发布说明（2026-10-26）
 
