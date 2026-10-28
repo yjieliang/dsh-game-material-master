@@ -107,6 +107,13 @@ export function createApply(deps: ApplyDeps) {
         testCustomImage: () => call("testCustomImage"),
         testMinimax: () => call("testMinimax"),
         testComfy: () => call("testComfy"),
+        // 本地 ComfyUI 工作流库（本地免费：全部走 call，不进 callPaid）。
+        listWorkflows: () => call("listWorkflows"),
+        getWorkflow: (payload) => call("getWorkflow", payload),
+        getWorkflowCatalog: () => call("getWorkflowCatalog"),
+        saveWorkflow: (payload) => call("saveWorkflow", payload),
+        removeWorkflow: (payload) => call("removeWorkflow", payload),
+        testWorkflow: (payload) => call("testWorkflow", payload),
         listProjects: () => call("listProjects"),
         createProject: (payload) => call("createProject", payload),
         // 内置默认提示词存在宿主侧，所以「读」和「重置为默认」都要把当前界面语言带过去：

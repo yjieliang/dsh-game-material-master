@@ -12,11 +12,22 @@
  * 只是偷偷还在用另一家模型。
  */
 
-import { assertToapisReady, generateToapisImage } from "./toapis.js";
-import { generateImage, type ArkResult } from "./ark.js";
 import { CUSTOM_PROTOCOL_DEFAULTS, loadConfig, type Config } from "./config.js";
 import { CustomImageError, generateCustomImage } from "./customimage.js";
 import { noteQueued, withSlot } from "./jobs.js";
+import {
+  builtinWorkflowName,
+  comfyImageBlocker,
+  lastBackendDecision,
+  resolveImageBackend,
+  resolveImageBackendForRequest,
+  resolveWorkflowId,
+  type BackendDecision,
+  type ImageBackendKind,
+  type ImageGenerateRequest,
+  type ImageGenerateResult
+} from "./imagebackend.js";
+import { BUILTIN_WORKFLOWS } from "./workflowbuiltin.js";
 import {
   assessPaidFailure,
   beginPaidCall,
@@ -27,18 +38,8 @@ import {
   markPaidUncertain
 } from "./receipts.js";
 
-export interface ProviderImageRequest {
-  prompt: string;
-  /** 参考图：data URI 或 http(s) URL（两条后端同形）。 */
-  images: string[];
-  size: string;
-  watermark: boolean;
-  /** 覆盖模型（部件重绘会用单独的模型）。省略 = 用配置里的当前模型。 */
-  model?: string;
-  timeoutMs?: number;
-}
-
-export type ProviderImageResult = ArkResult;
+export type ProviderImageRequest = ImageGenerateRequest;
+export type ProviderImageResult = ImageGenerateResult;
 
 /** Non-Ark backends take their size from their own provider settings. */
 export function imageUsesConfiguredSize(config: Config): boolean {return config.imageProvider !== "ark";}
@@ -51,28 +52,47 @@ export function isCustomProvider(config: Config): boolean {
   return config.imageProvider === "custom";
 }
 
-/** 当前生图模型（Ark 是 `arkModel`，自定义是 `customModel`）。 */
+/** 当前生图模型（Ark 是 `arkModel`，自定义是 `customModel`，本地是工作流名）。 */
 export function imageModelOf(config: Config): string {
   if (config.imageProvider === "toapis") return config.toapisImageModel;
-  return isCustomProvider(config) ? config.customModel : config.arkModel;
+  if (isCustomProvider(config)) return config.customModel;
+  if (config.imageProvider === "comfy") {
+    const id = resolveWorkflowId(config);
+    return builtinWorkflowName(id) ?? id;
+  }
+  return config.arkModel;
+}
+
+/** 本地工作流的默认出图尺寸（内置工作流带 defaults；用户导入的用 1024x1024 兜底）。 */
+function comfySizeOf(config: Config): string {
+  const id = resolveWorkflowId(config);
+  const workflow = BUILTIN_WORKFLOWS.find((entry) => entry.id === id);
+  const defaults = workflow?.defaults;
+  if (defaults?.width !== undefined && defaults?.height !== undefined) return defaults.width + "x" + defaults.height;
+  return "1024x1024";
 }
 
 /** 当前输出尺寸。 */
 export function imageSizeOf(config: Config): string {
   if (config.imageProvider === "toapis") return config.toapisImageSize;
-  return isCustomProvider(config) ? config.customSize : config.arkSize;
+  if (isCustomProvider(config)) return config.customSize;
+  if (config.imageProvider === "comfy") return comfySizeOf(config);
+  return config.arkSize;
 }
 
-/** 当前水印开关。水印是火山方舟特有的参数，自定义后端一律不带。 */
+/** 当前水印开关。水印是火山方舟特有的参数，自定义 / 本地后端一律不带。 */
 export function imageWatermarkOf(config: Config): boolean {
   if (config.imageProvider === "toapis") return false;
-  return isCustomProvider(config) ? false : config.arkWatermark;
+  if (isCustomProvider(config) || config.imageProvider === "comfy") return false;
+  return config.arkWatermark;
 }
 
 /** 当前请求超时。 */
 export function imageTimeoutOf(config: Config): number {
   if (config.imageProvider === "toapis") return config.toapisTimeoutMs;
-  return isCustomProvider(config) ? config.customTimeoutMs : config.arkTimeoutMs;
+  if (isCustomProvider(config)) return config.customTimeoutMs;
+  if (config.imageProvider === "comfy") return config.comfyTimeoutMs;
+  return config.arkTimeoutMs;
 }
 
 /** 自定义后端自己的必填项检查（不看 `imageProvider`，供「测试连接」按钮用）。 */
@@ -96,15 +116,16 @@ export function customImageBlocker(config: Config): string | undefined {
  * 只说「未配置」会让人在设置页里来回找。
  */
 export function imageProviderBlocker(config: Config): string | undefined {
-  if (config.imageProvider === "toapis") {try {assertToapisReady(config);return undefined;} catch(error) {return String((error as Error).message);}}
-  if (!isCustomProvider(config)) {
-    if (config.arkApiKey.trim() === "") {
-      return "尚未配置火山方舟 API Key（设置 → 墨盒 → 生图后端 → 火山方舟）";
-    }
-    if (config.arkModel.trim() === "") return "尚未配置火山方舟的生图模型 ID";
-    return undefined;
+  const backend = resolveImageBackend(config);
+  if (config.imageBackendPolicy === "local-first") {
+    // 本地优先：真正能不能开跑取决于「回退目标」。本地不可用属于**预期内**的情况，
+    // 原因记在 lastBackendDecision 里由界面显示，这里不报成 blocker。
+    const fallback = config.imageProviderFallback ?? "ark";
+    if (fallback === "none") return comfyImageBlocker(config) ?? backend.blocker(config);
+    const target = resolveImageBackend({ ...config, imageProvider: fallback === "custom" ? "custom" : "ark" });
+    return target.blocker(config);
   }
-  return customImageBlocker(config);
+  return backend.blocker(config);
 }
 
 export function assertImageProviderReady(config: Config): void {
@@ -114,30 +135,94 @@ export function assertImageProviderReady(config: Config): void {
 
 /** 一句话摘要（界面角标与工具面共用）。 */
 export function imageProviderSummary(config: Config): string {
-  if (config.imageProvider === "toapis") return `ToAPIs · ${config.toapisImageModel}`;
-  if (!isCustomProvider(config)) return `火山方舟 · ${config.arkModel}`;
-  const label = CUSTOM_PROTOCOL_DEFAULTS[config.customProtocol]?.label ?? config.customProtocol;
-  const model = config.customModel.trim() === "" ? "" : ` · ${config.customModel}`;
-  return `自定义 · ${label} · ${config.customBaseUrl}${model}`;
+  const kind = resolveImageBackend(config).capabilities.kind;
+  if (kind === "toapis") return `ToAPIs · ${config.toapisImageModel}`;
+  if (kind === "custom") {
+    const label = CUSTOM_PROTOCOL_DEFAULTS[config.customProtocol]?.label ?? config.customProtocol;
+    const model = config.customModel.trim() === "" ? "" : ` · ${config.customModel}`;
+    return `自定义 · ${label} · ${config.customBaseUrl}${model}`;
+  }
+  if (kind === "comfy") {
+    const workflowId = resolveWorkflowId(config);
+    const name = builtinWorkflowName(workflowId) ?? workflowId;
+    return `本地 ComfyUI · ${config.comfyBaseUrl} · ${name}`;
+  }
+  return `火山方舟 · ${config.arkModel}`;
+}
+
+/**
+ * 界面 / 工具面共用的后端状态快照：选了谁、能力是什么、最近一次回退原因。
+ *
+ * `fallbackReason` 是设计 §3.3 的硬要求（「界面必须显示回退原因」）：
+ * 本地优先在本地不可用时静默换成云端，用户会以为用的是本地免费模型。
+ */
+export interface ImageBackendStatus {
+  kind: ImageBackendKind;
+  label: string;
+  local: boolean;
+  paid: boolean;
+  policy: string;
+  workflowLibrary: boolean;
+  workflowId: string;
+  workflowName: string;
+  fallbackTarget: string;
+  fallbackReason: string | null;
+  blocker: string | null;
+}
+
+export function imageBackendStatus(config: Config): ImageBackendStatus {
+  const backend = resolveImageBackend(config);
+  const workflowId = resolveWorkflowId(config);
+  const decision: BackendDecision | undefined = lastBackendDecision();
+  const fallbackReason =
+    decision !== undefined && decision.fallbackReason !== undefined && decision.fallbackReason !== "" ? decision.fallbackReason : null;
+  return {
+    kind: backend.capabilities.kind,
+    label: backend.capabilities.label,
+    local: backend.capabilities.local,
+    paid: backend.capabilities.paid,
+    policy: config.imageBackendPolicy,
+    workflowLibrary: backend.capabilities.workflowLibrary,
+    workflowId,
+    workflowName: backend.capabilities.workflowLibrary ? (builtinWorkflowName(workflowId) ?? workflowId) : "",
+    fallbackTarget: config.imageProviderFallback,
+    fallbackReason,
+    blocker: imageProviderBlocker(config) ?? null
+  };
 }
 
 /**
  * 调一次生图，自动按当前后端分发。
  *
- * 所有生图都会先过**全局付费并发池**（超限排队，不拒绝）：批量抽帧 / 八方向同时跑时，
- * 真正压垮账号配额的是这些并发请求。火山方舟这一路还要落 receipt（见 receipts.ts）；
- * ToAPIs 的提交在 `toapis.ts` 内部已有 receipt（那里才能按 taskId 对账），不重复记账；
- * 自定义后端是用户自己的服务，不经过我们的计费，也不记账。
+ * 所有生图都会先过**并发池**（超限排队，不拒绝）：
+ *   · 云端（ark / toapis / custom）走 `paid` 通道；ark 还要落 receipt（见 receipts.ts）；
+ *     ToAPIs 的提交在 `toapis.ts` 内部已有 receipt（那里才能按 taskId 对账），不重复记账；
+ *   · 本地 ComfyUI 走 `local` 通道、**不建 receipt**（本地免费，记 receipt 只会让
+ *     「可能已付费」的凭证目录里混进一堆不该有的记录）。
+ *
+ * 选谁 / 怎么回退由 `imagebackend.resolveImageBackendForRequest` 决定（manual / local-first），
+ * 这里只负责并发通道与 receipt。
  */
 export async function generateImageWithProvider(request: ProviderImageRequest, signal?: AbortSignal): Promise<ProviderImageResult> {
   const config = await loadConfig();
-  assertImageProviderReady(config);
-  const provider = config.imageProvider;
+  const decision = await resolveImageBackendForRequest(config, request);
+  const backend = decision.backend;
+  const kind = backend.capabilities.kind;
+  const blocker = backend.blocker(config);
+  if (blocker !== undefined) throw new Error(blocker);
   const model = request.model?.trim() || imageModelOf(config);
-  const label = provider === "ark" ? `生图 · 火山方舟 · ${model}` : provider === "toapis" ? `生图 · ToAPIs · ${model}` : `生图 · 自定义后端 · ${model}`;
-  return withSlot("paid", { label, module: "sprite", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
+  const label =
+    kind === "ark"
+      ? `生图 · 火山方舟 · ${model}`
+      : kind === "toapis"
+        ? `生图 · ToAPIs · ${model}`
+        : kind === "comfy"
+          ? `生图 · 本地 ComfyUI · ${model}`
+          : `生图 · 自定义后端 · ${model}`;
+  const lane = backend.capabilities.local ? "local" : "paid";
+  return withSlot(lane, { label, module: "sprite", onQueued: (info) => noteQueued(currentPaidIntent()?.jobId, info) }, async () => {
     const ticket =
-      provider === "ark"
+      kind === "ark"
         ? await beginPaidCall({
             provider: "ark",
             identity: {
@@ -150,43 +235,7 @@ export async function generateImageWithProvider(request: ProviderImageRequest, s
           })
         : undefined;
     try {
-      const result =
-        provider === "toapis"
-          ? await generateToapisImage(config, request, signal)
-          : isCustomProvider(config)
-            ? await generateCustomImage(
-                {
-                  protocol: config.customProtocol,
-                  baseUrl: config.customBaseUrl,
-                  apiKey: config.customApiKey,
-                  model,
-                  prompt: request.prompt,
-                  images: request.images,
-                  size: request.size,
-                  timeoutMs: request.timeoutMs ?? config.customTimeoutMs,
-                  negativePrompt: config.customNegativePrompt,
-                  steps: config.customSteps,
-                  cfgScale: config.customCfgScale,
-                  sampler: config.customSampler,
-                  denoising: config.customDenoising,
-                  seed: config.customSeed,
-                  workflow: config.customWorkflow
-                },
-                signal
-              )
-            : await generateImage(
-                {
-                  baseUrl: config.arkBaseUrl,
-                  apiKey: config.arkApiKey,
-                  model,
-                  prompt: request.prompt,
-                  images: request.images,
-                  size: request.size,
-                  watermark: request.watermark,
-                  timeoutMs: request.timeoutMs ?? config.arkTimeoutMs
-                },
-                signal
-              );
+      const result = await backend.generate(config, { ...request, model }, signal);
       if (ticket !== undefined) {
         await markPaidResolved(ticket.key, { detail: `已返回 ${result.bytes.length} 字节` }).catch(() => undefined);
       }

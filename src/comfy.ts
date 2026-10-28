@@ -185,6 +185,18 @@ function convertUiWorkflow(
     const widgets: unknown[] = Array.isArray(node.widgets_values) ? [...node.widgets_values] : [];
     let widgetIndex = 0;
     const inputs: Record<string, unknown> = {};
+    /**
+     * 新版 ComfyUI 导出会额外写一份 `widgets_values_named`（名字 → 值）。
+     *
+     * 有它就不用再按顺序猜控件名了：**这份工作流目录里的 11 份 JSON 全是这种格式**
+     * （`widgets_values` + `widgets_values_named`，而 `inputs` 只保留真正连线过的输入）。
+     * 不读它的话，界面格式导入会丢掉提示词 / 尺寸 / 种子等全部控件值 —— 转换"成功"、
+     * 提交后被 ComfyUI 用默认值跑一遍，提示词静默失效。
+     */
+    const namedWidgets =
+      node.widgets_values_named !== null && typeof node.widgets_values_named === "object" && !Array.isArray(node.widgets_values_named)
+        ? (node.widgets_values_named as Record<string, unknown>)
+        : undefined;
     const declared = Array.isArray(node.inputs) ? node.inputs : [];
     for (const slot of declared) {
       if (slot === null || typeof slot !== "object" || Array.isArray(slot)) continue;
@@ -205,7 +217,14 @@ function convertUiWorkflow(
       widgetIndex += 1;
       if (UI_CONTROL_WORDS.has(String(widgets[widgetIndex]))) widgetIndex += 1;
     }
+    if (namedWidgets !== undefined) {
+      for (const [name, value] of Object.entries(namedWidgets)) {
+        // 同名输入已经被连线占住时不覆盖（连线优先于控件值，与 ComfyUI 本身一致）。
+        if (inputs[name] === undefined) inputs[name] = value;
+      }
+    }
     droppedWidgets += Math.max(0, widgets.length - widgetIndex);
+    if (namedWidgets !== undefined) droppedWidgets = 0;
     const entry: ComfyNode = { class_type: classType, inputs };
     if (typeof node.title === "string" && node.title !== "") entry._meta = { title: node.title };
     workflow[String(id)] = entry;
@@ -676,7 +695,8 @@ export async function testComfy(request: ComfyRequest): Promise<ComfyStatus> {
   return { ok: true, version, device, queueRunning: running, queuePending: pending };
 }
 
-export async function submitComfyVideo(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
+/** 提交任意 API 格式工作流（生图与视频共用同一条 POST /prompt）。 */
+export async function submitComfyPrompt(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
   const payload = await comfyJson(request, "/prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -694,6 +714,11 @@ export async function submitComfyVideo(request: ComfyRequest & { workflow: Comfy
     throw new ComfyError("ComfyUI 没有返回 prompt_id：" + JSON.stringify(payload).slice(0, 300));
   }
   return promptId;
+}
+
+/** 视频入口保持原签名（历史调用点零改动）。 */
+export async function submitComfyVideo(request: ComfyRequest & { workflow: ComfyWorkflow }): Promise<string> {
+  return submitComfyPrompt(request);
 }
 
 export type ComfyPhase = "pending" | "running" | "succeeded" | "failed";

@@ -241,7 +241,26 @@ function ImageModule(props) {
               h(
                 "div",
                 { className: "SPR_card" },
-                h("div", { className: "SPR_cardHead" }, h("h3", null, T("① 提示词"))),
+                h(
+                  "div",
+                  { className: "SPR_cardHead" },
+                  h("h3", null, T("① 提示词")),
+                  // 本地工作流库自检徽标：任务级工作流是否就绪（缺节点 / 缺模型时点这里能看出来）。
+                  globalConfig?.imageBackend?.workflowLibrary === true
+                    ? h(
+                        "span",
+                        {
+                          className: "SPR_badge",
+                          "data-kind": job?.workflowStatus?.blocker ? "bad" : "ok",
+                          "data-testid": "img-workflow-badge",
+                          title: job?.workflowStatus?.blocker ?? ""
+                        },
+                        job?.workflowStatus?.blocker
+                          ? T("工作流未就绪")
+                          : T("工作流：{n0}", { n0: job?.workflowStatus?.name ?? globalConfig?.imageBackend?.workflowName ?? "" })
+                      )
+                    : null
+                ),
                 h("p", { className: "SPR_hint" }, T("统一附加提示词会接在主提示词后面，用来写跨批次的共同要求。")),
                 h("textarea", {
                   className: "SPR_area",
@@ -266,6 +285,36 @@ function ImageModule(props) {
                   "div",
                   { className: "SPR_fields" },
                   h(GlobalModelField, { label: T("生图模型"), value: globalConfig?.imageModel ?? globalConfig?.arkModel ?? settingsDraft.model }),
+                  /**
+                   * 任务级工作流选择（仅本地 ComfyUI 后端）。
+                   *
+                   * 任务上存 workflowId，空 = 跟随配置默认；生成时按「任务 → 配置 → 用途推荐」
+                   * 解析（见宿主 imagegen.generateImageItem）。这里不新建协议字段。
+                   */
+                  globalConfig?.imageBackend?.workflowLibrary === true
+                    ? h(
+                        "label",
+                        { className: "SPR_field" },
+                        h("span", { className: "SPR_fieldLabel" }, T("工作流（本地 ComfyUI）")),
+                        h(
+                          "select",
+                          {
+                            className: "SPR_input",
+                            "data-testid": "img-workflow",
+                            value: settingsDraft.workflowId ?? globalConfig?.imageWorkflowId ?? "",
+                            onChange: (event) => {
+                              const next = { ...settingsDraft, workflowId: event.target.value };
+                              setSettingsDraft(next);
+                              void saveJob({ settings: next });
+                            }
+                          },
+                          h("option", { value: "" }, T("跟随默认：{n0}", { n0: globalConfig?.imageBackend?.workflowName ?? T("按用途自动选择") })),
+                          (globalConfig?.workflows ?? [])
+                            .filter((item) => item.hasWorkflow === true && item.kind === "generate")
+                            .map((item) => h("option", { key: item.id, value: item.id }, item.name))
+                        )
+                      )
+                    : null,
                   h(
                     "label",
                     { className: "SPR_field" },

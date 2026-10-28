@@ -58,6 +58,14 @@ function ConfigSection(props) {
   /** 音效模块的语音 API Key（单独一份，不是方舟 Key）。 */
   const [sfxKey, setSfxKey] = React.useState("");
   /**
+   * 工作流库的导入草稿与自检结果。
+   *
+   * 合成**一个** state：JSON 草稿动辄几 KB，逐键 patch 会每个字符往返一次；
+   * 自检结果也只是这块卡片的临时数据，没必要拆成三个 state（Hook 槽位越少越好）。
+   */
+  const [workflowImport, setWorkflowImport] = React.useState(null);
+  const importState = workflowImport ?? { json: "", name: "", kind: "generate", test: null };
+  /**
    * 素材互操作：本机路径导入 / ComfyUI 工作流文件导入。
    *
    * 放在设置页的原因：路径由**宿主**读盘（不经过浏览器 base64），输入框就是「本机绝对路径」；
@@ -189,6 +197,29 @@ function ConfigSection(props) {
     } finally {
       setImportBusy(false);
     }
+  };
+
+  /** 工作流目录与后端状态（跟着 getConfig 一起回，见宿主 decorateConfig）。 */
+  const workflowsList = Array.isArray(config.workflows) ? config.workflows : [];
+  const imageBackend = config.imageBackend ?? null;
+  const installedWorkflows = workflowsList.filter((item) => item.hasWorkflow === true);
+  /** 自检结果拼成一块可读文本（成功 / 缺节点 / 缺模型 / 缺绑定 / 真出图）。 */
+  const formatWorkflowTest = (result) => {
+    if (result === null || result === undefined) return "";
+    const lines = [];
+    lines.push(result.ok === true ? T("自检通过") : T("自检未通过"));
+    if (result.name) lines.push(T("工作流：{n0}", { n0: result.name }));
+    if (result.service?.version) lines.push(T("ComfyUI 版本 {n0}", { n0: result.service.version }));
+    if (result.error) lines.push(T("错误：{n0}", { n0: result.error }));
+    if (Array.isArray(result.missingNodeTypes) && result.missingNodeTypes.length > 0) lines.push(T("缺节点：{n0}", { n0: result.missingNodeTypes.join("、") }));
+    if (Array.isArray(result.missingModels) && result.missingModels.length > 0) lines.push(T("缺模型：{n0}", { n0: result.missingModels.join("、") }));
+    if (Array.isArray(result.missing) && result.missing.length > 0) lines.push(T("缺关键绑定：{n0}", { n0: result.missing.join("、") }));
+    if (result.bindings !== undefined && result.bindings !== null) {
+      const entries = Object.entries(result.bindings).map(([key, value]) => key + " → " + value);
+      if (entries.length > 0) lines.push(T("识别到的绑定：{n0}", { n0: entries.join(" · ") }));
+    }
+    if (result.generated?.bytes > 0) lines.push(T("真出图：{n0} 字节 / {n1} 毫秒", { n0: result.generated.bytes, n1: result.generated.elapsedMs }));
+    return lines.join("\n");
   };
 
   /**
@@ -368,7 +399,8 @@ function ConfigSection(props) {
             },
             h("option", { value: "ark" }, T("火山方舟 Seedream（云端，开箱即用）")),
             h("option", { value: "toapis" }, "ToAPIs"),
-            h("option", { value: "custom" }, T("自定义生图模型（OpenAI / ComfyUI / SD WebUI）"))
+            h("option", { value: "custom" }, T("自定义生图模型（OpenAI / ComfyUI / SD WebUI）")),
+            h("option", { value: "comfy" }, T("本地 ComfyUI · 工作流库（本机免费）"))
           )
         )
       ),
@@ -737,6 +769,222 @@ function ConfigSection(props) {
           T("测试连接（会真实生成 1 张测试图，产生少量费用）")
         )
       )
+    ),
+
+    /**
+     * 本地 ComfyUI · 工作流库（req_e395dcba0d）。
+     *
+     * 为什么单独一张卡：本地后端不只是「换个地址」，它有一份目录（9 个实测工作流）、
+     * 一个默认选择、一套注入绑定与自检。塞进「自定义生图模型」那一组会让
+     * 「自定义（协议三选一）」与「本地工作流库」两件事互相污染。
+     */
+    h(
+      "details",
+      { className: "SPR_settingsGroup", "data-testid": "cfg-workflow-lib", open: config.imageProvider === "comfy" },
+      groupHead(
+        T("本地 ComfyUI · 工作流库"),
+        config.imageProvider === "comfy" ? T("当前使用") : T("{n0} 条可用", { n0: installedWorkflows.length })
+      ),
+      h(
+        "p",
+        null,
+        T("把本机 ComfyUI 的实测工作流做成目录：生图时按用途选工作流，提示词 / 尺寸 / 种子自动注入到正确节点。工作流 JSON 支持 API 格式与 ComfyUI 界面格式（界面格式需要 ComfyUI 可达才能精确转换）。")
+      ),
+      h(
+        "div",
+        { className: "SPR_fields" },
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("选择策略")),
+          h(
+            "select",
+            {
+              className: "SPR_input",
+              "data-testid": "cfg-backend-policy",
+              value: config.imageBackendPolicy ?? "manual",
+              onChange: (event) => void patch({ imageBackendPolicy: event.target.value })
+            },
+            h("option", { value: "manual" }, T("手动（只按上面选的生图后端）")),
+            h("option", { value: "local-first" }, T("本地优先（本机可用就用本地，不可用自动回退）"))
+          )
+        ),
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("回退目标（本地优先时）")),
+          h(
+            "select",
+            {
+              className: "SPR_input",
+              "data-testid": "cfg-backend-fallback",
+              value: config.imageProviderFallback ?? "ark",
+              onChange: (event) => void patch({ imageProviderFallback: event.target.value })
+            },
+            h("option", { value: "ark" }, T("火山方舟 Seedream")),
+            h("option", { value: "custom" }, T("自定义生图服务")),
+            h("option", { value: "none" }, T("不回退（本地不可用就报错，避免悄悄花钱）"))
+          )
+        ),
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("默认工作流")),
+          h(
+            "select",
+            {
+              className: "SPR_input",
+              "data-testid": "cfg-workflow-default",
+              value: config.imageWorkflowId ?? "",
+              onChange: (event) => void patch({ imageWorkflowId: event.target.value })
+            },
+            h("option", { value: "" }, T("按用途自动选择")),
+            workflowsList
+              .filter((item) => item.hasWorkflow === true)
+              .map((item) =>
+                h(
+                  "option",
+                  { key: item.id, value: item.id },
+                  item.builtin === true ? T("内置 · {n0}", { n0: item.name }) : T("导入 · {n0}", { n0: item.name })
+                )
+              )
+          )
+        )
+      ),
+      imageBackend?.fallbackReason
+        ? h("p", { className: "SPR_note", "data-kind": "warn" }, T("上次回退原因：{n0}", { n0: imageBackend.fallbackReason }))
+        : null,
+      h("p", { className: "SPR_hint" }, T("本地后端走本机并发通道、不建付费凭证；回退原因会显示在这里。")),
+      h(
+        "div",
+        null,
+        ...workflowsList.map((item) =>
+          h(
+            "div",
+            { key: item.id, className: "SPR_toolbar", "data-workflow": item.id },
+            h(
+              "span",
+              { className: "SPR_badge" },
+              item.needsImport === true ? T("需导入") : item.builtin === true ? T("内置") : T("已导入")
+            ),
+            h("span", { className: "SPR_refRow", style: { flex: "1 1 auto" } }, item.name + (item.purpose ? " · " + item.purpose : "")),
+            h(
+              "div",
+              { className: "SPR_btnRow" },
+              item.hasWorkflow === true
+                ? h(
+                    BusyBtn,
+                    {
+                      busy: testing === "wf-test:" + item.id,
+                      busyText: T("自检中…"),
+                      disabled: testing !== null,
+                      onClick: async () => {
+                        setTesting("wf-test:" + item.id);
+                        await run(async () => {
+                          const result = await api.testWorkflow({ id: item.id });
+                          setWorkflowImport({ ...importState, test: result });
+                          return result;
+                        }, T("自检已执行"));
+                        setTesting(null);
+                      }
+                    },
+                    T("自检")
+                  )
+                : null,
+              item.hasWorkflow === true
+                ? h(
+                    Btn,
+                    { onClick: () => void patch({ imageWorkflowId: item.id }) },
+                    config.imageWorkflowId === item.id ? T("已是默认") : T("设为默认")
+                  )
+                : null,
+              item.builtin !== true
+                ? h(
+                    Btn,
+                    { danger: true, onClick: () => run(() => api.removeWorkflow({ id: item.id }), T("已删除工作流")) },
+                    T("删除")
+                  )
+                : null
+            )
+          )
+        )
+      ),
+      workflowsList.some((item) => item.needsImport === true)
+        ? h("p", { className: "SPR_hint" }, T("标「需导入」的是目录条目：正文不随包内置，从本机 ComfyUI 的 user/default/workflows 目录导入即可。"))
+        : null,
+      h(
+        "p",
+        { className: "SPR_hint" },
+        T("导入工作流：在 ComfyUI 里「工作流 → 导出」拿到 JSON（界面格式也行），整段粘到下面。ComfyUI 可达时按节点定义精确转换，提示词 / 模型 / 尺寸等控件值不会丢。")
+      ),
+      h("textarea", {
+        className: "SPR_area",
+        "data-testid": "cfg-workflow-import-json",
+        placeholder: T("粘贴工作流 JSON（界面格式或 API 格式）"),
+        value: importState.json,
+        onChange: (event) => setWorkflowImport({ ...importState, json: event.target.value })
+      }),
+      h(
+        "div",
+        { className: "SPR_fields" },
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("工作流名称")),
+          h("input", {
+            className: "SPR_input",
+            "data-testid": "cfg-workflow-import-name",
+            placeholder: T("例如：我的像素风工作流"),
+            value: importState.name,
+            onChange: (event) => setWorkflowImport({ ...importState, name: event.target.value })
+          })
+        ),
+        h(
+          "label",
+          { className: "SPR_field" },
+          h("span", { className: "SPR_fieldLabel" }, T("用途")),
+          h(
+            "select",
+            {
+              className: "SPR_input",
+              "data-testid": "cfg-workflow-import-kind",
+              value: importState.kind,
+              onChange: (event) => setWorkflowImport({ ...importState, kind: event.target.value })
+            },
+            h("option", { value: "generate" }, T("出图（需要提示词）")),
+            h("option", { value: "post" }, T("后处理（去背 / 像素化，需要输入图）"))
+          )
+        )
+      ),
+      h(
+        "div",
+        { className: "SPR_toolbar" },
+        h(
+          BusyBtn,
+          {
+            busy: testing === "wf-import",
+            busyText: T("正在导入…"),
+            disabled: testing !== null || importState.json.trim() === "" || importState.name.trim() === "",
+            onClick: async () => {
+              setTesting("wf-import");
+              await run(async () => {
+                const result = await api.saveWorkflow({ name: importState.name, json: importState.json, kind: importState.kind });
+                setWorkflowImport({ json: "", name: "", kind: importState.kind, test: null });
+                return result;
+              }, (value) => T("已导入工作流：{n0}（{n1} 个节点）", { n0: value.name, n1: value.nodes }));
+              setTesting(null);
+            }
+          },
+          T("导入工作流")
+        )
+      ),
+      importState.test !== null
+        ? h(
+            "pre",
+            { className: "SPR_note", "data-kind": importState.test.ok === true ? "ok" : "error", "data-testid": "cfg-workflow-test" },
+            formatWorkflowTest(importState.test)
+          )
+        : null
     ),
 
     h(

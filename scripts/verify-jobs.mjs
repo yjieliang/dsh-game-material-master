@@ -340,9 +340,13 @@ check(
 );
 // toapis.ts 是「被 imageprovider / videogen 包着的传输层」，通道在调用方就收过了，
 // 所以它只要求 receipt、不要求自己再抢名额（否则同一笔会被算两次）。
+// imageprovider 从「工作流库」起改成按后端能力选通道：云端走 paid、本地 ComfyUI 走 local
+// （本地免费，不该占付费通道，也不该建 receipt）。所以这里钉的是「通道由 capabilities.local 决定」。
 check(
   "四个直连付费提交层都走 paid 通道",
-  providerTexts.slice(0, 4).every((text) => text.includes('withSlot("paid"'))
+  [providerTexts[1], providerTexts[2], providerTexts[3]].every((text) => text.includes('withSlot("paid"')) &&
+    providerTexts[0].includes('const lane = backend.capabilities.local ? "local" : "paid";') &&
+    providerTexts[0].includes("withSlot(lane")
 );
 
 // ── 汇总 ────────────────────────────────────────────────────────────────

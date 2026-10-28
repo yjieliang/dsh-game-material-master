@@ -19,6 +19,13 @@ export function createRemote(deps: any) {
       ["testCustomImage", false],
       ["testMinimax", false],
       ["testComfy", false],
+      // 本地 ComfyUI 工作流库（req_e395dcba0d）：目录 / 正文 / 导入 / 删除 / 自检。
+      ["listWorkflows", false],
+      ["getWorkflow", true],
+      ["getWorkflowCatalog", false],
+      ["saveWorkflow", true],
+      ["removeWorkflow", true],
+      ["testWorkflow", true],
       ["testMusic", false],
       ["listProjects", false],
       ["createProject", true],

@@ -14,6 +14,7 @@ import type {
   ProviderImageRequest,
   ProviderImageResult,
 } from "./imageprovider.js";
+// 注意：ProviderImageResult 现在来自 imagebackend（工作流库那一层），usage 是结构化对象。
 import type { VideoSubmitRequest, VideoQueryResult } from "./videogen.js";
 
 export function toapisRoot(base: string): string {

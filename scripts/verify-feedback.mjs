@@ -1441,7 +1441,8 @@ section("功能管理（隐藏模块）");
      */
     const providerSelect = collect(settings, (node) => node.props?.["data-testid"] === "cfg-image-provider")[0];
     check("设置页有「生图后端」选择器", providerSelect !== undefined);
-    check("后端选择器包含 ark / custom / toapis", JSON.stringify(collect(providerSelect, (node) => node.type === "option").map(node=>node.props.value).sort()) === JSON.stringify(["ark","custom","toapis"]));
+    // 本地 ComfyUI 工作流库（req_e395dcba0d）把 "comfy" 加进了枚举：本地免费后端也是一等生图后端。
+    check("后端选择器包含 ark / custom / toapis / comfy", JSON.stringify(collect(providerSelect, (node) => node.type === "option").map(node=>node.props.value).sort()) === JSON.stringify(["ark","comfy","custom","toapis"]));
     check("ToAPIs 独立设置组存在", collect(settings,node=>node.props?.["data-testid"] === "cfg-toapis").length === 1);
     check("ToAPIs API Key 使用密码框", collect(collect(settings,node=>node.props?.["data-testid"] === "cfg-toapis")[0],node=>node.props?.type === "password").length === 1);
     check("缺 Key 时给出「还不能开跑」的提示，而不是静默", textOf(settings).includes("还不能开跑"));
