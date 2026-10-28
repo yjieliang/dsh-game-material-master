@@ -266,12 +266,12 @@ try {
   const routeServer = createServer((req, res) => routes[0].handler(req, res));
   await new Promise((resolve) => routeServer.listen(0, "127.0.0.1", resolve));
   const routePort = routeServer.address().port;
-  const takePath = `/dsh-game-material-master/sfx-assets/${job.id}/${after2.takes[0].file}`;
+  const takePath = `/dsh-inkbox/sfx-assets/${job.id}/${after2.takes[0].file}`;
   const full = await fetch(`http://127.0.0.1:${routePort}${takePath}`);
   check("音效资源 200 + audio", full.status === 200 && String(full.headers.get("content-type")).startsWith("audio/"), `${full.status} ${full.headers.get("content-type")}`);
-  const forbidden = await fetch(`http://127.0.0.1:${routePort}/dsh-game-material-master/sfx-assets/${job.id}/job.json`);
+  const forbidden = await fetch(`http://127.0.0.1:${routePort}/dsh-inkbox/sfx-assets/${job.id}/job.json`);
   check("任务根文件不走资源路由（403）", forbidden.status === 403, String(forbidden.status));
-  const traversal = await fetch(`http://127.0.0.1:${routePort}/dsh-game-material-master/sfx-assets/${job.id}/takes/%2e%2e%2fjob.json`);
+  const traversal = await fetch(`http://127.0.0.1:${routePort}/dsh-inkbox/sfx-assets/${job.id}/takes/%2e%2e%2fjob.json`);
   check("目录穿越被拒绝", traversal.status === 400 || traversal.status === 403, String(traversal.status));
   routeServer.close();
 

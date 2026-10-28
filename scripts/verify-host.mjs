@@ -103,7 +103,7 @@ async function main() {
     }
   });
 
-  check("导出 name", plugin.name === "dsh-game-material-master", plugin.name);
+  check("导出 name", plugin.name === "dsh-inkbox", plugin.name);
   check("导出 inject", Array.isArray(plugin.inject) && plugin.inject.includes("typert"), JSON.stringify(plugin.inject));
   // webServer 必须是硬依赖：它 listen 成功后才可用，而 apply 与它几乎同时发生。
   // 只靠 ctx.get() 探测会拿到 undefined，路由永远不注册（表现为资源请求全 404）。
@@ -501,7 +501,7 @@ async function main() {
   const prefixed = await studio.reportClientOrigin({ origin: "https://game.example", path: "/prefix/" });
   check("接受带路径前缀的 origin 上报", prefixed.ok === true && prefixed.path === "/prefix/", JSON.stringify(prefixed));
   const prefixedProject = await studio.getProject({ projectId });
-  check("带前缀时 assetBase 补上前缀", prefixedProject.assetBase === "/prefix/dsh-game-material-master/assets/" + projectId + "/", prefixedProject.assetBase);
+  check("带前缀时 assetBase 补上前缀", prefixedProject.assetBase === "/prefix/dsh-inkbox/assets/" + projectId + "/", prefixedProject.assetBase);
   const originBad = await studio.reportClientOrigin({ origin: "file:///etc/passwd" });
   check("拒绝非 http(s) origin", originBad.ok === false, JSON.stringify(originBad));
   // 后面的断言按本地根路径继续。
@@ -583,7 +583,7 @@ async function main() {
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
-  const base = `http://127.0.0.1:${port}/dsh-game-material-master/assets`;
+  const base = `http://127.0.0.1:${port}/dsh-inkbox/assets`;
 
   try {
     const okRes = await fetch(`${base}/${projectId}/source/hero.png`);
@@ -620,7 +620,7 @@ async function main() {
     // 不报任何错，所以这里必须真的取一次。
     const { writeFile: writeProbe } = await import("node:fs/promises");
     const { join: joinProbe } = await import("node:path");
-    await writeProbe(joinProbe(HOME, "game-material-master", "projects", projectId, "turn", "probe.png"), png);
+    await writeProbe(joinProbe(HOME, "inkbox", "projects", projectId, "turn", "probe.png"), png);
     const turnRes = await fetch(`${base}/${projectId}/turn/probe.png`);
     check("转圈产物目录可访问（白名单含 turn/）", turnRes.status === 200, String(turnRes.status));
     const nestedRes = await fetch(`${base}/${projectId}/turn/frames/probe.png`);
@@ -641,7 +641,7 @@ async function main() {
   const { spawn } = await import("node:child_process");
   const { readFile, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
-  const projectRoot = join(HOME, "game-material-master", "projects", projectId);
+  const projectRoot = join(HOME, "inkbox", "projects", projectId);
 
   function ffmpeg(args) {
     return new Promise((resolve, reject) => {
@@ -1464,7 +1464,7 @@ async function main() {
       const zipServer = createServer((req, res) => void handler(req, res));
       await new Promise((resolve) => zipServer.listen(0, "127.0.0.1", resolve));
       const zipPort = zipServer.address().port;
-      const zipUrl = `http://127.0.0.1:${zipPort}/dsh-game-material-master/assets/${projectId}/${pack.file}`;
+      const zipUrl = `http://127.0.0.1:${zipPort}/dsh-inkbox/assets/${projectId}/${pack.file}`;
       const zipResponse = await fetch(zipUrl);
       const served = Buffer.from(await zipResponse.arrayBuffer());
       check("打包好的 zip 能经资源路由下载（200）", zipResponse.status === 200, `${zipResponse.status}`);
@@ -1552,14 +1552,14 @@ async function main() {
     await new Promise((resolve) => server2.listen(0, "127.0.0.1", resolve));
     const port2 = server2.address().port;
     try {
-      const keyedUrl = `http://127.0.0.1:${port2}/dsh-game-material-master/image-assets/${imageId}/${imageSettled.items[0].keyedFile}`;
+      const keyedUrl = `http://127.0.0.1:${port2}/dsh-inkbox/image-assets/${imageId}/${imageSettled.items[0].keyedFile}`;
       const keyedRes = await fetch(keyedUrl).catch(() => null);
       check("抠像结果可经资源路由取得", keyedRes !== null && keyedRes.status === 200, keyedRes === null ? "请求失败" : String(keyedRes.status));
       const png = Buffer.from(await keyedRes.arrayBuffer());
       check("抠像结果是合法 PNG（带 alpha）", png.readUInt32BE(16) === 200 && png.readUInt32BE(20) === 200 && png[25] === 6, `${png.readUInt32BE(16)}x${png.readUInt32BE(20)} 颜色类型 ${png[25]}`);
-      const badScope = await fetch(`http://127.0.0.1:${port2}/dsh-game-material-master/image-assets/${imageId}/../project.json`).catch(() => null);
+      const badScope = await fetch(`http://127.0.0.1:${port2}/dsh-inkbox/image-assets/${imageId}/../project.json`).catch(() => null);
       check("新增模块同样挡住目录穿越", badScope !== null && [400, 403, 404].includes(badScope.status), badScope === null ? "请求失败" : String(badScope.status));
-      const badId = await fetch(`http://127.0.0.1:${port2}/dsh-game-material-master/sequence-assets/p000000000000/out/x.png`).catch(() => null);
+      const badId = await fetch(`http://127.0.0.1:${port2}/dsh-inkbox/sequence-assets/p000000000000/out/x.png`).catch(() => null);
       check("跨模块用错 id 前缀会被拒绝", badId !== null && badId.status === 400, badId === null ? "请求失败" : String(badId.status));
     } finally {
       await new Promise((resolve) => server2.close(resolve));
@@ -1650,7 +1650,7 @@ async function main() {
   await (async () => {
     const job = await seqgenMod.readSequenceJob(seqId);
     const rel = "videos/output.mp4";
-    await writeFile(join(HOME, "game-material-master", "sequence-jobs", seqId, rel), await readFile(seqVideoFile));
+    await writeFile(join(HOME, "inkbox", "sequence-jobs", seqId, rel), await readFile(seqVideoFile));
     job.video = { status: "ready", file: rel, updatedAt: Date.now() };
     await seqgenMod.writeSequenceJob(job);
   })();
@@ -1684,7 +1684,7 @@ async function main() {
     await new Promise((resolve) => server3.listen(0, "127.0.0.1", resolve));
     const port3 = server3.address().port;
     try {
-      const frameUrl = `http://127.0.0.1:${port3}/dsh-game-material-master/sequence-assets/${seqId}/${seqSettled.frames.keyed[0]}`;
+      const frameUrl = `http://127.0.0.1:${port3}/dsh-inkbox/sequence-assets/${seqId}/${seqSettled.frames.keyed[0]}`;
       const frameRes = await fetch(frameUrl).catch(() => null);
       check("抠像帧可经资源路由取得（播放预览依赖它）", frameRes !== null && frameRes.status === 200, frameRes === null ? "请求失败" : String(frameRes.status));
     } finally {
@@ -1811,7 +1811,7 @@ async function main() {
       await new Promise((resolve) => server3.listen(0, "127.0.0.1", resolve));
       const port3 = server3.address().port;
       try {
-        const base = `http://127.0.0.1:${port3}/dsh-game-material-master/rig-assets/${rigId}`;
+        const base = `http://127.0.0.1:${port3}/dsh-inkbox/rig-assets/${rigId}`;
         const preview = await fetch(`${base}/rig/preview.html`).catch(() => null);
         check("预览页可经资源路由取得", preview !== null && preview.status === 200, preview === null ? "请求失败" : String(preview.status));
         check(
@@ -1843,7 +1843,7 @@ async function main() {
           unlisted === null ? "请求失败" : String(unlisted.status));
         const escape = await fetch(`${base}/parts/../../../project.json`).catch(() => null);
         check("骨骼动画模块同样挡住目录穿越", escape !== null && [400, 403, 404].includes(escape.status), escape === null ? "请求失败" : String(escape.status));
-        const badPrefix = await fetch(`http://127.0.0.1:${port3}/dsh-game-material-master/rig-assets/p000000000000/rig/preview.html`).catch(() => null);
+        const badPrefix = await fetch(`http://127.0.0.1:${port3}/dsh-inkbox/rig-assets/p000000000000/rig/preview.html`).catch(() => null);
         check("骨骼动画：跨模块用错 id 前缀会被拒绝", badPrefix !== null && badPrefix.status === 400, badPrefix === null ? "请求失败" : String(badPrefix.status));
       } finally {
         await new Promise((resolve) => server3.close(resolve));
@@ -2051,7 +2051,7 @@ async function main() {
       await mkdirp(join(isogen.isoProjectDir(isoId), "tilesets"), { recursive: true });
       await writeF(join(isogen.isoProjectDir(isoId), "tilesets", "cell.png"), encodePng(Buffer.from([255, 0, 0, 255]), 1, 1));
 
-      const base = `http://127.0.0.1:${port4}/dsh-game-material-master/iso-assets/${isoId}`;
+      const base = `http://127.0.0.1:${port4}/dsh-inkbox/iso-assets/${isoId}`;
       const cell = await fetch(`${base}/tilesets/cell.png`).catch(() => null);
       check("素材图可经资源路由取得（iso-assets 在白名单里）",
         cell !== null && cell.status === 200, cell === null ? "请求失败" : String(cell.status));

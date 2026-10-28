@@ -15,7 +15,7 @@
  * ```
  *
  * 目录结构：
- *   <DSH_HOME>/game-material-master/rig-jobs/<任务 id>/
+ *   <DSH_HOME>/inkbox/rig-jobs/<任务 id>/
  *     job.json          任务状态（本文件的 RigJob）
  *     source/           用户上传的角色参考图
  *     sheet/            生图模型产出的「拆件摊平图」
@@ -1076,7 +1076,7 @@ function lossless<T>(value: T): T {
 }
 
 export function rigSnapshot(job: RigJob, origin = "") {
-  const assetBase = `${origin}${assetBasePath(`/dsh-game-material-master/rig-assets/${job.id}/`)}`;
+  const assetBase = `${origin}${assetBasePath(`/dsh-inkbox/rig-assets/${job.id}/`)}`;
   const url = (relative: string | undefined): string | undefined =>
     typeof relative === "string" && relative !== "" ? `${assetBase}${relative}` : undefined;
   const items = job.layout.items;
@@ -1983,7 +1983,7 @@ export async function redrawRigPart(
     throw new Error(
       `重绘结果几乎是纯色（亮度 ${stats.meanLuma.toFixed(0)}、标准差 ${stats.stdDev.toFixed(1)}），` +
         `模型「${modelUsedForRedraw}」没有画出内容，已丢弃（没有新增版本）。` +
-        "可以换个更具体的提示词，或在「设置 → 游戏素材大师 → 生图后端」里换一个模型；" +
+        "可以换个更具体的提示词，或在「设置 → 墨盒 → 生图后端」里换一个模型；" +
         "只是想让颜色变一下的话，「换色」是免费的。"
     );
   }
@@ -3532,7 +3532,7 @@ export async function solveRigLayout(jobId: string, names?: string[]): Promise<v
         `① 拆件图里的角色与参考图不是同一个（生图模型在「拆件」时换掉服装 / 发型 / 体型）；` +
         `② 部件是按「服装裁片」拆的（裙摆、袖子、领子），外观本来就只覆盖参考图的一小块。` +
         `建议：① 用「部件 PNG」上传框传自己的部件（文件名即部件名，完全绕开生图）；` +
-        `② 或换更强的生图模型（设置 → 游戏素材大师 → 生图模型，实测 Seedream 5.0 Pro 明显更守角色设定）重新拆件；` +
+        `② 或换更强的生图模型（设置 → 墨盒 → 生图模型，实测 Seedream 5.0 Pro 明显更守角色设定）重新拆件；` +
         `③ 也可以在下面的合成图上手工拖到正确位置。`;
       appendJobLog(fresh.log, "warn", hint);
       fresh.layout.error = weak === undefined ? hint : `${weak}；另外，${hint}`;

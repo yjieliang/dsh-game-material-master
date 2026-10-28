@@ -17,7 +17,7 @@ import * as musicgen from "./musicgen.js";
 import * as sfxgen from "./sfxgen.js";
 import { assetPath } from "./store.js";
 
-export const ROUTE_PREFIX = "/dsh-game-material-master";
+export const ROUTE_PREFIX = "/dsh-inkbox";
 
 /** 启动信息：`_health` 用它回答「运行中的宿主到底吃到了哪一版代码」。 */
 export interface BootInfo {
@@ -141,13 +141,13 @@ function sendText(res, status: number, text: string): void {
 
 /**
  * 把各模块的产物路径映射到磁盘文件：
- *   /dsh-game-material-master/assets/<项目 id>/<相对路径>           八方向图
- *   /dsh-game-material-master/image-assets/<任务 id>/<相对路径>      图片生成
- *   /dsh-game-material-master/sequence-assets/<任务 id>/<相对路径>   序列帧生成
- *   /dsh-game-material-master/rig-assets/<任务 id>/<相对路径>        骨骼动画生成
- *   /dsh-game-material-master/iso-assets/<项目 id>/<相对路径>        45°地图编辑器
- *   /dsh-game-material-master/map-assets/<项目 id>/<相对路径>        地图编辑器
- *   /dsh-game-material-master/music-assets/<任务 id>/<相对路径>      音乐生成编辑
+ *   /dsh-inkbox/assets/<项目 id>/<相对路径>           八方向图
+ *   /dsh-inkbox/image-assets/<任务 id>/<相对路径>      图片生成
+ *   /dsh-inkbox/sequence-assets/<任务 id>/<相对路径>   序列帧生成
+ *   /dsh-inkbox/rig-assets/<任务 id>/<相对路径>        骨骼动画生成
+ *   /dsh-inkbox/iso-assets/<项目 id>/<相对路径>        45°地图编辑器
+ *   /dsh-inkbox/map-assets/<项目 id>/<相对路径>        地图编辑器
+ *   /dsh-inkbox/music-assets/<任务 id>/<相对路径>      音乐生成编辑
  *
  * 支持 Range：没有它浏览器里的 <video> 就不能拖动进度条，验收视频时会很难受。
  */
@@ -159,7 +159,7 @@ export async function handleAsset(req, res, bootInfo: BootInfo): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const rest = decodeURIComponent(url.pathname.slice(ROUTE_PREFIX.length)).replace(/^\/+/, "");
   /**
-   * 构建探针。走 prefix 路由，所以路径是 `/dsh-game-material-master/_health`。
+   * 构建探针。走 prefix 路由，所以路径是 `/dsh-inkbox/_health`。
    *
    * 不读盘、无副作用，只回「本模块是哪次 import 进来的」——客户端 bundle 每次请求
    * 都从磁盘现读，宿主半区却只在进程启动（或 profile patch 热重载）时 import 一次，

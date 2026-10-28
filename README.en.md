@@ -1,6 +1,6 @@
-English | [中文](https://github.com/universe-st/dsh-game-material-master/blob/main/README.md)
+English | [中文](https://github.com/universe-st/dsh-inkbox/blob/main/README.md)
 
-# Game Material Master
+# Inkbox
 
 **Start from a single character sheet and batch-produce the assets your game actually needs.**
 
@@ -9,8 +9,15 @@ image-to-video, and keying, frame extraction, pixel quantization and spritesheet
 locally through `ffmpeg` — no system image libraries required, and your assets are never uploaded to a
 third-party service.
 
-[![npm](https://img.shields.io/npm/v/dsh-game-material-master?color=blue)](https://www.npmjs.com/package/dsh-game-material-master)
+[![npm](https://img.shields.io/npm/v/dsh-inkbox?color=blue)](https://www.npmjs.com/package/dsh-inkbox)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+> **🔤 Renamed (0.12.0)**: this plugin used to be called Game Material Master (`dsh-game-material-master`);
+> it is now **Inkbox** / 「墨盒」. The package name, repository, asset route and data directory all moved to
+> `inkbox`, and module ① was renamed from "Eight-direction sheet" to **"Animation frame toolbox"**.
+> Upgrading users: on first startup `<DSH_HOME>/game-material-master/` is **migrated automatically** to
+> `<DSH_HOME>/inkbox/` (the older `8dir-sprites/` is handled too), so projects carry over. The conversational
+> tool is still called `game_material`.
 
 > **🆕 0.11.0 update**: both map editors gain a full **Agent loop** — `mapInspect` / `isoInspect` read cells,
 > objects, stamps, markers and passability by region, while `mapRender` / `isoRender` synchronously produce a
@@ -30,17 +37,17 @@ third-party service.
 > 4×4 auto-tiling, multi-cell / elevated objects, animated tiles, markers, wraparound, one-click generation,
 > plus **Generate with AI** which opens a chat and links the result back into "Add tileset" for confirmation).
 > A new **optional ToAPIs asynchronous image / video backend** lands via
-> [PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7) — thanks
+> [PR #7](https://github.com/universe-st/dsh-inkbox/pull/7) — thanks
 > [@ToAPIs-2025](https://github.com/ToAPIs-2025). The 0.9.x **sound-effect generator** (Seed-Audio) and its
 > network-retry fixes remain. **0.10.1** fixes a crash in the isometric editor's one-click
 > **continent** generation (the height-field midpoint pass wrote to a cell that does not exist).
 > See the
-> [release notes in AGENTS.md](https://github.com/universe-st/dsh-game-material-master/blob/main/AGENTS.md#已发布版本).
+> [release notes in AGENTS.md](https://github.com/universe-st/dsh-inkbox/blob/main/AGENTS.md#已发布版本).
 
-![Game Material Master · workbench](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-00-workbench.png)
+![Inkbox · workbench](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-00-workbench.png)
 
-> **Up and running in 30 seconds**: `dsh plugin --profile web add dsh-game-material-master` → restart DSH →
-> click "Game Material Master" in the sidebar → enter the API keys you need (images / video; sound effects use a separate speech key) → create a project,
+> **Up and running in 30 seconds**: `dsh plugin --profile web add dsh-inkbox` → restart DSH →
+> click "Inkbox" in the sidebar → enter the API keys you need (images / video; sound effects use a separate speech key) → create a project,
 > upload your character sheet → click "Generate turn video" (the default path: the character rotates steadily
 > in place for one full turn, then the eight directions are cut out automatically; switch the method in
 > stage ① if you'd rather generate each direction separately).
@@ -102,7 +109,7 @@ and move on automatically, or stop at every step and wait for your go-ahead.
 > seen enough engine-side validation. The module carries an "experimental" badge in the UI and shows a dialog
 > every time you enter it. This document only covers the first three modules.
 > If you need it — or want to help make it solid — you're welcome to join in at the
-> [GitHub repository](https://github.com/universe-st/dsh-game-material-master).
+> [GitHub repository](https://github.com/universe-st/dsh-inkbox).
 
 ---
 
@@ -187,28 +194,28 @@ The generated videos (the turn video and the eight walk videos) each have a "Sav
 directions along the timeline; the eight circles on the axis are their capture positions — drag to change
 them and release to re-cut instantly (locally, free).
 
-![Turn capture](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-01b-sprite-turn.png)
+![Turn capture](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-01b-sprite-turn.png)
 
 **Per-direction generation (alternative)**: each of the eight directions is generated separately; single
 images are sharper, which suits cases where you only need a few directions or want maximum per-image quality.
 
-![Eight green-screen directions](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-01-sprite-images.png)
+![Eight green-screen directions](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-01-sprite-images.png)
 
 ### ② Walk videos
 
-![Walk videos](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-02-sprite-videos.png)
+![Walk videos](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-02-sprite-videos.png)
 
 ### ③ Extract sequence frames
 
-![Extract sequence frames](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-03-sprite-frames.png)
+![Extract sequence frames](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-03-sprite-frames.png)
 
 ### ④ Key green screen and compose spritesheet
 
-![Key green screen and compose spritesheet](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-04-sprite-sheet.png)
+![Key green screen and compose spritesheet](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-04-sprite-sheet.png)
 
 ### ⑤ Walk preview
 
-![Walk preview](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-05-sprite-preview.png)
+![Walk preview](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-05-sprite-preview.png)
 
 > **Re-running a single step**: if any step isn't right, redo just that step — a single direction or a single
 > stage — instead of starting the whole batch over.
@@ -231,9 +238,9 @@ without spending anything on generation.
 4. In the results area, review **image by image**: approve, download the original / download the PNG (the keyed
    result), regenerate, delete. The background percentage is shown right there so you can judge how clean the keying is.
 
-![Image generation · prompt and reference images](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-06-image.png)
+![Image generation · prompt and reference images](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-06-image.png)
 
-![Image generation · keyed result](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-07-image-keyed.png)
+![Image generation · keyed result](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-07-image-keyed.png)
 
 ---
 
@@ -260,9 +267,9 @@ flowchart LR
    the keyed edges stay stable is immediately visible in playback**.
 5. **Review**: approve each of the three steps.
 
-![Sequence frames · video input](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-08-sequence-input.png)
+![Sequence frames · video input](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-08-sequence-input.png)
 
-![Sequence frames · keying, composition and loop preview](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-09-sequence-compose.png)
+![Sequence frames · keying, composition and loop preview](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-09-sequence-compose.png)
 
 ---
 
@@ -313,7 +320,7 @@ Instead:
    text tags alone. If Suno flags the audio as copyrighted, you'll be asked to confirm the paid copyright
    channel. The result is still a re-performance, not note-for-note.
 
-**Dependencies** (the plugin detects them and lets you set paths under Settings → Game Material Master →
+**Dependencies** (the plugin detects them and lets you set paths under Settings → Inkbox →
 Compose mode):
 
 - `python3 -m pip install scoremill` — required to write MIDI;
@@ -396,14 +403,17 @@ the `projectId` / `jobId` to the clipboard so you can paste it to the agent.
 
 ```bash
 # install from npm
-dsh plugin --profile web add dsh-game-material-master
+dsh plugin --profile web add dsh-inkbox
 
 # install from a local directory (during development)
-dsh plugin --profile web add /path/to/dsh-game-material-master
+dsh plugin --profile web add /path/to/dsh-inkbox
 ```
 
-The package is published to npm: [dsh-game-material-master](https://www.npmjs.com/package/dsh-game-material-master)
-(currently `0.11.0`, `latest`). It has no runtime dependencies, so `dsh plugin add` is all you need.
+The package is **renamed** to npm's [`dsh-inkbox`](https://www.npmjs.com/package/dsh-inkbox): releases from
+`0.12.0` on use the new name. The old package
+[`dsh-game-material-master`](https://www.npmjs.com/package/dsh-game-material-master) stays at `0.11.0` and
+still works — it just stops receiving updates. There are no runtime dependencies, so `dsh plugin add` is all
+you need.
 
 **DSH version**: `>=0.2.0-rc.2 <0.3.0` (the `engines.dsh` field; since DSH 0.2.1 the plugin manager checks it first).
 When a Web deployment uses `--public-url https://host/prefix/`, deep links and asset URLs include that path prefix.
@@ -420,14 +430,14 @@ the registry and already running processes never inherit it, so the plugin reads
 The package has **no runtime npm dependencies** — `zod`, `cordis` and friends all resolve from DSH's own
 installation tree.
 
-> When upgrading from the older `dsh-8dir-sprites`, the first startup migrates the data directory
-> automatically and your existing projects carry over seamlessly.
+> When upgrading, the first startup migrates the data directory automatically: both `game-material-master/`
+> and the older `8dir-sprites/` are moved to `inkbox/`, so existing projects and config carry over seamlessly.
 
 ## Configuration
 
-**Settings → Game Material Master**:
+**Settings → Inkbox**:
 
-![Settings](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-10-settings.png)
+![Settings](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-10-settings.png)
 
 | Item | Description |
 |---|---|
@@ -446,14 +456,14 @@ installation tree.
 | Sound effects (Volcengine Seed-Audio) | Speech console API key (not the Ark key), base URL, default model `seed-audio-1.0`, default format / sample rate and timeout; "Test connection" really generates one very short sound effect (small charge) |
 | Feature management | Per-module switches: a disabled module disappears from the UI **and the agent cannot call it either** (see below) |
 
-Keys are written only to `<DSH_HOME>/game-material-master/config.json` on your machine, and the UI always
+Keys are written only to `<DSH_HOME>/inkbox/config.json` on your machine, and the UI always
 masks them when displaying them back. **The image backend and model are plugin-level settings shared by
 every module that generates images**; after you switch, tasks align to the new tier automatically.
 Image-to-video always goes through MiniMax and is unaffected by the image backend.
 
 ### Custom image backend
 
-Besides Volcengine Ark you can plug in **your own image service** (Settings → Game Material Master → Image backend):
+Besides Volcengine Ark you can plug in **your own image service** (Settings → Inkbox → Image backend):
 
 | Protocol | Text-to-image | With reference images | Notes |
 |---|---|---|---|
@@ -506,7 +516,7 @@ pipeline as MiniMax.
 
 ### Feature management (hiding modules you do not use)
 
-Turn a module off under **Settings → Game Material Master → Feature management**; turn it back on any time.
+Turn a module off under **Settings → Inkbox → Feature management**; turn it back on any time.
 Existing project data is never deleted.
 
 - **UI**: the module disappears from the workbench tabs and from the sidebar shortcut menu. If you were
@@ -564,7 +574,7 @@ Everything in the UI that you can click, change or approve is bilingual.
 ## Where the output goes
 
 ```
-<DSH_HOME>/game-material-master/
+<DSH_HOME>/inkbox/
 ├── projects/<id>/      eight-direction sheet (source / images / videos / frames / keyed / preview / out)
 ├── image-jobs/<id>/    image generation
 ├── sequence-jobs/<id>/ sequence frames
@@ -619,7 +629,7 @@ the dependency direction and the assembly order are documented in the "客户端
 section of [`docs/ENGINEERING.md`](docs/ENGINEERING.md).
 
 The screenshots in this document were taken by Playwright against the real UI; the originals live in
-[`docs/images/`](https://github.com/universe-st/dsh-game-material-master/tree/main/docs/images).
+[`docs/images/`](https://github.com/universe-st/dsh-inkbox/tree/main/docs/images).
 
 ## Known trade-offs
 
@@ -667,7 +677,7 @@ The screenshots in this document were taken by Playwright against the real UI; t
   editable, then decide whether to generate audio"). All rights remain with the original authors. With thanks.
 - **The optional ToAPIs asynchronous image / video backend was contributed by
   [@ToAPIs-2025](https://github.com/ToAPIs-2025) in
-  [PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7)** (`feat(toapis)`): independent
+  [PR #7](https://github.com/universe-st/dsh-inkbox/pull/7)** (`feat(toapis)`): independent
   settings, receipts that block duplicate paid submissions, credentials kept on the host, and Ark / MiniMax
   still the defaults. Thanks for the implementation.
 - ⚠️ **The `Picture/MapChip/*_pipo.png` tiles shipped in the AsLib repository belong to a third party and are
@@ -686,8 +696,8 @@ The screenshots in this document were taken by Playwright against the real UI; t
 
 Configure ToAPIs in settings, then select ToAPIs as the image backend and/or enable its video option. Ark/MiniMax remain the defaults; ComfyUI, custom protocols and local processing remain available. Use `https://toapis.cn/v1` in China or `https://toapis.com/v1` internationally. ToAPIs uses asynchronous media endpoints, not a drop-in synchronous OpenAI image URL.
 
-[Configuration, billing and task recovery](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/TOAPIS.md). Keys stay on the host; generation is billable. Check account pricing and model settings first.
+[Configuration, billing and task recovery](https://github.com/universe-st/dsh-inkbox/blob/main/docs/TOAPIS.md). Keys stay on the host; generation is billable. Check account pricing and model settings first.
 
 ## ToAPIs
 
-ToAPIs is an optional image/video provider using your own key. Homepages: [China](https://toapis.cn/) / [International](https://toapis.com/); Base URLs: `https://toapis.cn/v1` / `https://toapis.com/v1`. [Configuration, scoped pricing and quick reuse](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/TOAPIS.md) · [Real DSH eight-direction and sprite export acceptance](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/toapis-live-20261024/README.md). See the guide for native transparent GPT Image, square videos and actual screenshots; availability depends on merge/release status.
+ToAPIs is an optional image/video provider using your own key. Homepages: [China](https://toapis.cn/) / [International](https://toapis.com/); Base URLs: `https://toapis.cn/v1` / `https://toapis.com/v1`. [Configuration, scoped pricing and quick reuse](https://github.com/universe-st/dsh-inkbox/blob/main/docs/TOAPIS.md) · [Real DSH eight-direction and sprite export acceptance](https://github.com/universe-st/dsh-inkbox/blob/main/docs/toapis-live-20261024/README.md). See the guide for native transparent GPT Image, square videos and actual screenshots; availability depends on merge/release status.

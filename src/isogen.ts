@@ -1155,7 +1155,7 @@ export interface IsoProjectView {
 }
 
 export function isoAssetBase(projectId: string): string {
-  return assetBasePath(`/dsh-game-material-master/iso-assets/${projectId}/`);
+  return assetBasePath(`/dsh-inkbox/iso-assets/${projectId}/`);
 }
 
 async function fileRevision(path: string): Promise<number | undefined> {
@@ -2289,7 +2289,7 @@ export interface IsoSnapshot extends Omit<IsoProjectView, "assetBase" | "tileset
 }
 
 function absoluteIsoAssetUrl(projectId: string, origin: string, relative: string): string {
-  return `${origin}${assetBasePath(`/dsh-game-material-master/iso-assets/${projectId}/`)}${relative}`;
+  return `${origin}${assetBasePath(`/dsh-inkbox/iso-assets/${projectId}/`)}${relative}`;
 }
 
 export async function isoSnapshot(project: IsoProject, origin: string): Promise<IsoSnapshot> {

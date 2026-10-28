@@ -821,7 +821,7 @@ try {
   );
   check("视图带上导出目录的本机绝对路径", exported.exportPath.endsWith(join("export", expectedDir)) && exported.exportPath.includes(mapgen.mapProjectDir(projectId)), exported.exportPath);
   const listing = await mapgen.readExportListing(projectId, "http://127.0.0.1:9999");
-  check("readExportListing 给绝对 URL", listing.base.startsWith("http://127.0.0.1:9999/dsh-game-material-master/map-assets/") && listing.files.every((url) => url.startsWith("http")));
+  check("readExportListing 给绝对 URL", listing.base.startsWith("http://127.0.0.1:9999/dsh-inkbox/map-assets/") && listing.files.every((url) => url.startsWith("http")));
   check("zip 在清单里也是可点的绝对 URL（界面点一下就能下载）", listing.files.some((url) => url.endsWith(`/${expectedZip}`)), listing.files.join(" "));
   const snapshot = await mapgen.mapSnapshot(await mapgen.readMapProject(projectId), "http://127.0.0.1:9999");
   check("快照把预览图与导出产物换成绝对 URL", snapshot.previewUrls.every((url) => url.includes("/preview/")) && snapshot.exportFiles.length === exported.exportFiles.length, snapshot.previewUrls.join(" "));
@@ -999,7 +999,7 @@ try {
     await Promise.race([once(res, "finish").catch(() => undefined), sleep(500)]);
     return { status: status === 0 ? res.statusCode : status, body: Buffer.concat(chunks), headers };
   };
-  const assetBase = `/dsh-game-material-master/map-assets/${projectId}`;
+  const assetBase = `/dsh-inkbox/map-assets/${projectId}`;
   const tilesetFile = (await gw("getMapProject", { projectId })).tilesets[0].file;
   const okTileset = await request(`${assetBase}/${tilesetFile}`);
   check("图集原图能取到（200，且不是空响应）", okTileset.status === 200 && okTileset.body.length > 0, `status=${okTileset.status} bytes=${okTileset.body.length}`);
@@ -1024,21 +1024,21 @@ try {
   check("导出的 zip 能取到（200，且 MIME 是 application/zip）", okZip.status === 200 && okZip.body.length > 0 && String(okZip.headers["content-type"]).includes("application/zip"), `status=${okZip.status} type=${okZip.headers["content-type"]}`);
   const okHead = await request(`${assetBase}/${tilesetFile}`, "HEAD");
   check("HEAD 也是 200（空体）", okHead.status === 200, `status=${okHead.status}`);
-  const traversalEncoded = await request(`/dsh-game-material-master/map-assets/${projectId}/%2e%2e%2f%2e%2e%2fetc/passwd`);
+  const traversalEncoded = await request(`/dsh-inkbox/map-assets/${projectId}/%2e%2e%2f%2e%2e%2fetc/passwd`);
   check("目录穿越（编码过的 ..）被挡：不是 200", traversalEncoded.status !== 200, `status=${traversalEncoded.status}`);
-  const traversalPlain = await request(`/dsh-game-material-master/map-assets/${projectId}/../../etc/passwd`);
+  const traversalPlain = await request(`/dsh-inkbox/map-assets/${projectId}/../../etc/passwd`);
   check("目录穿越（裸 .. 被 URL 归一化后）也不是 200", traversalPlain.status !== 200, `status=${traversalPlain.status}`);
   const notWhitelisted = await request(`${assetBase}/secret/x.png`);
   check("白名单之外的子目录 403", notWhitelisted.status === 403, `status=${notWhitelisted.status}`);
   const mapsDir = await request(`${assetBase}/maps/x.png`);
   check("★ maps/ 已经不在白名单里（403，不是 200）", mapsDir.status === 403, `status=${mapsDir.status}`);
-  const badId = await request(`/dsh-game-material-master/map-assets/p1234/tilesets/x.png`);
+  const badId = await request(`/dsh-inkbox/map-assets/p1234/tilesets/x.png`);
   check("非法 id 被拒（400/404 都算，重点是别 200）", badId.status === 400 || badId.status === 404, `status=${badId.status}`);
-  const unknownScope = await request(`/dsh-game-material-master/nope-assets/${projectId}/x.png`);
+  const unknownScope = await request(`/dsh-inkbox/nope-assets/${projectId}/x.png`);
   check("未知 scope 404", unknownScope.status === 404, `status=${unknownScope.status}`);
   const missingFile = await request(`${assetBase}/${tilesetFile.split("/")[0]}/nope.png`);
   check("白名单内但文件不存在 → 404（不是 200 空图）", missingFile.status === 404, `status=${missingFile.status}`);
-  const health = await request(`/dsh-game-material-master/_health`);
+  const health = await request(`/dsh-inkbox/_health`);
   check("_health 探针可用（用来区分「代码没生效」和「功能坏了」）", health.status === 200 && JSON.parse(health.body.toString("utf8")).ok === true, health.body.toString("utf8").slice(0, 60));
 
   // ══ 12. 落盘结构与删除 ═════════════════════════════════════════════════

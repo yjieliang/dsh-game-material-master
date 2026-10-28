@@ -683,8 +683,8 @@ async function main() {
   );
   check(
     "路径前缀：产物 assetBase 也补前缀（否则反代后面图裂）",
-    links.assetBasePath("/dsh-game-material-master/assets/p1/") === "/prefix/dsh-game-material-master/assets/p1/",
-    links.assetBasePath("/dsh-game-material-master/assets/p1/")
+    links.assetBasePath("/dsh-inkbox/assets/p1/") === "/prefix/dsh-inkbox/assets/p1/",
+    links.assetBasePath("/dsh-inkbox/assets/p1/")
   );
   check(
     "路径前缀：非法值（.. / 反斜杠 / 相对路径）一律退回根路径",
@@ -702,7 +702,7 @@ async function main() {
   const prefixedStatus = await run("game_material_status", { module: "sprite", id: projectId });
   check(
     "路径前缀：status 里的 assetBase 也补前缀（工具面与界面走同一份）",
-    JSON.stringify(prefixedStatus).includes("/prefix/dsh-game-material-master/assets/"),
+    JSON.stringify(prefixedStatus).includes("/prefix/dsh-inkbox/assets/"),
     JSON.stringify(prefixedStatus).slice(0, 160)
   );
   // 后面的断言按本地根路径继续，把状态复位。
@@ -850,7 +850,7 @@ async function main() {
 
   // ── 9. 系统提示词只负责指路，完整流程在 guide ─────────────────────────
   console.log("\n9) 系统提示词与 guide 的分工");
-  check("注册了 game-material-master 提示词段", captured.sections.length === 1 && captured.sections[0].name === "game-material-master", captured.sections.map((s) => s.name).join("、"));
+  check("注册了 inkbox 提示词段", captured.sections.length === 1 && captured.sections[0].name === "inkbox", captured.sections.map((s) => s.name).join("、"));
   const prompt = captured.sections[0]?.text ?? "";
   check("提示词保持紧凑（< 600 B）", Buffer.byteLength(prompt) < 600, `${Buffer.byteLength(prompt)} B`);
   check("提示词指向 game_material 与 guide", /game_material/.test(prompt) && /guide/.test(prompt), prompt);

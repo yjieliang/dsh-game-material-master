@@ -456,7 +456,7 @@ export function summarizePendingReceipts(records: ReceiptRecord[]): string | und
     .map((record) => `${record.method}(${record.provider})${record.taskId === undefined ? "" : ` → ${record.taskId}`}`)
     .join(" / ");
   return (
-    `[game-material-master] 有 ${records.length} 笔付费提交尚未结清（其中 ${uncertain} 笔结果不确定）：${head}` +
+    `[inkbox] 有 ${records.length} 笔付费提交尚未结清（其中 ${uncertain} 笔结果不确定）：${head}` +
     `。请先核对远端账单 / 任务，不要直接重发；凭证在 ${receiptsRoot()}`
   );
 }

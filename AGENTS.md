@@ -11,12 +11,12 @@
 
 ## 这是什么
 
-DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出游戏素材。火山方舟 **Seedream** 生图、
+DSH 插件「墨盒」：从一张角色设定图出发批量产出游戏素材。火山方舟 **Seedream** 生图、
 **MiniMax**（或本机 **ComfyUI**）图生视频，抠像 / 抽帧 / 像素量化 / 合图全部在本机用 `ffmpeg` + 内置 JS 完成。
 
 | 模块 | key | 状态 |
 |---|---|---|
-| 八方向图生成 | `sprite` | 正式 |
+| 动画帧工具盒 | `sprite` | 正式 |
 | 图片生成 | `image` | 正式 |
 | 序列帧生成 | `sequence` | 正式 |
 | 骨骼动画生成 | `rig` | **实验性**（页签带角标、进入弹窗、模块内常驻提示条） |
@@ -94,7 +94,7 @@ DSH 插件「游戏素材大师」：从一张角色设定图出发批量产出�
 | 转圈截帧的首帧一律走 `src/pipeline.ts` 的 `turnFirstFrame()`：它除了「正面绿幕图优先」，还会拿文件时间兜一道（正面图比源图旧 → 退回源图） | 换源图会作废派生产物，但历史项目 / 手工替换的文件仍可能带着旧角色的 `images/front.png`。那一张就是交给视频模型的首帧，「新角色配旧脸」既不报错也不缺图，只能肉眼看出来 |
 | 起 ffmpeg / ffprobe 一律走 `src/media.ts` 的 `ffmpegPath()` / `ffprobePath()`，别写死 `"ffmpeg"`、也别只读 `process.env` | Windows 上 ffmpeg 常常「装了但不在 `PATH` 里」，而 `setx` 设的环境变量又继承不到已经在跑的进程。这两个函数会继续查注册表与 WinGet / Scoop / Chocolatey 的常见位置——绕过它们就是「自检全绿、真机报找不到 ffmpeg」 |
 | `engines.dsh` 与 devDependencies 里的 `cordis` / `typert-protocol` **必须一起跟 DSH 版本走** | DSH 0.2.1 起插件兼容性**优先看 `engines.dsh`**（声明了就不再回退 peerDependencies），本插件声明 `>=0.2.0-rc.2 <0.3.0-0`；`<0.3.0-0` 是必需的，因为 DSH 用 `includePrerelease` 判范围，写 `<0.3.0` 会放行 0.3.0 的 rc。开发依赖是**开发期契约**：0.2.1 对应 `cordis ~4.0.5` / `dsh-typert-protocol 0.2.1-rc.2`，版本太旧时自检会对着旧契约全绿、真机却挂 |
-| 回给浏览器的 `assetBase` 一律走 `src/links.ts` 的 `assetBasePath()`，深链接一律走 `buildOpenLink()` 的默认 origin | DSH 0.2.1 的 `--public-url https://host/prefix/` 会由反代**剥掉路径前缀**再转给 DSH；宿主只拼 `origin + /dsh-game-material-master/...` 时，浏览器会请求反代根路径 → 图片全裂、回链落到根页。浏览器半区把 `location.pathname` 一起报上来（`reportClientOrigin({origin,path})`），宿主拼 URL 时补回去。绕过 `assetBasePath` 的字符串拼接就是「本地全对、反代后面图裂」 |
+| 回给浏览器的 `assetBase` 一律走 `src/links.ts` 的 `assetBasePath()`，深链接一律走 `buildOpenLink()` 的默认 origin | DSH 0.2.1 的 `--public-url https://host/prefix/` 会由反代**剥掉路径前缀**再转给 DSH；宿主只拼 `origin + /dsh-inkbox/...` 时，浏览器会请求反代根路径 → 图片全裂、回链落到根页。浏览器半区把 `location.pathname` 一起报上来（`reportClientOrigin({origin,path})`），宿主拼 URL 时补回去。绕过 `assetBasePath` 的字符串拼接就是「本地全对、反代后面图裂」 |
 
 ---
 
@@ -124,6 +124,7 @@ node scripts/verify-tools.mjs      # 对话调用面（196 项，含常驻工具
 node scripts/verify-pipeline.mjs   # 抽帧 / 抠像 / 合成（40 项）
 node scripts/verify-feedback.mjs   # 浏览器半区真渲染（218 项，含功能管理、侧栏菜单、生图后端设置页、语义保存错误与草稿合并、切语言后页签标题）
 node scripts/verify-i18n.mjs       # 中英词条表契约（9 项）
+node scripts/verify-rename.mjs     # 改名回归（23 项：包名 / bundle id / 路由前缀 / 文案词条一致 + 旧数据目录迁移四种情形）
 node scripts/verify-comfy.mjs      # 本地 ComfyUI 后端（124 项，自起 mock ComfyUI，纯本地、不用装 ComfyUI）
 node scripts/verify-custom-image.mjs  # 自定义生图后端三协议（68 项：起本地假服务端，离线、零计费）
 node scripts/verify-toapis.mjs       # ToAPIs 可选异步图片 / 视频后端（43 项，mock HTTP、零付费调用）
@@ -165,7 +166,7 @@ node scripts/verify-map-client.mjs     # 地图编辑器界面真渲染 + 黄金
 
 其余脚本（`verify-rig*.mjs`、`e2e-*.mjs` 等）的覆盖范围见 ENGINEERING.md 的「自检脚本」表。
 `e2e-map.mjs` 是模块六的**真实链路端到端**（不联网、不花钱）：它会**故意把产物留在**
-`<DSH_HOME>/game-material-master/map-jobs/` 下并打印绝对路径，方便人眼验收。
+`<DSH_HOME>/inkbox/map-jobs/` 下并打印绝对路径，方便人眼验收。
 `e2e-*.mjs` / `probe-redraw.mjs` 会**真实调 API 花钱**，不要顺手跑。
 
 ### ⚠️ 自检全绿 ≠ 界面对
@@ -194,8 +195,13 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 
 ## 发布到 npm
 
-包名 [`dsh-game-material-master`](https://www.npmjs.com/package/dsh-game-material-master)，
+包名 [`dsh-inkbox`](https://www.npmjs.com/package/dsh-inkbox)（**0.12.0 起**；此前叫
+[`dsh-game-material-master`](https://www.npmjs.com/package/dsh-game-material-master)，停在 `0.11.0`），
 发布账号 **kuangthree**，`license: MIT`，`access: public`（默认）。
+
+> ⚠️ **改名史**：0.11.0 及之前的版本以旧包名 / 旧仓库 / 旧中文名「游戏素材大师」发布。
+> 下面「已发布版本」表与其它历史段落里的名字**已整体替换成新名**（方便统一阅读），
+> 但 npm 上的历史产物仍是旧名；GitHub 旧仓库地址会 301 到新仓库。
 
 ### 已发布版本
 
@@ -206,26 +212,29 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 | `0.2.0` | 2026-09-24 14:19 | 阶段①新增「**转圈截帧**」并设为默认（一段原地匀速转一整圈的绿幕视频 → 本机抽候选帧 → 时间轴八圆圈截出八个方向；逐方向生图保留为备选）；`fix(chroma)` 角色贴边时不再把自己的颜色当背景（实测 160/160 帧被吃掉最多 1.8 万像素角色）；数字输入框改为失焦/回车提交；序列帧缩略图双击看大图；`turn/` 进资源路由白名单 |
 | `0.2.1` | 2026-09-30 14:18 | 合并 PR #2（来自 qiufl）：适配新版 DSH 的 strict codec `create()` 契约（`fix(typert)`，含 revert 后修正版）；阶段①「提取序列帧」新增**手动选帧**功能，15 文件 +1387 行 |
 | `0.3.0` | 2026-10-05 12:56 | 新增**多语言支持**（界面文案与内置提示词跟随 DSH 语言设置，中 / 英，`feat(i18n)`，README 增加英文版）；新增模块五「**45°地图地块生成**」（实验性：等距地块 → 拼成整张地图，`feat(tile)`）；另有 `fix(tools)` 工具返回值统一过 `jsonSafe`、`fix(scripts)` verify-live-bundle 兼容 |
-| `0.4.0` | 2026-10-09 14:12 | 设置页新增「**功能管理**」（`feat(settings)`）：逐个开关五个模块，隐藏后界面上不再出现它的页签与侧栏菜单项，**对话工具面同样拒绝调用**（`game_material_call` / `status` / `intake` / `upload` / `wait` / `review` / `approve`），且可见性只能由用户在设置页里改；侧栏「游戏素材大师」入口上新增**快捷菜单按钮**，点击直接弹出五个功能 |
+| `0.4.0` | 2026-10-09 14:12 | 设置页新增「**功能管理**」（`feat(settings)`）：逐个开关五个模块，隐藏后界面上不再出现它的页签与侧栏菜单项，**对话工具面同样拒绝调用**（`game_material_call` / `status` / `intake` / `upload` / `wait` / `review` / `approve`），且可见性只能由用户在设置页里改；侧栏「墨盒」入口上新增**快捷菜单按钮**，点击直接弹出五个功能 |
 | `0.6.0` | 2026-10-15 08:50 | **模块六「地图编辑器」推倒重做**（`feat(map)`，实验性，**全本地零计费**）：参照 [AsPJT/AsLib](https://github.com/AsPJT/AsLib/tree/master) 的 **RPG Map Maker** 改成**一屏、纯图标、零术语**（左侧素材调色板 + 12 个图标按钮，右侧画布，选一张素材图就能开画）；素材形态（RPG Maker A2 拼块 / 整格 16 块 / 普通图块）由尺寸**自动识别**；**地图四周环绕**（相机 / 命中 / 绘制范围 / 脏块 / 邻域判断全部取模）；一格的 A2 自动连接由宿主展开成 **4 条象限 op**（客户端仍只 `drawImage`）；**动画地块**走 op 上的 `cycle` + 全局帧号；自带**程序化生成的内置素材**（4 张 A2 + 1 张道具，水有 2 帧动画；AsLib 的 pipo 素材是第三方版权，不打包）；新增**一键生成**（随机铺满 / 迷宫 / 大陆，同种子逐字节可复现）；编辑协议新增 **`dropKeys`**（界面把缓存 chunk key 报上来，宿主只回真正失效的那几个），`mapPlan` 改成按视口查询（`view` + `have`）；「**翻页图**」给自己的普通素材开逐行动画；**导出窗口按正常操作逻辑重做**（内容三只复选框多选 / 只有一个「导出」/ 多产物自动打一个 `<地图名>.zip`，`src/zip.ts` 手写且时间戳写死所以可复现 / 卡片写出本机绝对路径、「另存为…」走浏览器原生保存框）；**删除**：2:1 等距、多地图、图层高度 / 不透明度 / 类型 / 锁定、地形族与掩码编辑器、掩码覆盖率、Tiled `.tmj` `.tsj` 导出、带图例的自有 JSON、切片 contact sheet（`map-jobs/<id>/maps/` 目录消失，单张地图直接落 `map.json`）；wire 方法删 4 个（`saveMapFamilies` / `createMapDoc` / `deleteMapDoc` / `duplicateMapDoc`）、加 2 个（`runMapGenerate` / `importSampleTileset`）；自检脚本同步重写：`verify-map` / `-pipeline` / `-gateway` / `-client` 四件 + `e2e-map.mjs`。⚠️ 改完必须重启 DSH（宿主半区）。（`0.5.0` 从未发布，其模块六实现已被本次重做整体取代） |
 | `0.7.0` | 2026-10-16 08:27 | **生图后端可选自定义服务**（`feat(image)`）：设置页新增「生图后端」，默认火山方舟 Seedream，也可换成用户自己的服务，协议三选一（**OpenAI 兼容** / **ComfyUI** / **Stable Diffusion WebUI**）；新增 `src/imageprovider.ts`（唯一分发层 `generateImageWithProvider`，模块里自己判 `imageProvider` 会被自检拦）与 `src/customimage.ts`（三协议各自发请求：OpenAI 的 `/images/generations`、带参考图先走 `/images/edits` 且端点不存在时退回 `image` 字段；SD WebUI 的 `txt2img` / `img2img` 与 `user:pass` 走 HTTP Basic；ComfyUI 的上传参考图 → `/prompt` → 轮询 `/history` → `/view`，工作流按 **JSON 树**替换占位符、没写 `{{image}}` 时自动改 `LoadImage` 节点）；配置项 `imageProvider` / `customProtocol` / `customBaseUrl` / `customApiKey`（脱敏回传）/ `customModel` / `customSize` / 负面提示词 / 步数 / CFG / 采样器 / 重绘强度 / 种子 / 超时 / ComfyUI 工作流；设置页 ark 与 custom 两组同时渲染（没配火山方舟 Key 也能先配本地服务并点「测试连接」），新增远程方法 `testCustomImage`；新增自检 `scripts/verify-custom-image.mjs`（68 项，起本地假服务端把三种协议都模拟出来，离线零计费）。**模块六「地图编辑器」转正**（全本地零计费，几何与导出都有像素级自检兜底）：去掉页签角标、进入弹窗与模块内常驻提示条，`verify-map-client.mjs` 反过来逐条钉住这三处不能出现、并断言模块⑤仍带实验性标记。**生成视频的两处都能自选本地视频**（`feat(sprite)`：阶段①转圈视频与阶段②八方向行走视频，导入产物与远端生成只差 `origin` / `originalName` 两个字段，阶段③④一行不用改；容器按**文件头**识别、上限 100MB；导入时作废该槽位已有的下游产物并**摘掉在跑的远端 `taskId`**）；新增 `exportImages`（八方向图 / 候选帧与条带 / 抠像帧 / 整图打成 zip 落 `out/`），界面上每张产物都有单独「保存」、候选帧另有「保存全部图片（zip）」；对话面 `game_material_upload` 新增 `kind=video` + `key`。**模块六：图层可改名换序 + 标记层**（`feat(map)`：默认三层「地理层 / 装饰层 / 建筑层」，图层卡里就地改名 / ↑↓ 换序 / 删层；`MapDoc.markers` 每格一个可命名标记，不进 `layer.data`，op 四态（add / remove / move / rename）走同一条 `applyMapOps`，画成圆圈里的数字、编号连续删了自动重排，导出 `map.json` 加 `markers` 且格式升到 `dsh-gem-map@3`）；`fix(mapgeom)` 视口比地图大时不画最后一列 / 最后一行。自检项数：host 367 / client 352 / tools 153 / feedback 203 / map 123 / map-pipeline 274 / map-gateway 160 / map-client 263。⚠️ 改到了宿主半区：要让设置页显示新的生图后端分组，必须重启 DSH。 |
 | `0.8.0` | 2026-10-17 15:00 | **新增第七个模块「音乐生成编辑」**（`feat(music)`，谱乐 AI：灵感/歌词 → 不挂靠项目的新对话 → 四引擎生成 → 回界面裁剪 / 音量 / 淡入淡出 / loudnorm / 版本 / 导出；另有**谱曲模式**：方案 → scoremill 本地写 MIDI → 试听 → 逐版修改 → 可选交 Suno，谱曲本地免费）；**地图编辑器「AI 生成素材」**（自动判形态、只画一块无缝砖、播放速度 / 清晰度 / 循环方式 / 自动裁边 / 整图多格印花）；**图生视频可选本地 ComfyUI**；**DSH 0.2.1 适配**（`engines.dsh`、`--public-url`）。自检项数：host 387 / client 353 / tools 179 / feedback 203 / music 86 / music-score 46 / music-gateway 51 / music-client 66 / map 238 / map-pipeline 416 / map-gateway 216 / map-client 457。详见下方「0.8.0 发布说明」。 |
 | `0.9.0` | 2026-10-18 10:11 | **新增第八个模块「音效生成」**（`feat(sfx)`，火山引擎豆包语音 **Seed-Audio**：一句话描述 → 音效 / 环境音 / UI 声 / 生物吼叫 / 角色配音；可带 1 张参考图或最多 3 条参考音频（互斥）；每次生成一条 take、永不覆盖；单次 ≤120 秒；每次生成真实计费；界面直接生成、工具面可调）。新增 `src/sfxapi.ts` / `src/sfxgen.ts`、配置项 `sfx*`、wire 13 个方法（163 → **176**）、`sfx-assets` 路由与独立导出；新增自检 `verify-sfx` 54 / `verify-sfx-gateway` 39 / `verify-sfx-client` 28。⚠️ 宿主半区改动，需重启 DSH。 |
 | `0.9.1` | 2026-10-18 12:50 | **音效生成修复**（`fix(sfx)`）：轮询 `getSfxJob` 时同步刷新左侧任务列表（生成完成后不再停在「0 条 · ⏳」）；火山引擎 `fetch failed` 带上底层 `cause`（例如 TLS `ECONNRESET`），便于区分网络与鉴权问题。`verify-sfx-client` 28 → **29**。 |
 | `0.9.2` | 2026-10-18 13:11 | **音效生成网络重试**（`fix(sfx)`）：只对「TLS 握手尚未建立就断开」这类**请求还没发出**的错误自动重试最多 3 次（Clash / TUN 节点抖动常见）；已发出的请求不重试，避免重复计费。成功后日志写明重试次数；`verify-sfx` 54 → **55**。 |
-| `0.10.0` | 2026-10-24 06:49 | **对话工具面收成单入口**（`feat(tools)!`）：8 个 `game_material_*` 合并成 1 个 `game_material`，常驻 49,393 B → 约 3.9 KB，流程 / 方法表改由 `guide` 按需加载。**模块五推倒重做**（`feat(iso)!`）：删掉「45° 地图地块生成」，换成全本地 **45° 地图编辑器**（2:1 等距 / 4×4 自动连接 / 多格高处物件 / 动画地块 / 标记层 / 环绕 / 一键生成 / 内置素材 / 导出 PNG·JSON·zip），并支持**AI 生成素材**（开新对话 → `composeIsoAsset` → 回链确认）。**新增可选 ToAPIs 异步图片 / 视频后端**（`feat(toapis)`，[PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7) by [@ToAPIs-2025](https://github.com/ToAPIs-2025)）。wire 方法 176 → **184**；新增 `verify-iso*` 四件与 `verify-toapis`。⚠️ 宿主半区改动，需重启 DSH。 |
+| `0.10.0` | 2026-10-24 06:49 | **对话工具面收成单入口**（`feat(tools)!`）：8 个 `game_material_*` 合并成 1 个 `game_material`，常驻 49,393 B → 约 3.9 KB，流程 / 方法表改由 `guide` 按需加载。**模块五推倒重做**（`feat(iso)!`）：删掉「45° 地图地块生成」，换成全本地 **45° 地图编辑器**（2:1 等距 / 4×4 自动连接 / 多格高处物件 / 动画地块 / 标记层 / 环绕 / 一键生成 / 内置素材 / 导出 PNG·JSON·zip），并支持**AI 生成素材**（开新对话 → `composeIsoAsset` → 回链确认）。**新增可选 ToAPIs 异步图片 / 视频后端**（`feat(toapis)`，[PR #7](https://github.com/universe-st/dsh-inkbox/pull/7) by [@ToAPIs-2025](https://github.com/ToAPIs-2025)）。wire 方法 176 → **184**；新增 `verify-iso*` 四件与 `verify-toapis`。⚠️ 宿主半区改动，需重启 DSH。 |
 | `0.10.1` | 2026-10-24 07:18 | **45° 地图编辑器修复**（`fix(iso)`）：「一键生成 · 大陆」的高度场中点插值把 `grid[8.5]` 当成格子写，点一次必抛 `TypeError`；现在 `step < 2` 时跳过这段（step = 1 的第一段已经把每格补满，中点那段本来就是重复的）。`verify-iso-pipeline` 54 → **55**（新增 continent 回归）。⚠️ 宿主半区改动，需重启 DSH。 |
-| `0.10.2` | 2026-10-24 07:23 | **ToAPIs 后端验收修复**（`fix(toapis)`，[PR #8](https://github.com/universe-st/dsh-game-material-master/pull/8) by [@YamiAnn](https://github.com/YamiAnn)）：生图新增**背景**选项（`auto` / `transparent` / `opaque`，GPT Image 原生透明 PNG，下载原图不再二次抠像）；图生视频新增**画幅比例**（默认 16:9，方形角色用 1:1），透明首帧先铺白再交给视频模型；补真实 DSH 八方向 / 精灵导出验收文档，新增 `verify-toapis-alpha`（原生透明、白底首帧、ZIP 原字节）与 Windows 临时文件锁回归 `verify-project-windows-lock`；`verify-toapis` 42 → **43**、`verify-feedback` 214 → **217**。⚠️ 宿主半区改动，需重启 DSH。 |
+| `0.10.2` | 2026-10-24 07:23 | **ToAPIs 后端验收修复**（`fix(toapis)`，[PR #8](https://github.com/universe-st/dsh-inkbox/pull/8) by [@YamiAnn](https://github.com/YamiAnn)）：生图新增**背景**选项（`auto` / `transparent` / `opaque`，GPT Image 原生透明 PNG，下载原图不再二次抠像）；图生视频新增**画幅比例**（默认 16:9，方形角色用 1:1），透明首帧先铺白再交给视频模型；补真实 DSH 八方向 / 精灵导出验收文档，新增 `verify-toapis-alpha`（原生透明、白底首帧、ZIP 原字节）与 Windows 临时文件锁回归 `verify-project-windows-lock`；`verify-toapis` 42 → **43**、`verify-feedback` 214 → **217**。⚠️ 宿主半区改动，需重启 DSH。 |
 | `0.11.0` | 2026-10-26 04:32 | **两套地图编辑器补上 Agent 闭环**（`feat(map)`）：新增 `mapInspect` / `isoInspect`（按区域、按预算读逐格 / 物件 / 整图 / 标记 / 通行性，默认 4096 格，超了回 `truncated` + `nextRange`）与 `mapRender` / `isoRender`（同步检查图：区域裁切、1~4 倍、透明 / 棋盘 / 白 / 深底、可叠 markers / grid / axes / pass / outlines，返回 `localPath` 给 `read_image`）；新增 `guide` 主题 `map-agent`。`applyMapOps` / `applyIsoOps` 新增 **`dryRun`** 与 **`ifRevision`**，项目视图带 `revision`。标记新增 **kind / color / note / tags** 与 `marker update`，导出格式 `dsh-gem-map@5` / `dsh-gem-iso-map@2`。整图新增 `stampMove` / `stampRotate`（越界或被别的整图占住会跳过，不静默顶掉）、最小占格 2 → **1**，素材属性里可改 `stampPass`；45° 物件新增 `duplicate`；`importMapTileset` / `importIsoTileset` 支持 **`path`**；`compose*` 返回 `localPath` / `previewPath`；所有模块的项目 / 任务标题旁与侧栏行都能**一键复制 projectId / jobId**。修复整图多格笔刷被标记 / 橡皮 / 油漆桶 / 吸管借用。wire 184 → **188**；新增 `verify-map-agent` 35。自检：host 387 / client 362 / tools 196 / feedback 217 / map 239 / map-pipeline 429 / map-gateway 228 / map-client 474 / iso 42 / iso-pipeline 55 / iso-gateway 64 / iso-client 83。⚠️ 宿主半区改动，需重启 DSH。 |
 
 ### 下一版发布说明（0.12.0 · 未发布）
 
 > 版本号按 **`0.12.0`** 准备，截至 **2026-10-28 04:25 UTC 尚未发布到 npm**（`package.json` 仍是 `0.11.0`）。
-> 真正发布时：把 `package.json` 提到 0.12.0 → 发布 → 在「已发布版本」表里追加一行（补真实 UTC 时间）→
-> 删掉本提示。内容如需细分，照下面的 0.11.0 小节格式另起小节。
+> 真正发布时：把 `package.json` 提到 0.12.0 → 发布到**新包名 `dsh-inkbox`**（npm 上 `dsh-inkbox` 已验证未被占用）
+> → 在「已发布版本」表里追加一行（补真实 UTC 时间）→ 删掉本提示。
+> 内容如需细分，照下面的 0.11.0 小节格式另起小节。
+> ⚠️ **发布前先确认 GitHub 仓库已改名 / 转移**（`universe-st/dsh-inkbox`），否则 README 里的链接与
+> `repository` 字段会 404；npm 旧包 `dsh-game-material-master` 停在 0.11.0，不再发布。
 
-相对已发布的 0.11.0，这条分支（`refactor/client-module-split`）是**客户端分层重构 + 宿主 P8 加固**，
-用户可见功能不变：
+相对已发布的 0.11.0，这条分支（`refactor/client-module-split`）是**客户端分层重构 + 宿主 P8 加固 + 整体 UI 重设计
++ 插件改名**；功能集合不变，但界面与标识是用户可见的变化：
 
 #### ① 客户端分层（`refactor(client)`，P0–P10）
 
@@ -251,10 +260,94 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
   （`PAID_METHODS` / `withPaidFields` / 客户端 `platform/api.ts`）。
   详见 `docs/ENGINEERING.md`「宿主半区：统一任务表 / 并发池 / 付费 receipt（P8）」与 `verify-jobs.mjs`（54 项）。
 
-#### 本次复跑的自检（文档任务只跑这几项）
+#### ③ 整体 UI 重设计（`feat(ui)`）
 
-`verify-arch` **17** · `verify-client` **366** · `verify-feedback` **218** · `verify-i18n` **9**，
-全部通过。其余脚本本次未复跑（`verify-host` / `verify-tools` / `verify-pipeline` 在沙箱里 spawn `ffmpeg` 会 `EPERM`）。
+设计稿 `游戏素材大师 · 整体 UI 重设计.pdf`（1440×960，TGFX 导出，**文字全转曲、无字体表**；设计稿文件
+命名时插件还叫「游戏素材大师」，插件现名「墨盒」，文件名保持原样）。
+数值不是目测：本次新增 `scripts/render-design-pdf.mjs`（自写最小 PDF 渲染器：FlateDecode →
+内容流 → 路径 → 扫描线填充，非零环绕 + 超采样），把页面光栅成图并 dump 每条填充路径的
+bbox / 色值 / 圆角。设计基线写在 [docs/设计基线-UI重设计.md](docs/设计基线-UI重设计.md)。
+
+- **设计令牌层**：新增 `src/client/css/tokens.ts`（暖纸面 + 墨绿，浅/深两套 `--gmm-*`）。
+  **插件不再直接吃宿主的 `--dsw-alias-*`**：历史样式（`styles.ts` 里的 341 处引用）已整体迁移到
+  `--gmm-*`。这样浅/深两套的层级与对比度可以按设计稿钉死，代价是宿主换第三方主题时插件不跟随。
+- **双主题**：新增 `src/client/platform/theme.ts` 探测宿主明暗（探针元素背景取
+  `--dsw-alias-bg-layer-1` 读回 computed rgb 判亮度，退化到 body/html 底色、
+  `prefers-color-scheme`），写到 `<html data-gmm-theme="dark|light">`；监听 `matchMedia` +
+  `<html>/<body>` 属性 + `<head>` 子节点。属性挂 `<html>` 而不是面板根节点：面板的 Hook 槽位被
+  `verify-feedback` 逐槽喂桩（13 个，数量/顺序不能变），不该为换肤加 Hook；设置页也能跟着换。
+- **外壳重排**（`shell.ts` + `studio-panel.ts`）：原来是「顶栏品牌 + 8 个页签宫格 + 内容」，
+  现在是 `.SPR_app` = **左 232 侧栏**（38 图标 + 品牌 + 新建项目 + 创作工具导航 + 底部当前项目卡，
+  项目列表改成卡片点开的 `<details>` 弹层 —— 用原生 details 是为了不新增 `addEventListener`，
+  棘轮只剩 5 个余量）+ **64 顶栏**（面包屑 / 本地处理状态；原先那颗「设置」按钮按用户要求去掉了）+ **唯一滚动内容区**
+  （页头 28px 标题 + 步骤条整卡 + 主卡/右列 298）。
+- **组件层**：新增 `src/client/css/components.ts`，把历史共享类（`.SPR_btn` `.SPR_input` `.SPR_card`
+  `.SPR_chip` `.SPR_drop` …）统一到 32 高 / 8 圆角 / 2px 焦点环；新增 `css/sprite.ts`、`css/modules.ts`
+  两个模块级样式位（`styles.ts` 末尾按 tokens → legacy → shell → components → sprite → modules 拼接）。
+- **侧栏导航的副标题常驻 DOM、非选中项用 CSS 收起**：`verify-feedback` 的「切 English 后 8 个
+  页签标题/副标题都变英文」按文本比对，收起 DOM 会让它只剩 1 条。同理「实验」标记是
+  `span` 兄弟节点（不是拼进标题），否则文本比对会被污染。
+- **可视化验收脚手架**：`scripts/preview-ui.mjs` 用 esbuild 打包真实样式表 + 新版外壳的真实 DOM
+  结构，生成 `.preview/ui-preview.html` / `-dark.html`，再用本机 Edge 截图对照设计稿
+  （DSH web 需要启动令牌，脚本拿不到，所以真机截图仍需人工）。`.preview/`、`.tmp-design/` 已进 `.gitignore`。
+- ⚠️ **本次未做的事**：README 里的 11 张旧 UI 截图没有重拍（需要带令牌的真机、人工点选）；
+  `verify-host` / `verify-tools` / `verify-pipeline` / `verify-map-client` 在本机跑不了
+  （整机没有 ffmpeg/ffprobe，报 `ENOENT`；非本次改动引起）。
+
+#### ④ 插件改名：游戏素材大师 → 墨盒 / Inkbox（`feat(rename)`）
+
+用户要求：**插件名改成「墨盒」**（英文 **Inkbox**），模块①「八方向图生成」改名 **「动画帧工具盒」**。
+因为是整体改名，内部标识也一并换掉（用户明确选了这条路）：
+
+- **显示文案**：所有界面上写「游戏素材大师」的地方 → **墨盒**（侧栏品牌、侧栏入口、设置页标题、
+  面包屑兜底、空状态、错误提示、内置提示词标题、工具面描述）；英文 `Game Material Master` → **Inkbox**。
+  模块①的标题 / 页签 / 设置页「功能管理」/ 对话模块名 / 文档标题统一改成 **动画帧工具盒**，
+  英文 **Animation frame toolbox**；正文里「八方向图」作为名词保留（阶段①「八方向绿幕图」、项目卡
+  「八方向图 · 8 帧」等描述仍然准确）。**对话工具名仍是 `game_material`**（协议标识，不随品牌改）。
+- **内部标识**：npm 包名 `dsh-game-material-master` → **`dsh-inkbox`**；cordis bundle id
+  `game-material-master` → `inkbox`；`cordis.patch.yml` 的 `id` / `name` 同步；资源路由前缀
+  `/dsh-game-material-master/…` → **`/dsh-inkbox/…`**（`src/assets.ts` `ROUTE_PREFIX`、
+  `src/wire.ts` `PACKAGE_NAME`、各模块 `assetBasePath` 硬编码串、`src/tools.ts` 的本地 `ROUTE_PREFIX`）；
+  数据目录 `<DSH_HOME>/game-material-master/` → **`<DSH_HOME>/inkbox/`**；日志前缀 `[game-material-master]`
+  → `[inkbox]`；GitHub 仓库 URL 全部改成 `universe-st/dsh-inkbox`。
+- **数据迁移**：`src/config.ts` 的 `migrateLegacyDataRootSync()`（**同步**）按
+  `LEGACY_DATA_ROOTS = ["game-material-master", "8dir-sprites"]` 顺序找旧目录，启动时把**最先找到的那个**
+  整体 rename 到 `inkbox/`；返回值是「被搬的旧目录名 / null」。`inkbox/` 已存在时不动，
+  除非它是个**空目录**（上次迁移半途失败留下的残壳）——空壳会被清掉再搬，避免「项目全没了」。
+  ⚠️ 必须在 `apply()` **第一行、同步**调用，两个坑都踩过：
+  ① 异步 fire-and-forget 会和紧随其后的 `void loadConfig()` 赛跑，loadConfig 先读到「
+  `inkbox/config.json` 不存在」→ 回落到默认配置并**永久缓存**（升级后 Key 全空、一保存就把迁来的
+  config 覆盖掉）；② 放模块顶层 `await` 则是**一 import 就动盘**，自检脚本 / 开发工具 import
+  `lib/index.js` 时会把真实 `~/.dsh` 迁走（2026-10-28 实测踩到，已改回）。
+- **新增回归** `scripts/verify-rename.mjs`（23 项）：包名 / bundle id / 路由前缀 / 英文词条 / 模块标题
+  一致性 + 旧目录迁移四种情形（纯旧目录、空壳、已有内容不覆盖、全新安装不多建目录、没有旧目录返回 null）。
+- **自检同步**：`verify-host` / `verify-feedback` / `verify-client` / `verify-tools` / `verify-music-*` /
+  `verify-sfx-*` / `verify-map-*` / `verify-custom-image` / `verify-live-bundle` 等里写死的旧包名 /
+  旧路由 / 旧数据目录 / 旧文案 fixture 全部跟着改；`verify-feedback` 的英文页签断言里
+  `enTable["八方向图生成"]` → `enTable["动画帧工具盒"]`。
+- **环境侧（本机）**：`~/.dsh/profiles/web` 的 `link:` 依赖名与 `dsh.profile.bundles` 条目要一起改成
+  `dsh-inkbox`（`node_modules/dsh-inkbox` junction 指向本仓库），否则重启后插件加载不到；DSH 必须重启。
+
+#### 本次复跑的自检（UI 重设计 + 改名这一批）
+
+`verify-arch` **18** · `verify-client` **368** · `verify-feedback` **218** · `verify-i18n` **9** ·
+`verify-iso-client` **83** · `verify-sfx-client` **29** · `verify-music-client` **67**，全部通过。
+
+改名的回归（2026-10-28 本机复核，先用 `npm i` 把 ffmpeg/ffprobe 临时装到
+`%LOCALAPPDATA%\dsh-verify-ffmpeg` 并加进 `PATH` / `FFMPEG_PATH`，否则这台机器上宿主类自检全线卡
+`spawn ffmpeg ENOENT`）：`verify-host` **387** · `verify-tools` **197** · `verify-pipeline` **35** ·
+`verify-jobs` **55** · `verify-custom-image` **68** · `verify-toapis` **43** · `verify-comfy` **124** ·
+`verify-music` **86** · `verify-sfx` **55** · `verify-sfx-gateway` **39** · `verify-map` **240** ·
+`verify-map-agent` **35** · `verify-map-pipeline` **429** · `verify-iso` **42** · `verify-iso-gateway` **64** ·
+`verify-rename` **23** · `verify-project-windows-lock`，全部通过（宿主链路里路由前缀 `/dsh-inkbox/…`、
+plugin `name = dsh-inkbox`、数据目录 `inkbox/` 与旧目录迁移都已实测）。
+
+本机仍然过不了、**与改名无关**的既有红（留待环境/后续处理）：`verify-music-score` / `verify-music-gateway`
+（缺 Python 3、`verify-music-gateway` 的 `runMusicGeneration` 还停在 P8 付费 confirm 之前的写法）、
+`verify-iso-pipeline`（缺 `unzip`）、`verify-map-gateway` 1 项（断言 `localPath.includes("preview/agent")`，
+Windows 反斜杠路径必然不过）、`verify-map-client` 14 项（UI 重设计后旧断言未同步：`--dsw-alias-*` →
+`--gmm-*`、`MAP_pointToCell` 已搬走、项目创建入口移到外壳等）。`verify-music-client` / `verify-sfx-client`
+会打印「全部通过」后**不退出进程**（既有脚本遗留句柄问题）。
 
 ⚠️ 宿主半区有改动（`src/index.ts` / `jobs.ts` / `receipts.ts` 等）：**升级后要重启 DSH**；浏览器半区刷新即可。
 
@@ -364,11 +457,11 @@ Conventional Commits，中文描述：`feat(rig): …` / `docs: …` / `fix(spri
 #### ④ 可选 ToAPIs 异步图片 / 视频后端（PR #7）
 
 - 由 [@ToAPIs-2025](https://github.com/ToAPIs-2025) 在
-  [PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7) 贡献（`feat(toapis)`）。
+  [PR #7](https://github.com/universe-st/dsh-inkbox/pull/7) 贡献（`feat(toapis)`）。
 - 设置页独立配置 ToAPIs（Base URL / Key / 图片模型与尺寸 / 视频开关与参数 / 超时），
   生图后端可切 ToAPIs，图生视频可改走 ToAPIs 异步接口；默认后端仍是火山方舟 / MiniMax，
   与 ComfyUI、自定义协议、本地处理互不影响。
-- 异步媒体协议（提交 → 轮询 → 下载），回执落在 `<DSH_HOME>/game-material-master/toapis-receipts/`，
+- 异步媒体协议（提交 → 轮询 → 下载），回执落在 `<DSH_HOME>/inkbox/toapis-receipts/`，
   提交不确定或缺 taskId 时**阻止重复付费提交**；取消本地等待不会取消远端付费任务。
 - 视频首版只接受文生视频或一张首帧图（MP4 / 无音频 / 16:9）；尾帧与多模态参考在付费提交前拒绝；
   Seedance Global 变体拒绝。
@@ -654,7 +747,7 @@ git push origin v0.1.1     # ← 必须显式推！--follow-tags 只推附注标
 
 # 3. 若 README 引用仓库内的图片，先确认线上绝对 URL 已经 200
 curl -s -o /dev/null -w "%{http_code}\n" \
-  "https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-00-workbench.png"
+  "https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-00-workbench.png"
 
 # 4. 预览将要发布的内容（files 白名单）
 npm pack --dry-run
@@ -669,13 +762,13 @@ registry 有**分钟级传播延迟**，不要看到 404 就以为发布失败�
 
 ```bash
 # 版本端点通常 1 分钟内从 404 变 200
-curl -s "https://registry.npmjs.org/dsh-game-material-master/0.1.1" | head -c 200
+curl -s "https://registry.npmjs.org/dsh-inkbox/0.1.1" | head -c 200
 
 # dist-tag 更慢，实测约 2 分钟后 latest 才切到新版本
-npm view dsh-game-material-master dist-tags
+npm view dsh-inkbox dist-tags
 ```
 
-实测时间线（0.1.1）：`npm publish` 返回 `+ dsh-game-material-master@0.1.1` 后，
+实测时间线（0.1.1）：`npm publish` 返回 `+ dsh-inkbox@0.1.1` 后，
 版本端点约 1 分钟内 404 → 200，`latest` 约 2 分钟后从 `0.1.0` 切到 `0.1.1`。
 
 ### 发布相关的几个坑
@@ -684,7 +777,7 @@ npm view dsh-game-material-master dist-tags
   必须 `git push origin v0.1.1` 单独推。漏了就出现「commit 在远端、tag 只在本地」。
 - **README 里的图片必须用绝对 URL。** npmjs.com 不可靠地解析相对图片路径，用
   `docs/images/x.png` 在 GitHub 上正常、在 npm 包页面上是裂图。所以统一写
-  `https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/x.png`。
+  `https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/x.png`。
   代价是仓库内改图后要跟着改 URL，别写成相对路径「图方便」。
 - **截图不进 npm tarball。** `files` 白名单只有 `lib` / `README.md` / `README.en.md` /
   `cordis.patch.yml`，`docs/` 不发布——这也是上一条必须用绝对 URL 的原因。

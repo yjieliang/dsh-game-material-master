@@ -588,7 +588,7 @@ function sleep(ms: number, context: SignalContext): Promise<void> {
 /** 调一次自定义后端。`images` 为空时是文生图，非空时按各协议的做法带上参考图。 */
 export async function generateCustomImage(request: CustomImageRequest, signal?: AbortSignal): Promise<CustomImageResult> {
   if (request.baseUrl.trim() === "") {
-    throw new CustomImageError("尚未配置自定义生图服务的地址（设置 → 游戏素材大师 → 自定义生图模型）");
+    throw new CustomImageError("尚未配置自定义生图服务的地址（设置 → 墨盒 → 自定义生图模型）");
   }
   if (request.prompt.trim() === "" && request.protocol !== "comfyui") {
     throw new CustomImageError("提示词为空");

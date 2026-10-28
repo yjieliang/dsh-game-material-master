@@ -1410,7 +1410,7 @@ export const METHODS: MethodSpec[] = [  { method: "getConfig", result: configVie
 ];
 
 
-export const PACKAGE_NAME = "dsh-game-material-master";
+export const PACKAGE_NAME = "dsh-inkbox";
 export const SERVICE_NAME = "gameStudio";
 
 /**

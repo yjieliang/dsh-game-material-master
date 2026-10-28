@@ -515,7 +515,7 @@ function injectImage(workflow: ComfyWorkflow, bindings: ComfyBindings, name: str
     return;
   }
   const newId = nextNodeId(workflow);
-  workflow[newId] = { class_type: "LoadImage", inputs: { image: name }, _meta: { title: "游戏素材大师 · " + label + "图" } };
+  workflow[newId] = { class_type: "LoadImage", inputs: { image: name }, _meta: { title: "墨盒 · " + label + "图" } };
   node.inputs = { ...(node.inputs ?? {}) };
   node.inputs[target.input] = [newId, 0];
   notes.push("已插入 LoadImage 节点 " + newId + "，把 " + name + " 接到 " + formatBinding(target) + "。");
@@ -610,7 +610,7 @@ export const DEFAULT_COMFY_WORKFLOW_TEXT = JSON.stringify(
     "3": {
       inputs: { image: "" },
       class_type: "LoadImage",
-      _meta: { title: "游戏素材大师 · 首帧图" }
+      _meta: { title: "墨盒 · 首帧图" }
     }
   },
   null,

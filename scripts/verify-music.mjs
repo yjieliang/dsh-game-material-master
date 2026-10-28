@@ -261,8 +261,8 @@ try {
   section("4) 任务生命周期");
   const made = await gw.createMusicJob({ name: "自检歌曲", source: { kind: "prompt", prompt: "a short bright test tone", note: "90 秒" }, reviewMode: "auto" });
   check("任务 id 以 a 开头", /^a[a-z0-9]+$/u.test(made.id), made.id);
-  check("任务落盘", (await stat(join(HOME, "game-material-master", "music-jobs", made.id, "job.json"))).isFile());
-  check("新建任务视图带 assetBase", made.assetBase === `/dsh-game-material-master/music-assets/${made.id}/`, made.assetBase);
+  check("任务落盘", (await stat(join(HOME, "inkbox", "music-jobs", made.id, "job.json"))).isFile());
+  check("新建任务视图带 assetBase", made.assetBase === `/dsh-inkbox/music-assets/${made.id}/`, made.assetBase);
   check("新建任务无歌曲", made.songs.length === 0 && made.songsTotal === 0);
   const gen = await gw.runMusicGeneration({ confirm: true, jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "a short bright test tone" } });
   check("提交返回 started", gen.started === true, JSON.stringify(gen));
@@ -274,10 +274,10 @@ try {
   check("歌曲 URL 走 music-assets 路由", settled.songs.every((song) => String(song.url).includes(`/music-assets/${made.id}/songs/`)));
   const blocked = await gw.runMusicGeneration({ confirm: true, jobId: made.id, engine: "suno", mode: "prompt", params: { prompt: "again" } });
   check("已有歌曲后再提交必须 regenerate:true", blocked.started === false && /regenerate/.test(blocked.reason ?? ""), blocked.reason);
-  check("歌曲已下载文件可读", (await stat(join(HOME, "game-material-master", "music-jobs", made.id, settled.songs[0].file))).isFile());
+  check("歌曲已下载文件可读", (await stat(join(HOME, "inkbox", "music-jobs", made.id, settled.songs[0].file))).isFile());
   // 模拟线上真实故障：文件在、但 CDN 返回的是随机字节。界面不能继续当可播放。
   const brokenSongId = settled.songs[0].id;
-  const brokenPath = join(HOME, "game-material-master", "music-jobs", made.id, settled.songs[0].file);
+  const brokenPath = join(HOME, "inkbox", "music-jobs", made.id, settled.songs[0].file);
   await writeFile(brokenPath, Buffer.from("not audio at all"));
   const brokenView = await gw.getMusicJob({ jobId: made.id });
   const brokenSong = brokenView.songs.find((song) => song.id === brokenSongId);
@@ -303,7 +303,7 @@ try {
   const edited = await waitIdle(made.id);
   const version = edited.versions.find((entry) => entry.id === render.versionId);
   check("版本渲染成功", version?.status === "ready" && version?.duration > 1.9 && version?.duration < 2.1, JSON.stringify(version));
-  check("版本文件存在", (await stat(join(HOME, "game-material-master", "music-jobs", made.id, version.file))).isFile());
+  check("版本文件存在", (await stat(join(HOME, "inkbox", "music-jobs", made.id, version.file))).isFile());
   check("版本为试听（preview）", version.preview === true);
   const same = await gw.renderMusicEdit({ jobId: made.id, songId: settled.songs[0].id, ops: { start: 0.5, end: 2.5, gainDb: -6, fadeIn: 0.2, fadeOut: 0.2, normalize: true, format: "mp3" } });
   check("相同参数复用已有版本", same.started === false && same.reused === true && same.versionId === version.id, JSON.stringify(same));
@@ -315,7 +315,7 @@ try {
   check("导出单文件并返回可下载 URL", exported.ok === true && /\.wav$/u.test(exported.file) && String(exported.downloadUrl).includes("download=1"), JSON.stringify(exported).slice(0, 300));
   const zip = await gw.exportMusic({ jobId: made.id });
   check("导出全部自动打 zip", zip.zip === true && String(zip.file).endsWith(".zip"), String(zip.file));
-  const zipBytes = await readFile(join(HOME, "game-material-master", "music-jobs", made.id, zip.file));
+  const zipBytes = await readFile(join(HOME, "inkbox", "music-jobs", made.id, zip.file));
   check("zip 以 PK 开头", zipBytes[0] === 0x50 && zipBytes[1] === 0x4b);
 
   section("6.5) 音频内核（裁剪 / 增益 / 淡入淡出 / 响度）");
@@ -343,16 +343,16 @@ try {
   const routeServer = createServer((req, res) => routes[0].handler(req, res));
   await new Promise((resolve) => routeServer.listen(0, "127.0.0.1", resolve));
   const routePort = routeServer.address().port;
-  const songPath = `/dsh-game-material-master/music-assets/${made.id}/${settled.songs[0].file}`;
+  const songPath = `/dsh-inkbox/music-assets/${made.id}/${settled.songs[0].file}`;
   const full = await fetch(`http://127.0.0.1:${routePort}${songPath}`);
   check("音乐资源 200 + audio/mpeg", full.status === 200 && String(full.headers.get("content-type")).startsWith("audio/"), `${full.status} ${full.headers.get("content-type")}`);
   const range = await fetch(`http://127.0.0.1:${routePort}${songPath}`, { headers: { Range: "bytes=0-99" } });
   check("音乐资源支持 Range（206）", range.status === 206 && (await range.arrayBuffer()).byteLength === 100, String(range.status));
   const download = await fetch(`http://127.0.0.1:${routePort}${songPath}?download=1`);
   check("?download=1 带 Content-Disposition", String(download.headers.get("content-disposition")).includes("attachment"), download.headers.get("content-disposition"));
-  const forbidden = await fetch(`http://127.0.0.1:${routePort}/dsh-game-material-master/music-assets/${made.id}/job.json`);
+  const forbidden = await fetch(`http://127.0.0.1:${routePort}/dsh-inkbox/music-assets/${made.id}/job.json`);
   check("未列入白名单的子目录 403", forbidden.status === 403, String(forbidden.status));
-  const traversal = await fetch(`http://127.0.0.1:${routePort}/dsh-game-material-master/music-assets/${made.id}/songs/%2e%2e%2fjob.json`);
+  const traversal = await fetch(`http://127.0.0.1:${routePort}/dsh-inkbox/music-assets/${made.id}/songs/%2e%2e%2fjob.json`);
   check("目录穿越被拒绝", traversal.status === 400 || traversal.status === 403, String(traversal.status));
   routeServer.close();
 
@@ -413,7 +413,7 @@ try {
   await gw.deleteMusicJob({ jobId: made.id });
   let removed = false;
   try {
-    await stat(join(HOME, "game-material-master", "music-jobs", made.id));
+    await stat(join(HOME, "inkbox", "music-jobs", made.id));
   } catch {
     removed = true;
   }

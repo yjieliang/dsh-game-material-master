@@ -1,14 +1,19 @@
-[English](https://github.com/universe-st/dsh-game-material-master/blob/main/README.en.md) | 中文
+[English](https://github.com/universe-st/dsh-inkbox/blob/main/README.en.md) | 中文
 
-# 游戏素材大师
+# 墨盒
 
 **从一张角色设定图出发，批量做出游戏里真正要用的素材。**
 
 火山方舟 **Seedream** 负责生图，**MiniMax**（或本机 **ComfyUI**）负责图生视频，抠像、抽帧、
 像素量化、合图全部在本机用 `ffmpeg` 完成——不需要任何系统图像库，素材也不会被传到第三方服务。
 
-[![npm](https://img.shields.io/npm/v/dsh-game-material-master?color=blue)](https://www.npmjs.com/package/dsh-game-material-master)
+[![npm](https://img.shields.io/npm/v/dsh-inkbox?color=blue)](https://www.npmjs.com/package/dsh-inkbox)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+> **🔤 改名说明（0.12.0 起）**：插件原名「游戏素材大师」（`dsh-game-material-master`），现在叫**「墨盒」**，
+> 英文名 **Inkbox**，包名 / 仓库 / 资源路由 / 数据目录统一改成 `inkbox`；模块①也由「八方向图生成」改名为
+> **「动画帧工具盒」**。已安装旧版的用户升级后：**首次启动会把 `<DSH_HOME>/game-material-master/` 自动迁移成
+> `<DSH_HOME>/inkbox/`**（更早的 `8dir-sprites/` 也一并兼容），项目数据不用手动搬；对话工具名仍是 `game_material`。
 
 > **🆕 0.11.0 更新**：两套地图编辑器补上 **Agent 闭环** —— `mapInspect` / `isoInspect` 按区域读逐格、物件、整图、标记与通行性，
 > `mapRender` / `isoRender` 同步出**检查图**（区域裁切、放大、可叠标记 / 网格 / 通行性 / 轮廓，返回本机绝对路径交给 `read_image`）；
@@ -21,7 +26,7 @@
 > wait / review / approve / reviewMode / upload`），常驻上下文从 **49 KB 降到约 4 KB**，流程与方法表改成按需读手册；
 > 模块⑤换成**全本地的 45° 地图编辑器**（2:1 等距、4×4 自动连接、多格 / 高处物件、动画地块、标记层、环绕、
 > 一键生成；还能「**AI 生成素材**」：自动开对话生成，整理好回链到「新增素材」确认导入）；
-> 新增**可选 ToAPIs 异步图片 / 视频后端**（感谢 [PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7)，
+> 新增**可选 ToAPIs 异步图片 / 视频后端**（感谢 [PR #7](https://github.com/universe-st/dsh-inkbox/pull/7)，
 > 来自 [@ToAPIs-2025](https://github.com/ToAPIs-2025)）。
 > 0.9.x 的 **音效生成**（Seed-Audio）与网络重试修复继续保留。
 >
@@ -29,14 +34,14 @@
 >
 > **0.10.2 更新**：ToAPIs 生图可选**原生透明背景**（GPT Image，下载原图不再二次抠像），图生视频可选
 > **画幅比例**（方形角色用 1:1）；透明首帧会先铺白再交给视频模型。感谢
-> [PR #8](https://github.com/universe-st/dsh-game-material-master/pull/8)（[@YamiAnn](https://github.com/YamiAnn)）
+> [PR #8](https://github.com/universe-st/dsh-inkbox/pull/8)（[@YamiAnn](https://github.com/YamiAnn)）
 > 与真机验收记录。
-> 完整变更见 [AGENTS.md 发布记录](https://github.com/universe-st/dsh-game-material-master/blob/main/AGENTS.md#已发布版本)。
+> 完整变更见 [AGENTS.md 发布记录](https://github.com/universe-st/dsh-inkbox/blob/main/AGENTS.md#已发布版本)。
 
-![游戏素材大师 · 工作台](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-00-workbench.png)
+![墨盒 · 工作台](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-00-workbench.png)
 
-> **30 秒上手**：`dsh plugin --profile web add dsh-game-material-master` → 重启 DSH →
-> 侧栏点「游戏素材大师」→ 设置里填好要用的 API Key（生图 / 视频；音效另填语音 Key）→ 新建项目、上传设定图 → 点「生成转圈视频」
+> **30 秒上手**：`dsh plugin --profile web add dsh-inkbox` → 重启 DSH →
+> 侧栏点「墨盒」→ 设置里填好要用的 API Key（生图 / 视频；音效另填语音 Key）→ 新建项目、上传设定图 → 点「生成转圈视频」
 >（默认路径：角色原地匀速转一圈，再自动截出八个方向；要逐方向生图就在阶段①切一下方式）。
 >
 > 侧栏那个入口上还有一个**小折角菜单按钮**：点它直接弹出八个功能，一步跳进要用的那个；
@@ -47,7 +52,7 @@
 
 | 模块 | 做什么 | 走完能拿到 |
 |---|---|---|
-| **① 八方向图生成** | 一张设定图 → 8 方位 × 8 帧（默认「转圈截帧」：一段转圈视频截出八个方向；两处视频都能**自己选本地文件**顶替生成） | 可用 WASD 操控预览的行走精灵图（中间每一张图都能单独存或整包 zip） |
+| **① 动画帧工具盒** | 一张设定图 → 8 方位 × 8 帧（默认「转圈截帧」：一段转圈视频截出八个方向；两处视频都能**自己选本地文件**顶替生成） | 可用 WASD 操控预览的行走精灵图（中间每一张图都能单独存或整包 zip） |
 | **② 图片生成** | 提示词（可带参考图）→ 出图 → 抠绿幕 | 干净透明的 PNG 立绘 / 道具 |
 | **③ 序列帧生成** | 首尾帧或参考视频 → 生成视频 → 抽帧 → 抠像 | 横向排布、可循环播放的序列帧 |
 | **⑤ 45°地图编辑器**（**全本地零计费**） | 导入自己的 45° 菱形素材（或用内置素材）→ 2:1 等距画布上画地面 / 自动连接 / 多格物件 / 标记 → 导出。素材属性在导入时一次定死（物件大小可在「新增素材」里按地格实时预览并自己调），之后只能改名字 / 播放速度 / 循环方式；内置草地、泥土、石地、水面、水岸自动连接与树 / 石 / 灌木 / 木桶 / 石屋 | PNG + 存档 JSON（等距网格、自动连接、动画地块、多格物件、标记点、通行性）；勾几项导几项，多个产物自动打成 ZIP |
@@ -85,12 +90,12 @@
 > 对真实立绘经常需要人工校正（agent 视觉先验或手工拖放），导出的 Spine / DragonBones 产物也还没经过
 > 足够的引擎侧验证。界面上该模块带「实验性」角标，并在每次进入时弹窗说明。本文只展示前三个模块。
 > 如果你需要它、或者想一起把它做扎实，欢迎到
-> [GitHub 仓库](https://github.com/universe-st/dsh-game-material-master) 参与开发，
+> [GitHub 仓库](https://github.com/universe-st/dsh-inkbox) 参与开发，
 > 或加入 **QQ 群 `1126382236`**（见文末「交流与反馈」）。
 
 ---
 
-## ① 八方向图生成
+## ① 动画帧工具盒
 
 一张正面设定图进去，八个方位一次做完：**绿幕图 → 行走视频 → 序列帧 → 精灵整图 → 可操控预览**。
 
@@ -153,27 +158,27 @@ flowchart LR
 **转圈截帧（默认）**：一段「原地匀速转一整圈」的绿幕视频，按时间轴截出八个方向；
 轴上八个圆圈就是各自的截帧位置，拖着改，松手即时重切（本机、免费）。
 
-![转圈截帧](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-01b-sprite-turn.png)
+![转圈截帧](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-01b-sprite-turn.png)
 
 **逐方向生图（备选）**：八个方位各自生图，单张更清晰，适合只要几个方向或追求单张质量时。
 
-![八方向绿幕图](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-01-sprite-images.png)
+![八方向绿幕图](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-01-sprite-images.png)
 
 ### ② 行走动作视频
 
-![行走动作视频](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-02-sprite-videos.png)
+![行走动作视频](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-02-sprite-videos.png)
 
 ### ③ 提取序列帧
 
-![提取序列帧](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-03-sprite-frames.png)
+![提取序列帧](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-03-sprite-frames.png)
 
 ### ④ 抠绿幕合成整图
 
-![抠绿幕合成整图](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-04-sprite-sheet.png)
+![抠绿幕合成整图](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-04-sprite-sheet.png)
 
 ### ⑤ 行走预览
 
-![行走预览](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-05-sprite-preview.png)
+![行走预览](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-05-sprite-preview.png)
 
 > **单独重跑**：任何一步不满意，只重做那一步——单个方位、单个阶段都行，不必整批重来。
 
@@ -191,9 +196,9 @@ flowchart LR
 3. 选好模型 / 尺寸 / 张数，点**生成**。
 4. 结果区**逐张**看：通过、下载原图 / 下载 PNG（抠像结果）、重新生成、删除；背景占比会直接标出来，判断抠像干不干净。
 
-![图片生成 · 提示词与参考图](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-06-image.png)
+![图片生成 · 提示词与参考图](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-06-image.png)
 
-![图片生成 · 抠像结果](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-07-image-keyed.png)
+![图片生成 · 抠像结果](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-07-image-keyed.png)
 
 ---
 
@@ -218,9 +223,9 @@ flowchart LR
    **动作连不连贯、抠像边缘稳不稳，直接看播放**。
 5. **验收**：三步各自打「通过」。
 
-![序列帧生成 · 视频输入](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-08-sequence-input.png)
+![序列帧生成 · 视频输入](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-08-sequence-input.png)
 
-![序列帧生成 · 抠像合成与循环预览](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-09-sequence-compose.png)
+![序列帧生成 · 抠像合成与循环预览](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-09-sequence-compose.png)
 
 ---
 
@@ -256,7 +261,7 @@ flowchart LR
    「MIDI → 渲染音频 → 上传 → cover」的链路，比只发文字标签更贴近你的配器与段落。若 Suno 判定音频有版权，
    会提示你确认后走付费版权通道。结果仍是重新演奏，不会逐音一致。
 
-**依赖**（设置 → 游戏素材大师 → 谱曲模式里有探测与路径输入）：
+**依赖**（设置 → 墨盒 → 谱曲模式里有探测与路径输入）：
 
 - `python3 -m pip install scoremill` —— 写 MIDI 必需；
 - `fluidsynth` + 一个 `.sf2`（默认找 `~/Library/Audio/SoundFonts/FluidR3_GM.sf2`）—— 更好的试听，可选；
@@ -331,14 +336,15 @@ game_material({ action: "call", method: "mapRender", payload: { projectId, regio
 
 ```bash
 # npm 安装
-dsh plugin --profile web add dsh-game-material-master
+dsh plugin --profile web add dsh-inkbox
 
 # 本地目录安装（开发时）
-dsh plugin --profile web add /path/to/dsh-game-material-master
+dsh plugin --profile web add /path/to/dsh-inkbox
 ```
 
-包已发布到 npm：[dsh-game-material-master](https://www.npmjs.com/package/dsh-game-material-master)
-（当前 `0.11.0`，`latest`）。本包没有运行时依赖，`dsh plugin add` 拉下来即可用。
+包**已改名**为 npm 上的 [`dsh-inkbox`](https://www.npmjs.com/package/dsh-inkbox)：
+`0.12.0` 起用新包名发布；旧包 [`dsh-game-material-master`](https://www.npmjs.com/package/dsh-game-material-master)
+停在 `0.11.0`，装旧包也照常能用，只是不再更新。本包没有运行时依赖，`dsh plugin add` 拉下来即可用。
 
 **DSH 版本**：`>=0.2.0-rc.2 <0.3.0`（`package.json` 的 `engines.dsh`；DSH 0.2.1 起插件管理器优先按它判断兼容性）。
 Web 部署用 `--public-url https://host/prefix/` 时，深链接与产物地址会跟着补路径前缀。
@@ -352,13 +358,14 @@ Windows 注册表里的同名变量 → WinGet / Scoop / Chocolatey 与 `C:\ffmp
 用 `setx` 设过路径仍提示找不到也正常——`setx` 只写注册表，已经在跑的进程继承不到，插件会自己再读一遍。
 本包**没有任何运行时 npm 依赖**，`zod`、`cordis` 等全部从 DSH 自身的安装树解析。
 
-> 从旧版 `dsh-8dir-sprites` 升级时，首次启动会自动迁移数据目录，已有项目无缝接上。
+> 从旧版升级时，首次启动会自动迁移数据目录：`game-material-master/`（以及更早的 `8dir-sprites/`）
+> 会整体搬到 `inkbox/`，已有项目和配置无缝接上。
 
 ## 配置
 
-**设置 → 游戏素材大师**：
+**设置 → 墨盒**：
 
-![设置](https://raw.githubusercontent.com/universe-st/dsh-game-material-master/main/docs/images/gmm-10-settings.png)
+![设置](https://raw.githubusercontent.com/universe-st/dsh-inkbox/main/docs/images/gmm-10-settings.png)
 
 | 项 | 说明 |
 |---|---|
@@ -377,13 +384,13 @@ Windows 注册表里的同名变量 → WinGet / Scoop / Chocolatey 与 `C:\ffmp
 | 音效生成（火山引擎 Seed-Audio） | 填语音控制台 API Key（不是方舟 Key）、Base URL、默认模型 `seed-audio-1.0`、默认格式/采样率与超时；「测试连接」会真实生成一条极短音效（少量费用） |
 | 功能管理 | 逐个开关八个模块：关掉的模块界面上不再出现，**对话里的 AI 也调不到**（见下） |
 
-Key 只写入本机 `<DSH_HOME>/game-material-master/config.json`，界面回显始终脱敏。
+Key 只写入本机 `<DSH_HOME>/inkbox/config.json`，界面回显始终脱敏。
 **生图后端与模型是插件级设置，所有需要生图的模块共用**，切换后任务自动对齐新档位。
 图生视频始终只走 MiniMax，不受生图后端影响。
 
 ### 自定义生图后端
 
-除了火山方舟，插件也支持把你的**自己的生图服务**接进来（设置 → 游戏素材大师 → 生图后端）：
+除了火山方舟，插件也支持把你的**自己的生图服务**接进来（设置 → 墨盒 → 生图后端）：
 
 | 协议 | 生图 | 带参考图 | 说明 |
 |---|---|---|---|
@@ -426,7 +433,7 @@ Key 只写入本机 `<DSH_HOME>/game-material-master/config.json`，界面回显
 
 ### 功能管理（隐藏不用的模块）
 
-不用的模块可以在**设置 → 游戏素材大师 → 功能管理**里关掉，随时再打开，已有项目数据不会删：
+不用的模块可以在**设置 → 墨盒 → 功能管理**里关掉，随时再打开，已有项目数据不会删：
 
 - **界面**：工作台页签、侧栏快捷菜单里都不再出现它；如果当时正停在这个模块，会自动落到第一个可见模块。
 - **对话**：`game_material` 的 `guide` / `call` / `status` / `intake` / `upload` / `wait` / `review` / `approve`
@@ -472,7 +479,7 @@ Key 只写入本机 `<DSH_HOME>/game-material-master/config.json`，界面回显
 ## 产物位置
 
 ```
-<DSH_HOME>/game-material-master/
+<DSH_HOME>/inkbox/
 ├── projects/<id>/      八方向图（source / images / videos / frames / keyed / preview / out）
 ├── image-jobs/<id>/    图片生成
 ├── sequence-jobs/<id>/ 序列帧生成
@@ -522,7 +529,7 @@ T("第 {n0} 帧", { n0: index + 1 })                        // 带插值，英�
 [`docs/ENGINEERING.md`](docs/ENGINEERING.md) 的「客户端分层」一节。
 
 本文截图由 Playwright 对着真实界面拍摄，原图在
-[`docs/images/`](https://github.com/universe-st/dsh-game-material-master/tree/main/docs/images)。
+[`docs/images/`](https://github.com/universe-st/dsh-inkbox/tree/main/docs/images)。
 
 ## 已知取舍
 
@@ -538,9 +545,9 @@ T("第 {n0} 帧", { n0: index + 1 })                        // 带插值，英�
 
 ## 交流与反馈
 
-- **QQ 群：`1126382236`**（群名「DSH游戏素材大师插件」）——新版本发布、路线图和踩坑经验都在群里同步，
+- **QQ 群：`1126382236`**（群名仍是「DSH游戏素材大师插件」，没跟着插件改名）——新版本发布、路线图和踩坑经验都在群里同步，
   欢迎进群获取最新动态，也欢迎直接参与开发：提需求、报 bug、认领模块都可以在群里聊。
-- 也可以在 [GitHub Issues](https://github.com/universe-st/dsh-game-material-master/issues)
+- 也可以在 [GitHub Issues](https://github.com/universe-st/dsh-inkbox/issues)
   提 issue 或直接发 PR。
 
 ## 致谢
@@ -566,7 +573,7 @@ T("第 {n0} 帧", { n0: index + 1 })                        // 带插值，英�
   [XIAODUOLU/Midra](https://github.com/XIAODUOLU/Midra) 的「prompt-to-code MIDI、可编辑、再决定是否生成音频」。
   原仓库版权归其作者所有，特此致谢。
 - **可选 ToAPIs 异步图片 / 视频后端由 [@ToAPIs-2025](https://github.com/ToAPIs-2025) 通过
-  [PR #7](https://github.com/universe-st/dsh-game-material-master/pull/7) 贡献**（`feat(toapis)`）：
+  [PR #7](https://github.com/universe-st/dsh-inkbox/pull/7) 贡献**（`feat(toapis)`）：
   设置页独立配置、异步任务回执防重复提交、凭证只在宿主保存，默认后端仍是火山方舟 / MiniMax。感谢这份实现。
 - ⚠️ **AsLib 仓库里的 `Picture/MapChip/*_pipo.png` 素材属于第三方，没有打包进本插件**
   （它的 README 写明 "Third party content is copyrighted by its respective owners"）。
@@ -582,8 +589,8 @@ T("第 {n0} 帧", { n0: index + 1 })                        // 带插值，英�
 
 设置页可独立配置 ToAPIs，再将生图后端切为 ToAPIs，或打开「使用 ToAPIs 生成视频」。默认仍是火山方舟／MiniMax，ComfyUI、自定义协议和本地处理保持可选。国内 `https://toapis.cn/v1`，国际 `https://toapis.com/v1`；异步任务需要专用协议，不是把 OpenAI 的地址换一下即可。
 
-[配置、计费与恢复说明](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/TOAPIS.md)。API Key仅在宿主保存，生成真实计费；先在自己的账号核对报价和参数。
+[配置、计费与恢复说明](https://github.com/universe-st/dsh-inkbox/blob/main/docs/TOAPIS.md)。API Key仅在宿主保存，生成真实计费；先在自己的账号核对报价和参数。
 
 ## ToAPIs
 
-ToAPIs 可作为可选图片／视频 Provider，使用用户自己的 Key。官网：[国内站](https://toapis.cn/)／[国际站](https://toapis.com/)；Base URL 分别为 `https://toapis.cn/v1`／`https://toapis.com/v1`。[配置、价格口径与快速复用](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/TOAPIS.md) · [真实 DSH 八方向与精灵导出验收](https://github.com/universe-st/dsh-game-material-master/blob/main/docs/toapis-live-20261024/README.md)。原生透明 GPT Image、方形视频与实测截图见文档；功能可用版本以合并／发布状态为准。
+ToAPIs 可作为可选图片／视频 Provider，使用用户自己的 Key。官网：[国内站](https://toapis.cn/)／[国际站](https://toapis.com/)；Base URL 分别为 `https://toapis.cn/v1`／`https://toapis.com/v1`。[配置、价格口径与快速复用](https://github.com/universe-st/dsh-inkbox/blob/main/docs/TOAPIS.md) · [真实 DSH 八方向与精灵导出验收](https://github.com/universe-st/dsh-inkbox/blob/main/docs/toapis-live-20261024/README.md)。原生透明 GPT Image、方形视频与实测截图见文档；功能可用版本以合并／发布状态为准。

@@ -4,7 +4,7 @@
  * ## 落盘布局
  *
  * ```
- * <DSH_HOME>/game-material-master/map-jobs/<项目 id>/
+ * <DSH_HOME>/inkbox/map-jobs/<项目 id>/
  * ├── project.json          元数据：网格、素材、阶段、日志
  * ├── map.json              这张地图：图层元数据 + 每层数据（0 = 空）
  * ├── tilesets/<tsId>.png   导入的素材原图（原样保存，不改写）
@@ -2265,7 +2265,7 @@ export async function mapPlan(
 // ── 视图 ──────────────────────────────────────────────────────────────────
 
 export function mapAssetBase(projectId: string): string {
-  return assetBasePath(`/dsh-game-material-master/map-assets/${projectId}/`);
+  return assetBasePath(`/dsh-inkbox/map-assets/${projectId}/`);
 }
 
 export interface MapViewTileset {
@@ -2352,7 +2352,7 @@ export interface MapProjectView {
   /**
    * 导出目录的**绝对路径**（还没导出过就是空串）。
    *
-   * 界面上要把它原样写出来：导出产物埋在 `<DSH_HOME>/game-material-master/map-jobs/…` 底下，
+   * 界面上要把它原样写出来：导出产物埋在 `<DSH_HOME>/inkbox/map-jobs/…` 底下，
    * 只给一个「打开导出目录」按钮的话，用户永远不知道文件到底落在哪 ——
    * 「导出窗口意味不明」的一半就是它。
    */
@@ -3226,7 +3226,7 @@ export interface MapSnapshot extends Omit<MapProjectView, "assetBase" | "tileset
 }
 
 function absoluteAssetUrl(projectId: string, origin: string, relative: string): string {
-  return `${origin}${assetBasePath(`/dsh-game-material-master/map-assets/${projectId}/`)}${relative}`;
+  return `${origin}${assetBasePath(`/dsh-inkbox/map-assets/${projectId}/`)}${relative}`;
 }
 
 /**

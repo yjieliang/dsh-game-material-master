@@ -206,7 +206,7 @@ function ImageModule(props) {
     null,
     h(
       "div",
-      { className: "SPR_body" },
+      { className: "SPR_body SPR_pageBody" },
       h(JobSidebar, {
         title: T("图片任务"),
         items: jobs,

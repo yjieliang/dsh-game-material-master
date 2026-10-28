@@ -1135,7 +1135,7 @@ function MusicModule(props) {
 
   return h(
     "div",
-    { className: "SPR_body SPR_musicBody" },
+    { className: "SPR_body SPR_musicBody SPR_pageBody" },
     h(
       "div",
       { className: "SPR_side" },

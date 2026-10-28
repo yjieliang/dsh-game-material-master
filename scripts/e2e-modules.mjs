@@ -58,7 +58,7 @@ if (!config.minimaxApiKeySet) throw new Error("MiniMax Key 未配置");
 console.log(`生图 ${config.arkModel} @ ${config.arkSize} · 视频 ${config.minimaxModel} @ ${config.minimaxResolution}\n`);
 
 // 源图：用八方向项目里已经生成好的正面绿幕图当参考
-const sourceFile = join(HOME, "game-material-master", "projects", "pmu84zq4dc732e3", "images", "front.jpg");
+const sourceFile = join(HOME, "inkbox", "projects", "pmu84zq4dc732e3", "images", "front.jpg");
 const sourceB64 = (await readFile(sourceFile)).toString("base64");
 console.log(`参考图：${sourceFile}（${(sourceB64.length / 1024 / 1365).toFixed(0)} KB 原图）\n`);
 
@@ -101,7 +101,7 @@ console.log("\n② 序列帧生成模块");
 const seqJob = await studio.createSequenceJob({ name: "模块验证·序列帧" });
 const seqId = seqJob.jobId;
 // 首帧用刚生成的绿幕图
-const firstFrame = await readFile(join(HOME, "game-material-master", "image-jobs", imageId, images.items[0].file));
+const firstFrame = await readFile(join(HOME, "inkbox", "image-jobs", imageId, images.items[0].file));
 await studio.uploadSequenceRef({ jobId: seqId, kind: "firstFrame", name: "first.png", data: firstFrame.toString("base64") });
 await studio.saveSequenceJob({
   jobId: seqId,
@@ -149,10 +149,10 @@ console.log(`  抠像 ${seqDone.frames.keyed.length} 帧 · 条图 ${seqDone.she
 
 // 把结果汇总到一个便于查看的目录
 const outDir = join(HOME, "module-verify-out");
-await ffmpeg(["-i", join(HOME, "game-material-master", "sequence-jobs", seqId, seqDone.sheet.file), join(outDir, "sequence-strip.png")]).catch(() => undefined);
+await ffmpeg(["-i", join(HOME, "inkbox", "sequence-jobs", seqId, seqDone.sheet.file), join(outDir, "sequence-strip.png")]).catch(() => undefined);
 for (const [index, item] of images.items.entries()) {
   if (item.keyedFile === undefined) continue;
-  await ffmpeg(["-i", join(HOME, "game-material-master", "image-jobs", imageId, item.keyedFile), join(outDir, `image-${index + 1}.png`)]).catch(() => undefined);
+  await ffmpeg(["-i", join(HOME, "inkbox", "image-jobs", imageId, item.keyedFile), join(outDir, `image-${index + 1}.png`)]).catch(() => undefined);
 }
 await writeFile(join(outDir, "summary.txt"), [
   `图片任务 ${imageId}：${images.items.filter((i) => i.status === "ready").length} 张成功，${images.items.filter((i) => i.keyedFile).length} 张抠像`,

@@ -93,11 +93,11 @@ function overviewText(options: GuideOptions): string {
     (module) => `- \`${module}\` — ${options.labels[module]} → \`game_material({action:"guide", topic:"${module}"})\``
   );
   return [
-    "# 游戏素材大师（game-material-master）",
+    "# 墨盒（inkbox）",
     "",
     modules.length === 0
-      ? "本机已安装「游戏素材大师」插件，但所有功能都已被用户在「设置 → 游戏素材大师 → 功能管理」里隐藏。"
-      : `本机已安装「游戏素材大师」插件：${modules.map((module) => options.labels[module]).join(" / ")}。界面在侧栏「游戏素材大师」面板。`,
+      ? "本机已安装「墨盒」插件，但所有功能都已被用户在「设置 → 墨盒 → 功能管理」里隐藏。"
+      : `本机已安装「墨盒」插件：${modules.map((module) => options.labels[module]).join(" / ")}。界面在侧栏「墨盒」面板。`,
     "",
     "## 工具入口",
     "只有一个工具 `game_material`，用 `action` 选择要做什么：",
@@ -110,7 +110,7 @@ function overviewText(options: GuideOptions): string {
     "**不要凭记忆猜方法名。** 先读对应模块的手册（里面有方法表与参数）；不确定某个方法属于哪个模块时读 `methods` 主题。",
     "",
     "## 模块（当前可见）",
-    ...(moduleLines.length === 0 ? ["所有功能都已被用户在「设置 → 游戏素材大师 → 功能管理」里隐藏。"] : moduleLines),
+    ...(moduleLines.length === 0 ? ["所有功能都已被用户在「设置 → 墨盒 → 功能管理」里隐藏。"] : moduleLines),
     "",
     "## 其它主题",
     "- `workflow` — 固定流程、审核模式、计费与验收规则。",
@@ -124,7 +124,7 @@ function overviewText(options: GuideOptions): string {
     "- 用户说「自动审核」或「每一步人工审核」时，用 `action:\"reviewMode\"` 记录；manual 模式每步都要贴验收链接并停下等回复。",
     "- 工具返回的 `openUrl` 必须原样贴成 Markdown 链接，不要改写成裸文本，也不要自己编 URL。",
     "- `openUrl` 是**插件界面入口**；返回体里的 `url` / `downloadUrl`（尤其 `.../music-assets/...`、`.../image-assets/...`、`.../sfx-assets/...`）只是文件直链，不能代替 `openUrl` 当插件入口。最终回复要贴「打开…界面」的深链接，文件链接只能另外标成「播放 / 下载」。",
-    "- 不要用 bash/shell 直接改 `<DSH_HOME>/game-material-master/` 下的 JSON——那会绕过宿主的复用与校验。",
+    "- 不要用 bash/shell 直接改 `<DSH_HOME>/inkbox/` 下的 JSON——那会绕过宿主的复用与校验。",
     "- 被隐藏的模块对工具面一律不可用；遇到报错不要重试、不要绕过，让用户去设置里打开。"
   ].join("\n");
 }
@@ -162,7 +162,7 @@ function workflowText(): string {
     "## 验收链接",
     "`intake` / `status` / `wait` / `review` / `upload` 等返回的 `openUrl` 是给用户点的深链接。输出时必须原样写成 Markdown 链接",
     "（例如 `[查看第 2 步验收](http://…/?dsh-gmm=1&module=sprite&project=…&stage=videos)`）；用户点击后界面会原地切到插件对应页面。",
-    "**最终回复必须包含 `openUrl` 这一条深链接（插件界面入口，标签写「打开…界面」）**；`/dsh-game-material-master/...` 下的音频 / 图片 / 导出文件只是文件直链，不能当作插件入口，也不要拿它替代 `openUrl`。",
+    "**最终回复必须包含 `openUrl` 这一条深链接（插件界面入口，标签写「打开…界面」）**；`/dsh-inkbox/...` 下的音频 / 图片 / 导出文件只是文件直链，不能当作插件入口，也不要拿它替代 `openUrl`。",
     "不要改写成裸文本，也不要自己编 URL。manual 模式下每完成一步都要贴一次；auto 模式下至少在全部完成或需要用户决策时贴。",
     "",
     "## 计费与重复提交",
@@ -170,7 +170,7 @@ function workflowText(): string {
     "音乐已有歌曲后再生成必须 `regenerate:true`；Suno 每次提交返回 2 首；音效每次生成一条 take，失败不自动重试。",
     "",
     "## 被隐藏的功能",
-    "用户可以在「设置 → 游戏素材大师 → 功能管理」里隐藏模块。被隐藏的模块：",
+    "用户可以在「设置 → 墨盒 → 功能管理」里隐藏模块。被隐藏的模块：",
     "- 界面里不再出现它的页签与侧栏菜单项；",
     "- 工具面同样不可用——`guide` / `call` / `intake` / `upload` / `status` / `wait` / `review` / `approve` 对它的调用都会明确报错。",
     "`status`（不带 id）返回的 `hiddenModules` 是当前被隐藏的模块 key 列表。遇到这类报错**不要重试、也不要绕过**（例如直接改配置文件）：",
@@ -564,12 +564,12 @@ const ISO_AI_ASSET_TEXT = [
 ].join("\n");
 
 export function buildGuide(topic: GuideTopic, options: GuideOptions): GuideResult {
-  if (topic === "overview") return { title: "游戏素材大师 · 总览", text: overviewText(options) };
-  if (topic === "workflow") return { title: "游戏素材大师 · 固定流程", text: workflowText() };
-  if (topic === "config") return { title: "游戏素材大师 · 配置", text: configText(options) };
-  if (topic === "methods") return { title: "游戏素材大师 · 方法目录", text: methodsText(options) };
-  if (topic === "ai-asset") return { title: "游戏素材大师 · AI 生成素材", text: AI_ASSET_TEXT };
-  if (topic === "iso-ai-asset") return { title: "游戏素材大师 · 45° 地图编辑器 AI 生成素材", text: ISO_AI_ASSET_TEXT };
-  if (topic === "map-agent") return { title: "游戏素材大师 · 地图编辑器 Agent 工作流", text: MAP_AGENT_TEXT };
-  return { title: `游戏素材大师 · ${options.labels[topic]}`, text: moduleText(topic, options) };
+  if (topic === "overview") return { title: "墨盒 · 总览", text: overviewText(options) };
+  if (topic === "workflow") return { title: "墨盒 · 固定流程", text: workflowText() };
+  if (topic === "config") return { title: "墨盒 · 配置", text: configText(options) };
+  if (topic === "methods") return { title: "墨盒 · 方法目录", text: methodsText(options) };
+  if (topic === "ai-asset") return { title: "墨盒 · AI 生成素材", text: AI_ASSET_TEXT };
+  if (topic === "iso-ai-asset") return { title: "墨盒 · 45° 地图编辑器 AI 生成素材", text: ISO_AI_ASSET_TEXT };
+  if (topic === "map-agent") return { title: "墨盒 · 地图编辑器 Agent 工作流", text: MAP_AGENT_TEXT };
+  return { title: `墨盒 · ${options.labels[topic]}`, text: moduleText(topic, options) };
 }

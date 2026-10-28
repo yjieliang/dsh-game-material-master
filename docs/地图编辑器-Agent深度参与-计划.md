@@ -335,7 +335,7 @@ game_material({ action: "call", method: "<方法名>", payload: { … } })
   "revision": "a1b2c3d4e5f6",
   "file": "preview/agent/inspect-1-a1b2c3d4.png",
   "localPath": "/…/map-jobs/m…/preview/agent/inspect-1-a1b2c3d4.png",
-  "url": "http://…/dsh-game-material-master/map-assets/m…/preview/agent/inspect-1-a1b2c3d4.png",
+  "url": "http://…/dsh-inkbox/map-assets/m…/preview/agent/inspect-1-a1b2c3d4.png",
   "width": 512,
   "height": 512,
   "crop": { "x": 128, "y": 128, "width": 256, "height": 256 },

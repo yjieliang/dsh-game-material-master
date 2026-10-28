@@ -186,7 +186,7 @@ const ctxBridge = {
 T.attachSessionBridge(ctxBridge);
 await T.openMusicChat(prompt);
 check("新对话：不挂靠项目（sessions.create({})）并打开会话", opened === "s1");
-check("新对话：首条消息就是任务说明", prompted?.mode === "queue" && prompted?.blocks?.[0]?.text?.startsWith("【游戏素材大师 · 音乐生成编辑】"));
+check("新对话：首条消息就是任务说明", prompted?.mode === "queue" && prompted?.blocks?.[0]?.text?.startsWith("【墨盒 · 音乐生成编辑】"));
 check("新对话：带 requestId", prompted?.id === "r1");
 
 // ── 真渲染：创建卡 ──────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ const job = {
   module: "music",
   id: "a1",
   name: "测试音乐",
-  assetBase: "/dsh-game-material-master/music-assets/a1/",
+  assetBase: "/dsh-inkbox/music-assets/a1/",
   busy: false,
   reviewMode: "auto",
   updatedAt: 1,
@@ -234,8 +234,8 @@ const job = {
   source: { kind: "prompt", prompt: "8-bit battle loop", lyrics: "", note: "90 秒", title: "Battle", tags: "8-bit", instrumental: true },
   settings: { engine: "suno", mode: "prompt", model: "chirp-v6" },
   stages: { generate: { status: "done" }, edit: { status: "idle" }, export: { status: "idle" } },
-  songs: [{ id: "song1", status: "succeeded", title: "Battle Take", engine: "suno", modelName: "chirp-v6", duration: 3, tags: "8-bit", approved: false, localFile: "songs/song-song1.mp3", file: "songs/song-song1.mp3", url: "http://localhost/dsh-game-material-master/music-assets/a1/songs/song-song1.mp3", coverFile: "songs/cover-song1.jpg", coverUrl: "http://localhost/dsh-game-material-master/music-assets/a1/songs/cover-song1.jpg", wavUrl: null, lrcUrl: null, lyric: "[Verse]\nla la" }],
-  versions: [{ id: "v1", songId: "song1", label: "裁剪", status: "ready", format: "mp3", duration: 2, size: 1234, preview: false, by: "human", createdAt: 1, file: "versions/v1.mp3", url: "http://localhost/dsh-game-material-master/music-assets/a1/versions/v1.mp3" }],
+  songs: [{ id: "song1", status: "succeeded", title: "Battle Take", engine: "suno", modelName: "chirp-v6", duration: 3, tags: "8-bit", approved: false, localFile: "songs/song-song1.mp3", file: "songs/song-song1.mp3", url: "http://localhost/dsh-inkbox/music-assets/a1/songs/song-song1.mp3", coverFile: "songs/cover-song1.jpg", coverUrl: "http://localhost/dsh-inkbox/music-assets/a1/songs/cover-song1.jpg", wavUrl: null, lrcUrl: null, lyric: "[Verse]\nla la" }],
+  versions: [{ id: "v1", songId: "song1", label: "裁剪", status: "ready", format: "mp3", duration: 2, size: 1234, preview: false, by: "human", createdAt: 1, file: "versions/v1.mp3", url: "http://localhost/dsh-inkbox/music-assets/a1/versions/v1.mp3" }],
   tools: [{ id: "t1", kind: "style-analysis", status: "succeeded", result: { description: "bright", genres: ["chiptune"] }, files: [] }],
   exports: [],
   log: [{ at: 1, level: "info", message: "hello" }]
@@ -250,7 +250,7 @@ check("歌曲卡出现", byTestId(jobTree, "music-song-song1") !== undefined);
 const coverImg = [...nodes(byClass(jobTree, "SPR_musicCover")[0])].find((node) => node.type === "img");
 check(
   "★ 封面走 assetBase 相对路径（绝对地址的 origin 可能还是 localhost：图会裂）",
-  coverImg !== undefined && coverImg.props?.src === "/dsh-game-material-master/music-assets/a1/songs/cover-song1.jpg",
+  coverImg !== undefined && coverImg.props?.src === "/dsh-inkbox/music-assets/a1/songs/cover-song1.jpg",
   String(coverImg?.props?.src)
 );
 check(
@@ -265,7 +265,7 @@ check(
 const versionDownload = [...nodes(byTestId(jobTree, "music-version-v1"))].find((node) => node.type === "a" && node.props?.download !== undefined);
 check(
   "★ 版本下载也优先用 assetBase（不把 localhost 绝对地址交给浏览器）",
-  versionDownload !== undefined && String(versionDownload.props?.href).startsWith("/dsh-game-material-master/music-assets/a1/versions/"),
+  versionDownload !== undefined && String(versionDownload.props?.href).startsWith("/dsh-inkbox/music-assets/a1/versions/"),
   String(versionDownload?.props?.href)
 );
 check("编辑器出现", byTestId(jobTree, "music-editor") !== undefined);
@@ -333,7 +333,7 @@ const composeJob = {
   module: "music",
   id: "a2",
   name: "战斗曲",
-  assetBase: "/dsh-game-material-master/music-assets/a2/",
+  assetBase: "/dsh-inkbox/music-assets/a2/",
   busy: false,
   workflow: "compose",
   reviewMode: "auto",
@@ -362,9 +362,9 @@ const composeJob = {
     script: "from scoremill import Song\n",
     scriptFile: "scores/c1/compose.py",
     midiFile: "scores/c1/score.mid",
-    midiUrl: "http://localhost/dsh-game-material-master/music-assets/a2/scores/c1/score.mid",
+    midiUrl: "http://localhost/dsh-inkbox/music-assets/a2/scores/c1/score.mid",
     audioFile: "scores/c1/preview.mp3",
-    audioUrl: "http://localhost/dsh-game-material-master/music-assets/a2/scores/c1/preview.mp3",
+    audioUrl: "http://localhost/dsh-inkbox/music-assets/a2/scores/c1/preview.mp3",
     audioRenderer: "builtin",
     midi: { duration: 32, bars: 24, tempo: 150, timeSignature: "4/4", tracks: 1, channels: 2, notes: 120 },
     status: "ready",
@@ -389,7 +389,7 @@ check("★ 谱曲卡出现", byTestId(composeJobTree, "music-score") !== undefin
 check("★ 谱曲方案与段落出现", textOf(composeJobTree).includes("前 8 小节压抑") && textOf(composeJobTree).includes("INTRO 8小节"));
 check("★ 谱曲版本卡出现", byTestId(composeJobTree, "music-score-c1") !== undefined);
 check("★ 谱曲版本有 MIDI 下载 / 试听 / Suno 按钮", textOf(composeJobTree).includes("下载 MIDI") && textOf(composeJobTree).includes("用这首音频生成 Suno 正式版") && textOf(composeJobTree).includes("导出乐谱包"));
-check("★ 谱曲试听走 assetBase 相对路径", [...nodes(byTestId(composeJobTree, "music-score-c1"))].some((node) => node.type === "audio" && String(node.props?.src).startsWith("/dsh-game-material-master/music-assets/a2/scores/c1/")));
+check("★ 谱曲试听走 assetBase 相对路径", [...nodes(byTestId(composeJobTree, "music-score-c1"))].some((node) => node.type === "audio" && String(node.props?.src).startsWith("/dsh-inkbox/music-assets/a2/scores/c1/")));
 check("★ 谱曲版本可查看 compose.py", textOf(composeJobTree).includes("查看 compose.py"));
 const submitSunoSource = source.slice(source.indexOf("const submitScoreToSuno"), source.indexOf("const exportScore"));
 check(

@@ -222,7 +222,7 @@ function headers(apiKey: string): Record<string, string> {
 }
 
 function assertKey(apiKey: string): void {
-  if (apiKey.trim() === "") throw new MiniMaxError("尚未配置 MiniMax API Key（设置 → 游戏素材大师）");
+  if (apiKey.trim() === "") throw new MiniMaxError("尚未配置 MiniMax API Key（设置 → 墨盒）");
 }
 
 interface RemoteError {

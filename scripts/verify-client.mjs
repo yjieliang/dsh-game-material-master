@@ -625,7 +625,7 @@ function checkRigContracts(text, label) {
   );
   check(
     `${label}：模块④常驻提示条与共建仓库入口`,
-    text.includes("ExperimentalBar") && text.includes("https://github.com/universe-st/dsh-game-material-master")
+    text.includes("ExperimentalBar") && text.includes("https://github.com/universe-st/dsh-inkbox")
   );
   // 模块⑤已经换成「45°地图编辑器」：正式功能，不应再有实验性角标 / 弹窗 / 常驻提示条。
   check(

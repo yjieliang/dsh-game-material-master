@@ -141,17 +141,17 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
     );
   }
 
-  /** 左侧项目列表（只在项目列表 / 当前选中项变化时重渲染）。 */
+  /** 项目列表（侧栏「当前项目」卡片展开的弹层内容；只在项目列表 / 当前选中项变化时重渲染）。 */
   function SpriteProjectList() {
     markRender("SpriteProjectList");
     const projects = store.use((state: any) => state.projects);
     const projectId = store.use((state: any) => state.projectId);
     return h(
-      "div",
-      { className: "SPR_side" },
-      h("div", { className: "SPR_sideTitle" }, T("项目（{n0}）", { n0: projects.length })),
+      React.Fragment,
+      null,
+      h("div", { className: "SPR_projPopHead" }, T("项目（{n0}）", { n0: projects.length })),
       projects.length === 0
-        ? h("p", { className: "SPR_sideEmpty" }, T("还没有项目，点右上角「新建项目」开始。"))
+        ? h("p", { className: "SPR_sideEmpty" }, T("还没有项目，点上方「新建项目」开始。"))
         : projects.map((summary: any) =>
             h(
               "button",
@@ -187,35 +187,33 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
     return h(ReviewModeBar, { api: props.api, module: "sprite", id: view.id, mode: view.mode, onChanged: () => void props.loadProject(view.id) });
   }
 
-  /** 五个阶段页签：只订阅「各阶段是否已通过」这组布尔值。 */
-  function SpriteStageTabs(props: any) {
-    markRender("SpriteStageTabs");
+  /** 五个阶段：顶部步骤条整卡（编号圆 + 标题，整块可点）。只订阅「各阶段是否已通过」。 */
+  function SpriteStepBar(props: any) {
+    markRender("SpriteStepBar");
     const flags = store.use(
       (state: any) => (state.project === null ? NO_STAGE_FLAGS : STAGES.map((item: any) => stageDone(state.project, item.key))),
       shallowEqual
     );
     return h(
       "div",
-      { className: "SPR_steps" },
+      { className: "SPR_stepBar", role: "tablist", "aria-label": T("生成流程") },
       STAGES.map((item: any, index: number) =>
         h(
           "button",
           {
             key: item.key,
             type: "button",
-            className: "SPR_step",
+            role: "tab",
+            "aria-selected": item.key === props.stage ? "true" : "false",
+            className: "SPR_stepCard",
+            "data-stage": item.key,
             "data-active": item.key === props.stage ? "true" : "false",
+            "data-done": flags[index] ? "true" : "false",
             onClick: () => props.setStage(item.key)
           },
-          h("span", {
-            className: "SPR_stepDot",
-            style: {
-              background: flags[index]
-                ? "var(--dsw-alias-state-success-primary)"
-                : "var(--dsw-alias-state-label-tertiary, var(--dsw-alias-label-tertiary))"
-            }
-          }),
-          item.title
+          h("span", { className: "SPR_stepNum" }, String(index + 1).padStart(2, "0")),
+          // 阶段标题自带「①…」前缀，编号圆已经表达过序号，这里剥掉避免「① ①八方向绿幕图」。
+          h("span", { className: "SPR_stepLabel" }, String(item.title).replace(/^[\s\u2460-\u2473\d.、]+/, "") || item.title)
         )
       )
     );
@@ -258,99 +256,144 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
       [project, props.api, props.loadProject, props.setNotice]
     );
 
+    const hasSource = project?.source !== null && project?.source !== undefined;
+    // 拖拽区 + 三条件清单：阶段①按设计稿把它们放进阶段卡里（bare），其它阶段单独成一卡。
+    const dropZone = h(
+      "div",
+      { className: "SPR_sourceBlock" },
+      h(
+        "button",
+        {
+          type: "button",
+          className: "SPR_dropZone",
+          "data-over": dropOver ? "true" : "false",
+          "data-has": hasSource ? "true" : "false",
+          "data-testid": "gmm-source-drop",
+          onClick: () => fileInputRef.current?.click(),
+          onDragOver: (event: any) => {
+            event.preventDefault();
+            setDropOver(true);
+          },
+          onDragLeave: () => setDropOver(false),
+          onDrop: (event: any) => {
+            event.preventDefault();
+            setDropOver(false);
+            void uploadSource(event.dataTransfer?.files?.[0]);
+          }
+        },
+        hasSource
+          ? h("img", {
+              className: "SPR_dropThumb",
+              src: assetUrl(project, project.source.file, project.updatedAt),
+              alt: T("源图")
+            })
+          : h("span", { className: "SPR_dropIcon" }, h(ModuleIcon, { name: "sprite", size: 22 })),
+        h("span", { className: "SPR_dropTitle" }, sourceBusy ? T("正在上传…") : hasSource ? T("已上传源图") : T("拖入角色设定图")),
+        h("span", { className: "SPR_dropSub" }, T("PNG / JPG / WebP，最大 20 MB")),
+        h("span", { className: "SPR_dropPick" }, hasSource ? T("更换图片") : T("选择图片"))
+      ),
+      h("input", {
+        ref: fileInputRef,
+        type: "file",
+        accept: "image/*",
+        style: { display: "none" },
+        onChange: (event: any) => {
+          const file = event.target.files?.[0];
+          void uploadSource(file);
+          event.target.value = "";
+        }
+      }),
+      h(
+        "div",
+        { className: "SPR_tips" },
+        h("h4", { className: "SPR_tipsTitle" }, T("一张合适的源图，会减少后续返工")),
+        h("p", { className: "SPR_tipsText" }, T("上传后，八个方向都以这张图作为唯一角色参考。")),
+        h(
+          "ol",
+          { className: "SPR_tipsList" },
+          h("li", { className: "SPR_tip" }, h("span", { className: "SPR_tipNo" }, "01"), h("span", { className: "SPR_tipText" }, T("正面全身，四肢完整无遮挡"))),
+          h("li", { className: "SPR_tip" }, h("span", { className: "SPR_tipNo" }, "02"), h("span", { className: "SPR_tipText" }, T("纯色背景，轮廓清晰"))),
+          h("li", { className: "SPR_tip" }, h("span", { className: "SPR_tipNo" }, "03"), h("span", { className: "SPR_tipText" }, T("不添加文字、水印或场景道具")))
+        )
+      )
+    );
+
+    // bare：不套卡片、不重复标题（阶段①把它嵌进阶段卡里）。
+    if (props.bare === true) return dropZone;
     return h(
       "div",
       { className: "SPR_card" },
       h("div", { className: "SPR_cardHead" }, h("h3", null, T("源图"))),
       h("p", { className: "SPR_hint" }, T("上传角色的原始设定图。第一步的正面绿幕图会以它为唯一参考。")),
-      h(
-        "div",
-        { className: "SPR_sourceRow" },
-        project?.source !== null && project?.source !== undefined
-          ? h("img", {
-              className: "SPR_sourcePreview",
-              src: assetUrl(project, project.source.file, project.updatedAt),
-              alt: T("源图")
-            })
-          : h("div", { className: "SPR_thumbEmpty", style: { width: 132, height: 132, flex: "none" } }, T("尚未上传源图")),
-        h(
-          "div",
-          { style: { flex: 1, minWidth: 240 } },
-          h(
-            "div",
-            {
-              className: "SPR_drop",
-              "data-over": dropOver ? "true" : "false",
-              onDragOver: (event: any) => {
-                event.preventDefault();
-                setDropOver(true);
-              },
-              onDragLeave: () => setDropOver(false),
-              onDrop: (event: any) => {
-                event.preventDefault();
-                setDropOver(false);
-                void uploadSource(event.dataTransfer?.files?.[0]);
-              }
-            },
-            sourceBusy ? T("正在上传…") : T("把图片拖到这里，或")
-          ),
-          h(
-            "div",
-            { className: "SPR_toolbar" },
-            h(
-              Btn,
-              { onClick: () => fileInputRef.current?.click(), disabled: sourceBusy, primary: project?.source === null || project?.source === undefined },
-              project?.source === null || project?.source === undefined ? T("选择源图") : T("更换源图")
-            ),
-            project?.source !== null && project?.source !== undefined
-              ? h("span", { className: "SPR_refRow" }, project.source.name)
-              : null
-          ),
-          h("input", {
-            ref: fileInputRef,
-            type: "file",
-            accept: "image/*",
-            style: { display: "none" },
-            onChange: (event: any) => {
-              const file = event.target.files?.[0];
-              void uploadSource(file);
-              event.target.value = "";
-            }
-          })
-        )
-      )
+      dropZone
     );
   }
 
-  /** 阶段卡片：只订阅「当前阶段提示文案」（图片模式相关的那一句）。 */
+  /** 阶段卡片（左列主卡）：标题 + 提示 + 阶段正文；阶段①在正文前嵌入源图拖拽区。 */
   function SpriteStageArea(props: any) {
     markRender("SpriteStageArea");
     const activeStageIndex = STAGES.findIndex((item: any) => item.key === props.stage);
     const activeStage = STAGES[activeStageIndex < 0 ? 0 : activeStageIndex];
     const hint = store.use((state: any) => (state.project === null ? "" : stageHint(state.project, props.stage, activeStage)));
+    const head = store.use(
+      (state: any) => ({
+        hasSource: state.project?.source !== null && state.project?.source !== undefined,
+        done: state.project === null ? false : stageDone(state.project, props.stage)
+      }),
+      shallowEqual
+    );
+    // 头部的状态胶囊：没源图时「等待源图」（设计稿同款），已通过时「已完成」。
+    const chip =
+      props.stage === "images" && !head.hasSource
+        ? h("span", { className: "SPR_chip" }, T("等待源图"))
+        : head.done
+          ? h("span", { className: "SPR_chip", "data-kind": "ok" }, T("已完成"))
+          : null;
     return h(
       React.Fragment,
       null,
       h(
         "div",
-        { className: "SPR_card" },
-        h("div", { className: "SPR_cardHead" }, h("h3", null, activeStage.title)),
-        // 阶段①的说明跟着生成方式走：转圈截帧不是「八个方向各生成一次」，
-        // 沿用逐方向生图那句话会让人以为走错了页面。
-        h("p", { className: "SPR_hint" }, hint),
-        props.stage === "images"
-          ? h(renderImageStage, { api: props.api, start: props.start, setNotice: props.setNotice, savePrompts: props.savePrompts, tasks: props.tasks })
-          : null,
-        props.stage === "videos"
-          ? h(renderVideoStage, { api: props.api, start: props.start, setNotice: props.setNotice, savePrompts: props.savePrompts, tasks: props.tasks })
-          : null,
-        props.stage === "frames"
-          ? h(renderFrameStage, { api: props.api, start: props.start, setNotice: props.setNotice, loadProject: props.loadProject, saveSettings: props.saveSettings, tasks: props.tasks })
-          : null,
-        props.stage === "sheet"
-          ? h(renderSheetStage, { api: props.api, start: props.start, setNotice: props.setNotice, loadProject: props.loadProject, saveSettings: props.saveSettings, tasks: props.tasks })
-          : null,
-        props.stage === "preview" ? h(WalkPreview, { tasks: props.tasks }) : null
+        { className: "SPR_panel" },
+        h(
+          "div",
+          { className: "SPR_panelHead" },
+          h(
+            "div",
+            { className: "SPR_panelHeadMain" },
+            // 阶段标题自带「①…」前缀：步骤条与面板标题都不再重复序号。
+            h("h2", { className: "SPR_panelTitle" }, String(activeStage.title).replace(/^[\s\u2460-\u2473\d.、]+/, "") || activeStage.title),
+            // 阶段①的说明跟着生成方式走：转圈截帧不是「八个方向各生成一次」，
+            // 沿用逐方向生图那句话会让人以为走错了页面。
+            h("p", { className: "SPR_panelSub" }, hint)
+          ),
+          chip === null ? null : h("div", { className: "SPR_panelHeadAside" }, chip)
+        ),
+        h(
+          "div",
+          { className: "SPR_panelBody" },
+          props.stage === "images"
+            ? h(SpriteSourceCard, {
+                bare: true,
+                api: props.api,
+                loadProject: props.loadProject,
+                setNotice: props.setNotice
+              })
+            : null,
+          props.stage === "images"
+            ? h(renderImageStage, { api: props.api, start: props.start, setNotice: props.setNotice, savePrompts: props.savePrompts, tasks: props.tasks })
+            : null,
+          props.stage === "videos"
+            ? h(renderVideoStage, { api: props.api, start: props.start, setNotice: props.setNotice, savePrompts: props.savePrompts, tasks: props.tasks })
+            : null,
+          props.stage === "frames"
+            ? h(renderFrameStage, { api: props.api, start: props.start, setNotice: props.setNotice, loadProject: props.loadProject, saveSettings: props.saveSettings, tasks: props.tasks })
+            : null,
+          props.stage === "sheet"
+            ? h(renderSheetStage, { api: props.api, start: props.start, setNotice: props.setNotice, loadProject: props.loadProject, saveSettings: props.saveSettings, tasks: props.tasks })
+            : null,
+          props.stage === "preview" ? h(WalkPreview, { tasks: props.tasks }) : null
+        )
       ),
       h(SpriteLog, null),
       h(SpriteToolbar, props)
@@ -445,7 +488,203 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
   }
 
   /**
-   * 项目主体：没有项目时是空态；有项目时是「审核模式 + 阶段页签 + 源图 + 当前阶段 + 日志 + 工具栏」。
+   * 右列「本步设置」：设计稿四行 —— 候选帧数 / 转圈方向 / 输出规格 / 审核方式。
+   *
+   * 前两行是**真实参数**，值做成可点改的浅色块：
+   *   · 候选帧数 = `settings.turnFrameCount`（8~512，宿主 saveSettings 会顺手把候选帧标脏并自动重抽）；
+   *   · 转圈方向 = `turn.direction`（点一下走已有的 resetTurnPicks 换向 + 重排八个圆圈）。
+   * 后两行只读：输出规格跟随 `settings.frameCount`；审核方式由页头胶囊负责修改，这里只显示当前值
+   * （两处同时放可改控件会互相打架）。
+   */
+  function SpriteStageSettings(props: any) {
+    markRender("SpriteStageSettings");
+    // 一行 store 订阅：四行要的值都在这一个切片里。store.use 是 platform/store 的既有能力
+    // （内部 useRef + useSyncExternalStore），加的是**子组件**的 Hook，StudioPanel 仍是 13 个槽位。
+    const view = store.use(
+      (state: any) => {
+        const project = state.project;
+        const settings = project?.settings;
+        const turnFrames = Number(settings?.turnFrameCount);
+        const frameCount = Number(settings?.frameCount ?? settings?.frames);
+        return {
+          id: project?.id ?? null,
+          turn: Number.isFinite(turnFrames) && turnFrames > 0 ? Math.round(turnFrames) : 32,
+          frames: Number.isFinite(frameCount) && frameCount > 0 ? Math.round(frameCount) : null,
+          direction: project?.turn?.direction === "ccw" ? "ccw" : "cw",
+          review: project?.reviewMode === "manual" ? "manual" : project?.reviewMode === "auto" ? "auto" : ""
+        };
+      },
+      shallowEqual
+    );
+    // 候选帧数的输入草稿（null = 跟着宿主值走）、正在提交哪一行、错误行。
+    const [countDraft, setCountDraft] = React.useState(null);
+    const [saving, setSaving] = React.useState(null);
+    const [error, setError] = React.useState(null);
+    // 与宿主 src/directions.ts 的 TURN_FRAME_COUNT_MIN / _MAX 一致；宿主也会 clamp，这里先夹一遍。
+    const TURN_MIN = 8;
+    const TURN_MAX = 512;
+    /** 候选帧数：走已有的 saveSettings（宿主会标脏候选帧，有视频时还会自动重抽）。 */
+    const commitTurnFrameCount = async () => {
+      const parsed = countDraft === null ? view.turn : Number(countDraft);
+      const next = Number.isFinite(parsed) ? Math.min(TURN_MAX, Math.max(TURN_MIN, Math.round(parsed))) : view.turn;
+      setCountDraft(String(next));
+      if (view.id === null || next === view.turn) {
+        setCountDraft(null);
+        return;
+      }
+      setSaving("count");
+      try {
+        await props.api.saveSettings({ projectId: view.id, settings: { turnFrameCount: next } });
+        await props.loadProject(view.id);
+        setError(null);
+        setCountDraft(null);
+      } catch (saveError) {
+        setError(msg(saveError));
+        setCountDraft(null);
+      } finally {
+        setSaving(null);
+      }
+    };
+    /** 转圈方向：已有的 resetTurnPicks 既换向又重排八个圆圈（和原来那枚按钮同一条路）。 */
+    const toggleTurnDirection = async () => {
+      if (view.id === null || saving !== null) return;
+      const next = view.direction === "ccw" ? "cw" : "ccw";
+      setSaving("direction");
+      try {
+        await props.api.resetTurnPicks({ projectId: view.id, direction: next });
+        await props.loadProject(view.id);
+        setError(null);
+      } catch (saveError) {
+        setError(msg(saveError));
+      } finally {
+        setSaving(null);
+      }
+    };
+    const reviewText = view.review === "auto" ? T("自动审核") : view.review === "manual" ? T("逐步审核") : T("未设置审核");
+    const specText =
+      view.frames === null ? T("8 方向 × 8 帧") : T("{n0} 方向 × {n1} 帧", { n0: DIRECTION_KEYS.length, n1: view.frames });
+    return h(
+      "div",
+      { className: "SPR_railCard", "data-card": "settings" },
+      h("div", { className: "SPR_railHead" }, h("h3", { className: "SPR_railTitle" }, T("本步设置"))),
+      // 候选帧数：62×32 的浅色块，点进去改数字，失焦 / 回车提交。
+      h(
+        "div",
+        { className: "SPR_railRow", "data-row": "turn-frames" },
+        h("label", { className: "SPR_railLabel", htmlFor: "gmm-rail-turn-frames" }, T("候选帧数")),
+        h(
+          "span",
+          { className: "SPR_railValueWrap" },
+          h("input", {
+            id: "gmm-rail-turn-frames",
+            type: "number",
+            className: "SPR_railNum",
+            "data-testid": "rail-turn-frame-count",
+            "data-busy": saving === "count" ? "true" : undefined,
+            min: TURN_MIN,
+            max: TURN_MAX,
+            step: 1,
+            disabled: view.id === null || saving !== null,
+            value: countDraft === null ? String(view.turn) : countDraft,
+            onChange: (event: any) => setCountDraft(event.target.value),
+            onFocus: (event: any) => {
+              try {
+                event.target.select?.();
+              } catch {
+                /* 个别浏览器对 number 输入框的 select 有限制，忽略 */
+              }
+            },
+            onBlur: () => void commitTurnFrameCount(),
+            onKeyDown: (event: any) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }
+          })
+        )
+      ),
+      // 转圈方向：82×32 的浅色块，点一下换向并重排八个圆圈。
+      h(
+        "div",
+        { className: "SPR_railRow", "data-row": "turn-direction" },
+        h("span", { className: "SPR_railLabel" }, T("转圈方向")),
+        h(
+          "button",
+          {
+            type: "button",
+            className: "SPR_railChip",
+            "data-testid": "rail-turn-direction",
+            "data-busy": saving === "direction" ? "true" : undefined,
+            disabled: view.id === null || saving !== null,
+            title: T("点一下换向，并按新方向重排八个圆圈"),
+            onClick: () => void toggleTurnDirection()
+          },
+          view.direction === "ccw" ? T("逆时针") : T("顺时针")
+        )
+      ),
+      // 输出规格：只读（在第 4 步「合成精灵整图」里改）。
+      h(
+        "div",
+        { className: "SPR_railRow", "data-row": "output-spec" },
+        h("span", { className: "SPR_railLabel" }, T("输出规格")),
+        h("span", { className: "SPR_railValue" }, specText)
+      ),
+      // 审核方式：只读；改在页头那枚胶囊里。
+      h(
+        "div",
+        { className: "SPR_railRow", "data-row": "review-mode" },
+        h("span", { className: "SPR_railLabel" }, T("审核方式")),
+        h("span", { className: "SPR_railValue SPR_railValue-accent" }, reviewText)
+      ),
+      error === null ? null : h("p", { className: "SPR_railError" }, error)
+    );
+  }
+
+  /**
+   * 右列「产出预览」：有产物就显示缩略图（整图优先，其次正面 / 任意一张已生成的方向图），
+   * 否则保持设计稿同款占位块（260×190 浅灰底 + 居中浅灰字「八方向预览」）。
+   */
+  function SpriteStagePreview(props: any) {
+    markRender("SpriteStagePreview");
+    // 只订阅缩略图会用到的几段：别的阶段产物变化不重渲染这一张卡。
+    const project = store.use(
+      (state: any) => state.project,
+      (a: any, b: any) => projectFieldsEqual(a, b, ["assetBase", "images", "sheet", "updatedAt"])
+    );
+    // 整图是最终产物，优先；还没合图时看方向图（正面最直观，没有再随便挑一张）。
+    let file = project?.sheet?.file;
+    let version = project?.sheet?.updatedAt ?? project?.updatedAt;
+    if (file === undefined || file === null) {
+      const readyKeys = DIRECTION_KEYS.filter((key: string) => project?.images?.[key]?.file !== undefined);
+      const key = readyKeys.includes("front") ? "front" : readyKeys[0];
+      if (key !== undefined) {
+        file = project.images[key].file;
+        version = project.images[key].updatedAt ?? project.updatedAt;
+      }
+    }
+    const hasPreview = file !== undefined && file !== null;
+    return h(
+      "div",
+      { className: "SPR_railCard", "data-card": "preview" },
+      h(
+        "div",
+        { className: "SPR_railHead" },
+        h("h3", { className: "SPR_railTitle" }, T("产出预览")),
+        h("span", { className: "SPR_railAside" }, hasPreview ? T("已生成") : T("尚未生成"))
+      ),
+      h(
+        "div",
+        { className: "SPR_previewBox" },
+        hasPreview ? h("img", { src: assetUrl(project, file, version), alt: T("八方向预览") }) : T("八方向预览")
+      ),
+      h("p", { className: "SPR_previewCaption" }, T("生成后可逐方向查看、调整截帧位置，或下载全部图片。")),
+      h("p", { className: "SPR_previewFoot" }, T("PNG 序列帧 · 本地处理"))
+    );
+  }
+
+  /**
+   * 项目主体：没有项目时是空态；有项目时是「步骤条 + 左列阶段卡 + 右列设置/预览」。
    * 它自己只订阅一个布尔（有没有项目），其余全部下放给各自的组件。
    */
   function SpriteProjectArea(props: any) {
@@ -455,39 +694,25 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
     return h(
       React.Fragment,
       null,
-      // 审核模式：与对话里的 game_material({action:'reviewMode'}) 是同一份数据。
-      h(SpriteReviewHost, { api: props.api, loadProject: props.loadProject }),
-      h(SpriteStageTabs, { stage: props.stage, setStage: props.setStage }),
-      h(SpriteSourceCard, { api: props.api, loadProject: props.loadProject, setNotice: props.setNotice }),
-      h(SpriteStageArea, props)
+      h(SpriteStepBar, { stage: props.stage, setStage: props.setStage }),
+      h(
+        "div",
+        { className: "SPR_cols" },
+        h("div", { className: "SPR_col" }, h(SpriteStageArea, props)),
+        h(
+          "div",
+          { className: "SPR_col" },
+          h(SpriteStageSettings, { api: props.api, loadProject: props.loadProject, stage: props.stage }),
+          h(SpriteStagePreview, { stage: props.stage })
+        )
+      )
     );
   }
 
-  /** sprite 模块的整块界面（左侧项目列表 + 右侧主体）。 */
+  /** sprite 模块的整块界面（外壳负责侧栏 / 顶栏 / 页头 / 提示条，这里只出内容）。 */
   function SpriteWorkbench(props: any) {
     markRender("SpriteWorkbench");
-    return h(
-      "div",
-      { className: "SPR_body" },
-      h(SpriteProjectList, null),
-      h(
-        "div",
-        { className: "SPR_main" },
-        props.notice !== null
-          ? h(
-              "div",
-              { className: "SPR_note", "data-kind": props.notice.kind },
-              props.notice.text,
-              h(
-                "span",
-                { style: { marginLeft: 10 } },
-                h("button", { type: "button", className: "SPR_miniBtn", onClick: () => props.setNotice(null) }, T("关闭"))
-              )
-            )
-          : null,
-        h(SpriteProjectArea, props)
-      )
-    );
+    return h(SpriteProjectArea, props);
   }
 
   // ── 面板本体 ─────────────────────────────────────────────────────────────
@@ -734,115 +959,207 @@ export function createStudioPanel(rt: StudioPanelRuntime) {
     };
 
     if (api === undefined) {
-      return h("div", { className: "SPR_root" }, h("p", { className: "SPR_empty" }, T("正在挂载游戏素材大师…")));
+      return h(
+        "div",
+        { className: "SPR_root" },
+        h("p", { className: "SPR_empty" }, T("正在挂载墨盒…"))
+      );
     }
+
+    // ── 外壳：侧栏 / 顶栏 / 页头（设计稿 1440×960）────────────────────
+    /** 侧栏：品牌 + 新建项目 + 创作工具导航 + 当前项目卡（点开是项目列表弹层）。 */
+    function SideBar(props: any) {
+      const info = props.info;
+      const stageIndex = Math.max(0, STAGES.findIndex((item: any) => item.key === props.stage));
+      const reviewLabel =
+        info.review === "auto" ? T("自动审核") : info.review === "manual" ? T("逐步审核") : T("未设置审核");
+      const framesLabel = info.frames === null || info.frames === undefined ? T("8 帧") : T("{n0} 帧", { n0: info.frames });
+      return h(
+        "aside",
+        { className: "SPR_sidebar" },
+        h(
+          "div",
+          { className: "SPR_brand" },
+          h("span", { className: "SPR_brandMark", "aria-hidden": "true" }, h("i", null), h("i", null), h("i", null), h("i", null)),
+          h(
+            "div",
+            { className: "SPR_brandText" },
+            h("span", { className: "SPR_brandTitle" }, T("墨盒")),
+            h("span", { className: "SPR_brandSub" }, T("AI 游戏资产工作台"))
+          )
+        ),
+        h("button", { type: "button", className: "SPR_newProject", onClick: () => void createProject() }, T("新建项目")),
+        h("div", { className: "SPR_sideGroup" }, T("创作工具")),
+        h(
+          "nav",
+          { className: "SPR_nav", "aria-label": T("创作工具") },
+          visibleModules.map((entry: any) =>
+            h(
+              "button",
+              {
+                key: entry.key,
+                type: "button",
+                className: "SPR_navItem",
+                "data-module": entry.key,
+                "data-active": activeModule === entry.key ? "true" : "false",
+                "aria-pressed": activeModule === entry.key ? "true" : "false",
+                title: entry.title + " — " + entry.hint,
+                onClick: () => setModule(entry.key)
+              },
+              h(
+                "span",
+                { className: "SPR_navTitleRow" },
+                h("span", { className: "SPR_navTitle" }, entry.title),
+                entry.experimental === true ? h("span", { className: "SPR_navFlag" }, "· " + T("实验")) : null
+              ),
+              h("span", { className: "SPR_navHint" }, entry.hint)
+            )
+          ),
+          props.hiddenCount > 0
+            ? h("p", { className: "SPR_navHint", style: { padding: "6px 4px 0" } }, T("已隐藏 {n0} 个功能（设置 → 墨盒 → 功能管理）", { n0: props.hiddenCount }))
+            : null
+        ),
+        h(
+          "details",
+          { className: "SPR_sideProjWrap" },
+          h(
+            "summary",
+            { className: "SPR_sideProject" + (info.id === null ? " SPR_sideProject-empty" : ""), "data-testid": "gmm-sidebar-project" },
+            h("span", { className: "SPR_sideProjectLabel" }, T("当前项目")),
+            h("span", { className: "SPR_sideProjectName" }, info.id === null ? T("还没有项目") : info.name),
+            info.id === null
+              ? null
+              : h("span", { className: "SPR_sideProjectMeta" }, T("八方向图 · {n0} · {n1}", { n0: framesLabel, n1: reviewLabel })),
+            info.id === null
+              ? null
+              : h("span", { className: "SPR_sideProjectState" }, T("进行中 · 步骤 {n0}/{n1}", { n0: stageIndex + 1, n1: STAGES.length }))
+          ),
+          h("div", { className: "SPR_projPop" }, h(SpriteProjectList, null))
+        )
+      );
+    }
+
+    /** 顶栏：面包屑 + 本地处理状态 + 设置。 */
+    function TopBar() {
+      const entry = visibleModules.find((item: any) => item.key === activeModule);
+      return h(
+        "header",
+        { className: "SPR_topbar" },
+        h(
+          "div",
+          { className: "SPR_crumb" },
+          h("span", null, T("工作台")),
+          h("span", { className: "SPR_crumbSep" }, "/"),
+          h("b", null, entry === undefined ? T("墨盒") : entry.title)
+        ),
+        h("span", { className: "SPR_topSpacer" }),
+        h("span", { className: "SPR_topStatus", "data-off": api === undefined ? "true" : "false" }, h("i", null), T("本地处理已连接")),
+      );
+    }
+
+    /** 页头：模块标题 + 一句说明 + 右侧模块级操作。 */
+    function PageHead() {
+      const entry = visibleModules.find((item: any) => item.key === activeModule);
+      if (entry === undefined) return null;
+      return h(
+        "div",
+        { className: "SPR_pageHead" },
+        h(
+          "div",
+          { className: "SPR_pageHeadMain" },
+          h("h1", { className: "SPR_pageTitle" }, entry.title),
+          h("p", { className: "SPR_pageSub" }, entry.hint)
+        ),
+        h(
+          "div",
+          { className: "SPR_pageActions" },
+          // 设计稿：页头右上是一枚「审核方式」胶囊（八方向模块才有审核模式）。
+          activeModule === "sprite" ? h("div", { className: "SPR_headPill" }, h(SpriteReviewHost, { api, loadProject })) : null,
+          entry.experimental === true ? h("span", { className: "SPR_expTag" }, T("实验性")) : null
+        )
+      );
+    }
+
+    /** 侧栏「当前项目」卡要显示的数据：现读 store，不订阅（面板 Hook 槽位保持 13 个）。 */
+    const projectNow = typeof store.getState === "function" ? store.getState().project : null;
+    const projectSummary = {
+      id: projectNow?.id ?? null,
+      name: projectNow?.name ?? "",
+      review: projectNow?.reviewMode ?? null,
+      frames: projectNow?.settings?.frames ?? null
+    };
 
     return h(
       "div",
       { className: "SPR_root" },
       h(
         "div",
-        { className: "SPR_head" },
+        { className: "SPR_app" },
+        h(SideBar, {
+          info: projectSummary,
+          stage,
+          hiddenCount: hidden.length,
+          activeModule,
+          setModule,
+          createProject
+        }),
         h(
           "div",
-          { className: "SPR_headBrand" },
-          h("span", { className: "SPR_headMark" }, h(StudioGlyphIcon, { size: 18 })),
+          { className: "SPR_mainCol" },
+          h(TopBar, null),
           h(
             "div",
-            { className: "SPR_headText" },
-            h("h2", null, T("游戏素材大师")),
-            h("span", { className: "SPR_headSub" }, T("火山方舟 Seedream 生图 · MiniMax 图生视频 · 谱乐 AI 音乐 · 火山引擎音效 · 本地处理"))
+            { className: "SPR_scroll" },
+            notice !== null
+              ? h(
+                  "div",
+                  { className: "SPR_note", "data-kind": notice.kind },
+                  notice.text,
+                  h(
+                    "span",
+                    { style: { marginLeft: 10 } },
+                    h("button", { type: "button", className: "SPR_miniBtn", onClick: () => setNotice(null) }, T("关闭"))
+                  )
+                )
+              : null,
+            h(PageHead, null),
+            activeModule === null
+              ? h("p", { className: "SPR_empty" }, T("所有功能都已被隐藏。请到「设置 → 墨盒 → 功能管理」里打开至少一个。"))
+              : activeModule === "sprite"
+                ? h(SpriteWorkbench, {
+                    api,
+                    tasks,
+                    stage,
+                    setStage,
+                    notice,
+                    setNotice,
+                    loading,
+                    refreshProjects,
+                    loadProject,
+                    start,
+                    savePrompts,
+                    saveSettings,
+                    createProject,
+                    withApi
+                  })
+                : activeModule === "image"
+                  ? h(ImageModule, { api })
+                  : activeModule === "sequence"
+                    ? h(SequenceModule, { api })
+                    : activeModule === "iso"
+                      ? h(IsoModule, { api })
+                      : activeModule === "map"
+                        ? h(MapModule, { api, studioCtx: props.studioCtx })
+                        : activeModule === "music"
+                          ? h(MusicModule, { api, studioCtx: props.studioCtx })
+                          : activeModule === "sfx"
+                            ? h(SfxModule, { api })
+                            : activeModule === "rig"
+                              ? h(RigModule, { api })
+                              : null
           )
-        ),
-        h("span", { className: "SPR_spacer" }),
-        activeModule === "sprite"
-          ? h(SpriteProjectHead, {
-              api,
-              loading,
-              refreshProjects,
-              createProject,
-              withApi,
-              setNotice,
-              loadProject
-            })
-          : null
-      ),
-      h(
-        "div",
-        {
-          className: "SPR_modules",
-          "data-hidden-count": String(hidden.length),
-          // ≤4 个排一行；更多时均分两行（8 → 4+4，7 → 4+3），宽面板再由容器查询放成一行。
-          style: {
-            "--spr-module-cols": String(Math.max(1, visibleModules.length <= 4 ? visibleModules.length : Math.ceil(visibleModules.length / 2))),
-            "--spr-module-count": String(Math.max(1, visibleModules.length))
-          }
-        },
-        visibleModules.map((entry: any) =>
-          h(
-            "button",
-            {
-              key: entry.key,
-              type: "button",
-              className: "SPR_module",
-              "data-module": entry.key,
-              "data-active": activeModule === entry.key ? "true" : "false",
-              "aria-pressed": activeModule === entry.key ? "true" : "false",
-              title: `${entry.title} — ${entry.hint}`,
-              onClick: () => setModule(entry.key)
-            },
-            h("span", { className: "SPR_moduleIcon" }, h(ModuleIcon, { name: entry.key, size: 18 })),
-            h(
-              "span",
-              { className: "SPR_moduleTitleRow" },
-              h("span", { className: "SPR_moduleTitle" }, entry.title),
-              entry.experimental === true ? h("span", { className: "SPR_expTag" }, T("实验性")) : null
-            ),
-            h("span", { className: "SPR_moduleHint" }, entry.hint)
-          )
-        ),
-        hidden.length > 0
-          ? h("span", { className: "SPR_modulesHiddenNote" }, T("已隐藏 {n0} 个功能（设置 → 游戏素材大师 → 功能管理）", { n0: hidden.length }))
-          : null
-      ),
-      activeModule === null
-        ? h(
-            "div",
-            { className: "SPR_body" },
-            h("p", { className: "SPR_empty" }, T("所有功能都已被隐藏。请到「设置 → 游戏素材大师 → 功能管理」里打开至少一个。"))
-          )
-        : activeModule === "sprite"
-          ? h(SpriteWorkbench, {
-              api,
-              tasks,
-              stage,
-              setStage,
-              notice,
-              setNotice,
-              loading,
-              refreshProjects,
-              loadProject,
-              start,
-              savePrompts,
-              saveSettings,
-              createProject,
-              withApi
-            })
-          : activeModule === "image"
-            ? h(ImageModule, { api })
-            : activeModule === "sequence"
-              ? h(SequenceModule, { api })
-              : activeModule === "iso"
-                ? h(IsoModule, { api })
-                : activeModule === "map"
-                  ? h(MapModule, { api, studioCtx: props.studioCtx })
-                  : activeModule === "music"
-                    ? h(MusicModule, { api, studioCtx: props.studioCtx })
-                    : activeModule === "sfx"
-                      ? h(SfxModule, { api })
-                      : activeModule === "rig"
-                        ? h(RigModule, { api })
-                        : null
+        )
+      )
     );
   }
 

@@ -270,7 +270,7 @@ try {
   check('试听音频已生成', typeof firstComp.audioFile === 'string' && /preview\.(mp3|wav)$/u.test(firstComp.audioFile) && firstComp.audioRenderer === 'builtin');
   check('report() JSON 被保存', firstComp.report?.tempo === 120 && firstComp.report?.sections?.[0]?.name === 'A');
   check('stages.compose=done', afterFirst.stages.compose.status === 'done');
-  const midiFile = join(HOME, 'game-material-master', 'music-jobs', created.id, firstComp.midiFile);
+  const midiFile = join(HOME, 'inkbox', 'music-jobs', created.id, firstComp.midiFile);
   check('MIDI 文件真的存在', (await stat(midiFile)).size > 0);
 
   section('3) 修改 / 失败 / 波形 / 导出');
@@ -283,7 +283,7 @@ try {
   });
   const afterSecond = await gw.getMusicJob({ jobId: created.id });
   check('第二版是新版本且 currentScoreId 更新', afterSecond.compositions.length === 2 && afterSecond.currentScoreId === second.scoreId && afterSecond.compositions[1].basedOn === first.scoreId);
-  check('旧版 MIDI 仍然存在', (await stat(join(HOME, 'game-material-master', 'music-jobs', created.id, firstComp.midiFile))).size > 0);
+  check('旧版 MIDI 仍然存在', (await stat(join(HOME, 'inkbox', 'music-jobs', created.id, firstComp.midiFile))).size > 0);
 
   await gw.saveConfig({ musicPythonPath: failPython });
   let failed = '';
@@ -311,7 +311,7 @@ try {
   check('谱曲版本可出波形', Array.isArray(peaks.peaks) && peaks.peaks.length === 64 && peaks.duration > 0, JSON.stringify(peaks).slice(0, 160));
   const exported = await gw.exportMusic({ jobId: created.id, scoreId: first.scoreId });
   check('乐谱包导出成功', exported.ok === true && /\.zip$/u.test(exported.file) && exported.scoreId === first.scoreId, JSON.stringify(exported).slice(0, 200));
-  const zipPath = join(HOME, 'game-material-master', 'music-jobs', created.id, exported.file);
+  const zipPath = join(HOME, 'inkbox', 'music-jobs', created.id, exported.file);
   check('乐谱包文件存在', (await stat(zipPath)).size > 0);
   check('乐谱包包含 MIDI / plan / compose.py', Array.isArray(exported.files) && exported.files.some((entry) => /score\.mid$/u.test(entry.path)) && exported.files.some((entry) => /plan\.md$/u.test(entry.path)) && exported.files.some((entry) => /compose\.py$/u.test(entry.path)), JSON.stringify(exported.files));
 
@@ -369,7 +369,7 @@ try {
   const link = await gw.runMusicScore({ jobId: created.id, title: '第三版', script: 'print("third")', label: '第三版' });
   check('谱曲 openUrl 带 stage=compose 与 score', String(link.openUrl).includes('dsh-gmm=1') && String(link.openUrl).includes('module=music') && String(link.openUrl).includes('stage=compose') && String(link.openUrl).includes(`score=${link.scoreId}`), link.openUrl);
 
-  const oldDir = join(HOME, 'game-material-master', 'music-jobs', 'aoldjob1');
+  const oldDir = join(HOME, 'inkbox', 'music-jobs', 'aoldjob1');
   await mkdir(join(oldDir, 'songs'), { recursive: true });
   await writeFile(join(oldDir, 'job.json'), JSON.stringify({
     id: 'aoldjob1', name: '老任务', createdAt: 1, updatedAt: 1,

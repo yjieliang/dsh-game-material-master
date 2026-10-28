@@ -1,5 +1,5 @@
 /**
- * 模块① 八方向图生成 —— feature 描述符。
+ * 模块① 动画帧工具盒 —— feature 描述符。
  *
  * 将来 shell/registry.ts 只读这里（key / 图标 / 顺序 / 可见性开关），
  * 新增模块 = 新增一个 features/<m>/ 目录 + 在 registry 里加一行，不改 shell。
@@ -12,7 +12,7 @@ export const SPRITE_DESCRIPTOR = {
   /** 页签顺序（数字小的在前） */
   order: 0,
   /** 侧栏菜单项文案（中文原文，走 T()） */
-  label: "八方向图生成",
+  label: "动画帧工具盒",
   /** 图标由 module-icon.ts 提供 */
   icon: "sprite"
 } as const;

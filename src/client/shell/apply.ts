@@ -337,7 +337,7 @@ export function createApply(deps: ApplyDeps) {
             name: "sidebar.panellist",
             id: GAME_STUDIO_PANEL_ID,
             order: 40,
-            label: () => T("游戏素材大师"),
+            label: () => T("墨盒"),
             inject: () => ({ api, studioCtx: ctx })
           },
           StudioGlyph
@@ -363,7 +363,7 @@ export function createApply(deps: ApplyDeps) {
             name: "settings.section",
             id: GAME_STUDIO_PANEL_ID,
             order: 18,
-            label: () => T("游戏素材大师"),
+            label: () => T("墨盒"),
             inject: () => ({ api })
           },
           ConfigSection

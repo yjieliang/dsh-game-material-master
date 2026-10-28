@@ -4,7 +4,7 @@
  * ## 落盘
  *
  * ```
- * <DSH_HOME>/game-material-master/music-jobs/<a…>/
+ * <DSH_HOME>/inkbox/music-jobs/<a…>/
  * ├── job.json
  * ├── songs/<songId>.mp3|.m4a|.wav   下载的原曲
  * ├── songs/<songId>-cover.jpg|.png
@@ -637,7 +637,7 @@ async function requireApi(): Promise<MusicApiConfig> {
 // ── 任务视图 ────────────────────────────────────────────────────────────
 
 export function musicAssetBase(id: string): string {
-  return assetBasePath(`/dsh-game-material-master/music-assets/${id}/`);
+  return assetBasePath(`/dsh-inkbox/music-assets/${id}/`);
 }
 
 function absUrl(origin: string, assetBase: string, relative?: string): string | undefined {

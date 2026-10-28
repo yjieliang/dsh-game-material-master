@@ -32,7 +32,7 @@ export const MUSIC_SCORE_GUIDE_SOURCES: MusicScoreGuideSource[] = [
   }
 ];
 
-const ZH = `# 游戏素材大师 · 谱曲模式指南（scoremill）
+const ZH = `# 墨盒 · 谱曲模式指南（scoremill）
 
 > 这份指南是给**对话里的 agent** 用的。目标：把用户的想法变成一份**可读、可改、
 > 可试听**的 MIDI，用户满意后再可选交给 Suno 生成正式音频。
@@ -259,7 +259,7 @@ kit.bars("bdq bde sne bdq [sn hh]e hhe | bdq bde sne bdq hhe hhe |")
 - [ ] 试听链接已贴给用户；没有伪造音频 URL，没有说「我听过了」。
 `;
 
-const EN = `# Game Material Master · Compose Mode Guide (scoremill)
+const EN = `# Inkbox · Compose Mode Guide (scoremill)
 
 > This guide is for **the agent in the conversation**. Goal: turn the user's idea into a
 > **readable, editable, auditionable** MIDI, then optionally hand it to Suno for a produced track.

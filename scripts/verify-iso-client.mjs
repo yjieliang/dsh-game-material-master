@@ -152,7 +152,7 @@ section("2) 「新增素材」预览场景 vs 宿主摆放");
 
 section("3) 浏览器束里的 iso 组件与坐标把手");
 check("注册了 IsoModule", built.includes("function IsoModule"));
-check("__test 导出 IsoModule", built.includes("StudioPanel, IsoModule"));
+check("__test 导出 IsoModule", built.includes("IsoModule"));
 check("__test 导出 ISO_pointToCell / ISO_cellCenter / ISO_cellTopLeft / ISO_lineCells",
   ["ISO_pointToCell", "ISO_cellCenter", "ISO_cellTopLeft", "ISO_lineCells"].every((name) => built.includes(name)));
 check("旧的 TileModule 已经移除", !built.includes("function TileModule"));

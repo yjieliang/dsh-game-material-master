@@ -1,11 +1,11 @@
-# 游戏素材大师 · 详细工程文档
+# 墨盒 · 详细工程文档
 
 > 本文档由 README 的完整版迁来，保留算法细节、自检契约与历史踩坑记录。
 > 简洁的入门文档见 [../README.md](../README.md)。
 
 ---
 
-# 游戏素材大师 · DSH 插件
+# 墨盒 · DSH 插件
 
 从一张设定图出发，批量产出游戏要用的角色素材。生图走**可切换的后端**——默认
 **火山方舟 Seedream**，也可以换成用户自己的服务（OpenAI 兼容 / ComfyUI / Stable Diffusion WebUI
@@ -21,7 +21,7 @@ ffmpeg + 内置 JS 完成——不需要任何系统图像库，也不需要把�
 
 | 模块 | 做什么 |
 |---|---|
-| **八方向图生成** | 一张人物设定图 → 8 方位 × 8 帧精灵图（含行走动画验收与 WASD 操控预览） |
+| **动画帧工具盒** | 一张人物设定图 → 8 方位 × 8 帧精灵图（含行走动画验收与 WASD 操控预览） |
 | **图片生成** | 按提示词出图，可带参考图 → 可一键抠绿幕导出透明 PNG |
 | **序列帧生成** | 首帧图 **或** 参考图+参考视频 → 生成视频 → 抽帧 → 抠像 → 横向合成，并可循环播放预览 |
 | **骨骼动画生成**（实验性） | 角色整图 → 自动拆件 → 装配定位 → 推骨骼与动画（待机/行走/奔跑/挥手/跳跃/攻击）→ 打包 Spine 图集 |
@@ -31,7 +31,7 @@ ffmpeg + 内置 JS 完成——不需要任何系统图像库，也不需要把�
 > ⚠️ 骨骼动画生成是**实验性模块**：界面上页签带角标、
 > 每次进入弹窗说明、模块内常驻提示条
 > （`ExperimentalModuleDialog` / `RigExperimentalBar` / `MODULES[].experimental`）。功能不完善，
-> 共建入口见 [GitHub 仓库](https://github.com/universe-st/dsh-game-material-master)。
+> 共建入口见 [GitHub 仓库](https://github.com/universe-st/dsh-inkbox)。
 > **地图编辑器与 45° 地图编辑器都已转正**：链路全本地、零计费，几何与导出都有像素级自检兜底
 > （`verify-map*` 四件），所以它没有角标、没有进入弹窗、也没有常驻提示条 ——
 > `verify-map-client.mjs` 会逐条反向验证这三处都不能出现。
@@ -165,7 +165,7 @@ http://127.0.0.1:43120/?dsh-gmm=1&module=sprite&project=p…&stage=videos
 agent 会把它原样写成 Markdown 链接贴出来。用户点一下：
 
 - 浏览器半区装了**捕获阶段的点击拦截器**，命中就 `preventDefault` 原地切到
-  「游戏素材大师」面板，并落到对应模块 / 项目 / 阶段——不跳转、不新开标签；
+  「墨盒」面板，并落到对应模块 / 项目 / 阶段——不跳转、不新开标签；
 - 若用户用中键 / Ctrl+点击强制新开标签页，链接会真的被打开，应用在
   `/?dsh-gmm=…` 上正常启动，插件读到参数后完成同样的切换（两条路径共用同一份意图）。
 
@@ -186,7 +186,7 @@ DSH 0.2.1 的 `--public-url https://host/prefix/` 允许带路径前缀（反代
 ## 安装
 
 ```bash
-dsh plugin --profile web add /path/to/dsh-game-material-master
+dsh plugin --profile web add /path/to/dsh-inkbox
 ```
 
 装完**重启 DSH**（新增 bundle 只在启动时读取）。
@@ -209,12 +209,18 @@ dsh plugin --profile web add /path/to/dsh-game-material-master
 - 本包**没有任何运行时 npm 依赖**：`zod`、`@deepseek-ai/dsh-typert-protocol`、`@deepseek-ai/cordis`
   都从 DSH 自身的安装树解析，避免出现两份不同版本的实例。
 
-> 从旧版本（`dsh-8dir-sprites`）升级时，首次启动会把数据目录 `8dir-sprites/`
-> 整体迁移到 `game-material-master/`，已有项目和配置无缝接上。
+> 插件改过两次名：`8dir-sprites`（最早）→ `game-material-master`（0.2 起，包名 `dsh-game-material-master`）
+> → `inkbox`（0.12 起，包名 `dsh-inkbox`，中文名「墨盒」）。`src/config.ts` 的
+> `migrateLegacyDataRootSync()`（同步）按 `LEGACY_DATA_ROOTS = ["game-material-master", "8dir-sprites"]`
+> 的顺序找旧目录，把**最先找到的那个**整体 rename 到 `inkbox/`，已有项目和配置无缝接上；新目录已存在
+> 时不动（除非它是空目录残壳，会被清掉再搬）。它由 `apply()` **第一行同步调用**——异步会和紧随其后的
+> `void loadConfig()` 赛跑（读到缺失的 config → 默认值永久缓存），模块顶层 `await` 则会让任何
+> `import lib/index.js`（自检 / 开发工具）一 import 就搬真实数据目录。改名同时换了资源路由前缀
+> （`/dsh-game-material-master/…` → `/dsh-inkbox/…`）与 cordis bundle id，旧 URL 不再可用。
 
 ## 配置
 
-**设置 → 游戏素材大师**：
+**设置 → 墨盒**：
 
 | 项 | 说明 |
 |---|---|
@@ -227,7 +233,7 @@ dsh plugin --profile web add /path/to/dsh-game-material-master
 | 本地 ComfyUI（图生视频） | 勾选后图生视频改走本机 ComfyUI（替代 MiniMax）：地址、超时、提示词 / 首帧注入点、宽高 / 时长 / 种子、API 格式工作流 JSON。「测试连接」只读 `/system_stats` 与 `/queue`，**免费**（对比火山方舟那个会真生一张图）；另有 `comfyCookies`，供藏在鉴权反代后面的 ComfyUI 用 |
 | 功能管理 | 逐个开关六个模块；关掉的模块界面不出现，对话工具面也拒绝（见下） |
 
-Key 只写入本机 `<DSH_HOME>/game-material-master/config.json`，回传界面时始终脱敏（只给尾号）。
+Key 只写入本机 `<DSH_HOME>/inkbox/config.json`，回传界面时始终脱敏（只给尾号）。
 
 > **模型是插件级设置，三个模块共用。** 「生图模型」「视频模型」只在设置页里改，
 > 图片任务 / 序列帧任务内部**不允许**再存一份自己的模型副本——模块里那两个字段是
@@ -400,13 +406,13 @@ comfy.ts 里**唯一**的 HTTP 出口（`/system_stats`、`/object_info`、`/upl
 要一个**自己可控的浏览器**（Playwright / 自己的 Chrome），就单独开一个验证用 profile：
 
 ```bash
-dsh plugin --profile gmmweb add /path/to/dsh-game-material-master   # 建 profile 并把插件 link 进去
+dsh plugin --profile gmmweb add /path/to/dsh-inkbox   # 建 profile 并把插件 link 进去
 # 再把 "@deepseek-ai/dsh-web-app" 手动补进该 profile 的 package.json → dsh.profile.bundles
 dsh --profile gmmweb --port 19388     # 打印 http://127.0.0.1:19388/?token=… 并用默认浏览器打开
 ```
 
 - `desktop` profile **不能**用 CLI 起（会报 `profile "desktop" is managed exclusively by the Electron application`），
-  所以必须单开一个；它和桌面端**共用 `$DSH_HOME`**，插件数据（`game-material-master/` 下的项目）两边都看得到。
+  所以必须单开一个；它和桌面端**共用 `$DSH_HOME`**，插件数据（`inkbox/` 下的项目）两边都看得到。
 - token 就在启动输出那一行（`dsh web: http://127.0.0.1:19388/?token=…`）；`--no-open` 只决定要不要开浏览器。
 - 把这个 URL 喂给 Playwright，就能用**元素级选择器 + JS 量尺寸 + 元素截图**做真机验收，
   比 Computer Use 的坐标点击稳得多。Computer Use 仍然有用（能看真实窗口、能截图），
@@ -434,7 +440,7 @@ dsh --profile gmmweb --port 19388     # 打印 http://127.0.0.1:19388/?token=…
 
 ---
 
-## 模块一：八方向图生成
+## 模块一：动画帧工具盒
 
 ### 方位约定
 
@@ -1358,7 +1364,7 @@ AsLib 自带的 `Picture/MapChip/*_pipo.png` 是**第三方版权素材，不打
 模块六额外要求：**canvas 截图与导出 PNG 逐像素比对** —— `scale=1`、无缩放无平移时，
 浏览器画布与宿主的 `rasterize` 必须逐像素一致（差一个像素就是坐标口径分叉）。
 人眼验收直接看 `scripts/e2e-map.mjs` 打印的产物路径：它**故意把产物留在**
-`<DSH_HOME>/game-material-master/map-jobs/` 下，不联网、不花钱。
+`<DSH_HOME>/inkbox/map-jobs/` 下，不联网、不花钱。
 
 ---
 
@@ -2079,7 +2085,7 @@ DSH 只把 `locale` 服务挂在**浏览器半区**（`ctx.provide("locale", …
 ## 产物位置
 
 ```
-<DSH_HOME>/game-material-master/
+<DSH_HOME>/inkbox/
 ├── config.json
 ├── receipts/                     付费提交凭证（P8：只加不删，重启对账靠它；见「宿主半区」一节）
 ├── projects/<项目 id>/          模块一：八方向图
@@ -2104,11 +2110,11 @@ DSH 只把 `locale` 服务挂在**浏览器半区**（`ctx.provide("locale", …
 素材通过 `ctx.webServer` 注册的路由直接发给浏览器（支持 `Range`，视频能拖进度条）：
 
 ```
-/dsh-game-material-master/assets/<项目 id>/<相对路径>
-/dsh-game-material-master/image-assets/<任务 id>/<相对路径>
-/dsh-game-material-master/sequence-assets/<任务 id>/<相对路径>
-/dsh-game-material-master/rig-assets/<任务 id>/<相对路径>
-/dsh-game-material-master/iso-assets/<项目 id>/<相对路径>
+/dsh-inkbox/assets/<项目 id>/<相对路径>
+/dsh-inkbox/image-assets/<任务 id>/<相对路径>
+/dsh-inkbox/sequence-assets/<任务 id>/<相对路径>
+/dsh-inkbox/rig-assets/<任务 id>/<相对路径>
+/dsh-inkbox/iso-assets/<项目 id>/<相对路径>
 ```
 
 八个模块的 id 前缀不同（项目 `p…`、图片任务 `i…`、序列帧任务 `s…`、骨骼动画任务 `r…`、
@@ -2185,7 +2191,7 @@ void (async () => {
 
 ### 付费 receipt（receipts.ts）
 
-凭证落在 `<DSH_HOME>/game-material-master/receipts/<key>.json`，`key = sha256(method|requestId|slot|内容指纹)`。
+凭证落在 `<DSH_HOME>/inkbox/receipts/<key>.json`，`key = sha256(method|requestId|slot|内容指纹)`。
 
 **状态机**：`submitting`（已建盘、还没拿到远端答复）→ `submitted`（有 taskId）→
 `resolved` / `failed`；`submitting` 出错且不确定远端是否收单时标 `uncertain`。
@@ -2271,7 +2277,7 @@ node "<DSH>/resources/app/node_modules/@deepseek-ai/dsh/lib/bin.js" \
 判断「运行中的宿主到底吃到了哪一版代码」不用猜——有现成的探针：
 
 ```bash
-curl http://127.0.0.1:43121/dsh-game-material-master/_health
+curl http://127.0.0.1:43121/dsh-inkbox/_health
 # {"ok":true,"pid":29156,"bootedAt":...,"mtimeMs":...}
 ```
 
@@ -2289,7 +2295,7 @@ curl http://127.0.0.1:43121/dsh-game-material-master/_health
 `seqgen.activateSequence()`、`riggen.activateRig()`；`kick()` 失败时也要用
 `kickFailure()` 把「实例已废」与「真的已经在跑」分开，前者要明说请重启 DSH ——
 否则用户会一直等一个根本不存在的任务。（2026-10 实测：`[ERR_PNPM_EPERM] … rename
-'…dsh-game-material-master_tmp_13920_10' -> '…dsh-game-material-master'` 之后，
+'…dsh-inkbox_tmp_13920_10' -> '…dsh-inkbox'` 之后，
 界面就变成了这个样子。）
 
 用 Playwright 驱动这个测试宿主时，需要先过 Web 认证（每个 Host RPC 都要求同一个
@@ -2561,7 +2567,7 @@ running 落在下一次 `getProject` 里**：
 | `src/client/infra/prompts.ts` · `src/client/ui.ts` · `src/client/styles.ts` | 共享纯函数与基础件：提示词构造器、通用组件、样式 |
 | `lib/client.js` | **产物**：esbuild 把整张模块图内联回的单文件经典脚本，由宿主提供给浏览器 |
 
-`lib/client.js` 由宿主直接以 `/plugins/dsh-game-material-master/client.js` 提供给浏览器，
+`lib/client.js` 由宿主直接以 `/plugins/dsh-inkbox/client.js` 提供给浏览器，
 因此**必须是经典脚本**（无 `import` / `export`），所有 React 元素用 `React.createElement` 构造。
 源码按层拆在 `src/client/`，构建时由 `scripts/bundle-client.mjs`（esbuild）+ `scripts/strip-client-export.mjs` 内联回单文件。
 
@@ -2726,7 +2732,7 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 
 | 模块 | 实际结果 |
 |---|---|
-| 八方向图生成 | 左侧项目列表（测试1）+ 五个阶段全部渲染；已存项目状态与宿主数据一致 |
+| 动画帧工具盒 | 左侧项目列表（测试1）+ 五个阶段全部渲染；已存项目状态与宿主数据一致 |
 | 图片生成 | 空态正常：「图片任务（0）…新建」+「请选择或新建一个图片任务」 |
 | 序列帧生成 | 空态正常：「序列帧任务（0）…新建」 |
 | 骨骼动画生成 | 进入即弹「实验性」说明（符合预期），面板正常渲染 |
@@ -2740,7 +2746,7 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 地图被随机铺满；无异常、无计费。
 
 语言切换：设置 → 通用设置 → 语言 → **English**：面板标题与工具栏立即变英文
-（`Game Material Master` / `Refresh list` / `Rename` / `Delete project`），**切回中文立即恢复**，
+（`Inkbox` / `Refresh list` / `Rename` / `Delete project`），**切回中文立即恢复**，
 阶段名 / 按钮等中性文案跟随正常。
 
 ✅ **语言切换回归已修复**（见「坑上加坑：重算时换新数组」）：切英文后 8 个模块页签标题 / 副标题
@@ -2755,7 +2761,7 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 全程 0 个未捕获异常（`window.error` / `unhandledrejection` / `pageerror` 均为空）。
 
 > 复现（不需要 Computer Use）：`node scripts/dsh-web-cookie.mjs 127.0.0.1:3080 --json` 拿 cookie，
-> Playwright 起系统 Edge 注入 cookie 打开 `http://127.0.0.1:3080/`；工作台在侧栏「游戏素材大师」，
+> Playwright 起系统 Edge 注入 cookie 打开 `http://127.0.0.1:3080/`；工作台在侧栏「墨盒」，
 > 模块页签是 `.SPR_module`，工具按钮都带 `aria-label`，可直接元素级点击 / 读 `innerText`。
 
 ---
@@ -2810,7 +2816,7 @@ node scripts/perf-poll.mjs          # 一次轮询重渲染对比（改前 / 改
 ### 数据与落盘
 
 ```
-<DSH_HOME>/game-material-master/music-jobs/<a…>/
+<DSH_HOME>/inkbox/music-jobs/<a…>/
 ├── job.json
 ├── songs/<songId>.mp3|.m4a|.wav       平台返回的原曲（下载后本地播放/编辑）
 ├── songs/<songId>-cover.jpg|.png      封面
@@ -2981,7 +2987,7 @@ X-Api-Request-Id: <uuid>
 ### 落盘与状态机
 
 ```text
-<DSH_HOME>/game-material-master/sfx-jobs/<f…>/
+<DSH_HOME>/inkbox/sfx-jobs/<f…>/
 ├── job.json
 ├── refs/      参考图 / 参考音频
 ├── takes/     每次生成一条，永不覆盖

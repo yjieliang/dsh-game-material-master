@@ -140,7 +140,7 @@ export function createChrome(deps: any) {
               },
               h("div", { className: "SPR_railMenuHead" }, T("快捷进入功能")),
               entries.length === 0
-                ? h("p", { className: "SPR_railMenuEmpty" }, T("所有功能都已被隐藏，请到「设置 → 游戏素材大师 → 功能管理」里打开至少一个。"))
+                ? h("p", { className: "SPR_railMenuEmpty" }, T("所有功能都已被隐藏，请到「设置 → 墨盒 → 功能管理」里打开至少一个。"))
                 : entries.map((entry) =>
                     h(
                       "button",
@@ -162,7 +162,7 @@ export function createChrome(deps: any) {
                     )
                   ),
               hidden.length > 0
-                ? h("div", { className: "SPR_railMenuFoot" }, T("已隐藏 {n0} 个功能（设置 → 游戏素材大师 → 功能管理）", { n0: hidden.length }))
+                ? h("div", { className: "SPR_railMenuFoot" }, T("已隐藏 {n0} 个功能（设置 → 墨盒 → 功能管理）", { n0: hidden.length }))
                 : null
             )
           : null

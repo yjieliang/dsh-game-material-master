@@ -2245,11 +2245,11 @@ function MapModule(props) {
     const mode = frames <= 1 ? "image" : draft.mode === "video" ? "video" : "image";
     // 派活要用到的模块被「功能管理」隐藏了就直说：对话里的工具面同样会拒绝，白跑一趟。
     if (hiddenModules.includes("image")) {
-      setNotice({ kind: "error", text: T("「图片生成」被隐藏了，去「设置 → 游戏素材大师 → 功能管理」打开再试。") });
+      setNotice({ kind: "error", text: T("「图片生成」被隐藏了，去「设置 → 墨盒 → 功能管理」打开再试。") });
       return;
     }
     if (mode === "video" && hiddenModules.includes("sequence")) {
-      setNotice({ kind: "error", text: T("「序列帧生成」被隐藏了，去「设置 → 游戏素材大师 → 功能管理」打开再试。") });
+      setNotice({ kind: "error", text: T("「序列帧生成」被隐藏了，去「设置 → 墨盒 → 功能管理」打开再试。") });
       return;
     }
     setAiBusy(true);
@@ -3048,7 +3048,7 @@ function MapModule(props) {
   const shell = (inner) =>
     h(
       "div",
-      { className: "SPR_moduleBody", "data-module": "map" },
+      { className: "SPR_moduleBody SPR_fill", "data-module": "map" },
       inner,
       fileInput,
       addFileInput,

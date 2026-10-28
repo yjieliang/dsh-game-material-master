@@ -1,5 +1,5 @@
 /**
- * 游戏素材大师 —— 对话调用面（模型工具）。
+ * 墨盒 —— 对话调用面（模型工具）。
  *
  * 目标：**插件里的每个功能都能通过对话调用**，多步流程（八方向图这种）
  * 让 agent 自己推进 / 等待 / 审查，也可以每一步停下来交给人验收。
@@ -50,7 +50,7 @@ type ModuleKey = (typeof MODULES)[number];
 
 /** 模块的中文名，与界面页签的 title 逐字一致（报错信息里直接引用）。 */
 export const MODULE_LABELS: Record<ModuleKey, string> = {
-  sprite: "八方向图生成",
+  sprite: "动画帧工具盒",
   image: "图片生成",
   sequence: "序列帧生成",
   rig: "骨骼动画生成",
@@ -296,7 +296,7 @@ async function assertModuleVisible(module: ModuleKey | undefined): Promise<void>
   const hidden = await hiddenModulesNow();
   if (hidden.has(module)) {
     throw new Error(
-      `功能「${MODULE_LABELS[module]}」已被用户在「设置 → 游戏素材大师 → 功能管理」里隐藏，不能调用。` +
+      `功能「${MODULE_LABELS[module]}」已被用户在「设置 → 墨盒 → 功能管理」里隐藏，不能调用。` +
         `请让用户先在那里把它打开；不要绕过这一限制。`
     );
   }
@@ -312,7 +312,7 @@ export function moduleOfMethod(method: string, payload?: Record<string, any>): M
 const PREFIX = "game_material_";
 
 /** 远程资源路由前缀，与 index.ts 的 ROUTE_PREFIX 一致。 */
-const ROUTE_PREFIX = "/dsh-game-material-master";
+const ROUTE_PREFIX = "/dsh-inkbox";
 
 /** 输出 schema：工具返回值是不定形的 JSON，这里只约束到「对象」。 */
 const OBJECT_SCHEMA = { type: "object", additionalProperties: true } as const;
@@ -387,15 +387,15 @@ const TOOL_UPLOAD_KINDS = [
 ] as const;
 
 const COMPACT_DESCRIPTION = [
-  "游戏素材大师：游戏素材 / 地图 / 音乐 / 音效任务的唯一入口。",
+  "墨盒：游戏素材 / 地图 / 音乐 / 音效任务的唯一入口。",
   "任何相关任务先 `action:\"guide\"` 读对应主题的手册（固定流程、方法名、参数都在里面），再按手册调用；不要凭记忆猜方法名。",
   "action：guide 读手册 / intake 问参数与审核模式 / call 调远程方法 / status / wait / review / approve / reviewMode / upload。",
   "例：game_material({action:\"guide\", topic:\"sprite\"})。生成类调用真实计费。"
 ].join("\n");
 
 const COMPACT_PROMPT = [
-  "## 游戏素材大师（game-material-master）",
-  "本机已安装「游戏素材大师」：游戏素材、地图、音乐、音效任务用 `game_material`；先 `action:\"guide\"` 读对应主题的手册，再按手册执行。"
+  "## 墨盒（inkbox）",
+  "本机已安装「墨盒」：游戏素材、地图、音乐、音效任务用 `game_material`；先 `action:\"guide\"` 读对应主题的手册，再按手册执行。"
 ].join("\n");
 
 async function runGuide(args: any): Promise<Record<string, any>> {
@@ -1028,7 +1028,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
         await assertModuleVisible(moduleOfMethod(method, payload));
         if (method === "saveConfig" && payload?.hiddenModules !== undefined) {
           throw new Error(
-            "hiddenModules（功能可见性）只能由用户在「设置 → 游戏素材大师 → 功能管理」里修改，工具面不允许改动。"
+            "hiddenModules（功能可见性）只能由用户在「设置 → 墨盒 → 功能管理」里修改，工具面不允许改动。"
           );
         }
         // 后端地址是凭据的收件方：改了它，下一次付费调用就会把真实 Key 发到别的主机。
@@ -1037,7 +1037,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
           const endpoint = Object.keys(payload).find((key) => key.endsWith("BaseUrl"));
           if (endpoint !== undefined) {
             throw new Error(
-              `${endpoint}（后端地址）只能由用户在「设置 → 游戏素材大师」里修改，工具面不允许改动。`
+              `${endpoint}（后端地址）只能由用户在「设置 → 墨盒」里修改，工具面不允许改动。`
             );
           }
         }
@@ -1062,7 +1062,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
     register({
       name: `${PREFIX}status`,
       description: [
-        "看一眼「游戏素材大师」的当前进度。",
+        "看一眼「墨盒」的当前进度。",
         "不给 id 时列出全部项目 / 图片任务 / 序列帧任务；给了 id 就返回该目标的阶段进度、每个产物的状态与绝对 URL、是否有任务在跑。",
         "任何时候想确认「现在该做哪一步」都先调它。返回值里的 openUrl 请以 Markdown 链接贴给用户。"
       ].join("\n"),
@@ -1122,7 +1122,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
     register({
       name: `${PREFIX}intake`,
       description: [
-        "【固定流程第 0 步】用户一说要用「游戏素材大师」的某个功能，先调它，再动手。",
+        "【固定流程第 0 步】用户一说要用「墨盒」的某个功能，先调它，再动手。",
         "返回三样东西：① `blockers` —— 必须先解决的阻塞（例如还没配 API Key）；② `questions` —— 用户还没告知的关键参数，逐条问；",
         "③ `reviewModeQuestion` —— 必须问清楚「自动审核结果」还是「每一步人工审核」。",
         "在 `questions` 与 `reviewModeQuestion` 都得到用户答复之前，**不要**调用任何生成类 / 删除类方法。",
@@ -1164,7 +1164,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
     register({
       name: `${PREFIX}upload`,
       description: [
-        "把本机文件上传进「游戏素材大师」——界面上那些「上传」框的对话等价物。",
+        "把本机文件上传进「墨盒」——界面上那些「上传」框的对话等价物。",
         "参数 `path` 是文件的绝对路径或相对当前工作目录的路径，宿主自己读盘，**不要把 base64 贴进来**。",
         "kind 取值：sprite=source（源设定图）| video（**本地自选视频**，要用 `key` 指定槽位：turn=转圈视频，或 front/back/downLeft/downRight/upLeft/upRight/left/right 之一）；",
         "image=ref（参考图，最多 10 张）| item（直接加一张图，只做抠像用）；",
@@ -1655,7 +1655,7 @@ export function registerStudioTools(host: StudioToolHost, gateway: GameStudioGat
   if (systemPrompt !== undefined) {
     disposers.push(
       systemPrompt.section({
-        name: "game-material-master",
+        name: "inkbox",
         order: 8600,
         text: COMPACT_PROMPT
       })
@@ -1726,7 +1726,7 @@ function intakeFor(module: ModuleKey, id: string, told: Set<string>, config: any
   }
   if (module === "sequence") {
     if (config?.videoProviderBlocker !== undefined ? config.videoProviderBlocker !== null : config?.minimaxApiKeySet !== true) {
-      blockers.push(config?.videoProviderBlocker ?? "还没配置 MiniMax API Key（生视频必需）：设置 → 游戏素材大师 → MiniMax API Key，配好点「测试连接」。");
+      blockers.push(config?.videoProviderBlocker ?? "还没配置 MiniMax API Key（生视频必需）：设置 → 墨盒 → MiniMax API Key，配好点「测试连接」。");
     }
     known.视频模型 = config?.videoProviderModel ?? config?.minimaxModel;
     known.BaseURL = config?.videoProviderBaseUrl ?? config?.minimaxBaseUrl;

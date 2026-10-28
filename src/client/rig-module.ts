@@ -289,7 +289,7 @@ function RigModule(props) {
   const selectedItem = job !== null && selected !== null ? (job.layout?.items ?? {})[selected] : undefined;
 
   if (api === undefined) {
-    return h("div", { className: "SPR_rigPanel" }, h("p", { className: "SPR_hint" }, T("远程服务尚未挂载完成，请稍候…")));
+    return h("div", { className: "SPR_rigPanel SPR_pagePane" }, h("p", { className: "SPR_hint" }, T("远程服务尚未挂载完成，请稍候…")));
   }
 
   const headerButtons = h(
@@ -303,7 +303,7 @@ function RigModule(props) {
 
   return h(
     "div",
-    { className: "SPR_rigPanel" },
+    { className: "SPR_rigPanel SPR_pagePane" },
     // 弹窗是 position:fixed，放在这个滚动容器里也照样盖住整个工作台，
     // 不必为此把 RigModule 再包一层 Fragment。
     gateOpen ? h(RigExperimentalDialog, { onClose: closeGate }) : null,
@@ -313,7 +313,7 @@ function RigModule(props) {
       { className: "SPR_toolbar" },
       h("span", { className: "SPR_refRow" }, T("生图模型")),
       h("span", { className: "SPR_badge" }, globalConfig?.imageModel ?? globalConfig?.arkModel ?? job?.settings?.model ?? T("未配置")),
-      h("span", { className: "SPR_refRow" }, T("（模型在「设置 → 游戏素材大师」里改）")),
+      h("span", { className: "SPR_refRow" }, T("（模型在「设置 → 墨盒」里改）")),
       h("span", { className: "SPR_spacer" }),
       headerButtons
     ),

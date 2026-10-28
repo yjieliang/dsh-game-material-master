@@ -33,7 +33,7 @@ export const MUSIC_GUIDE_SOURCES: MusicGuideSource[] = [
   }
 ];
 
-const ZH = `# 游戏素材大师 · 音乐创作指南
+const ZH = `# 墨盒 · 音乐创作指南
 
 > 这份指南是给你（对话里的 agent）用的，不是给用户看的操作手册。目标：把用户的一句话
 > 灵感或一整首歌词，变成**能直接提交给谱乐 AI、并且适合游戏使用**的提示词与参数。
@@ -160,7 +160,7 @@ const ZH = `# 游戏素材大师 · 音乐创作指南
    \`auto\`：自己核对状态后继续，但失败/再生成仍要找用户确认（会再计费）。
 5. 不要调用其它模块的工具（八方向图 / 图片 / 骨骼 / 地图）来做音乐任务。`;
 
-const EN = `# Game Material Master · Music Creation Guide
+const EN = `# Inkbox · Music Creation Guide
 
 > This guide is for you (the agent in the conversation), not an end-user manual. Goal: turn a
 > one-line idea or a full set of lyrics into prompts and settings that can be submitted to

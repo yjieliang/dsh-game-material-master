@@ -15,7 +15,7 @@
  * ## 隔离
  *
  * 整个脚本跑在一个 `mkdtemp` 出来的临时 `DSH_HOME` 里，结束后连同项目一起删掉 ——
- * 不碰用户真实的 `~/.dsh/game-material-master/`。
+ * 不碰用户真实的 `~/.dsh/inkbox/`。
  *
  * 用法：node scripts/verify-map-pipeline.mjs
  */
@@ -1028,7 +1028,7 @@ try {
   check("视图：素材带识别说明与调色板", view5.tilesets[0].reason.includes("正方形网格") && view5.tilesets[0].palette.length === 16, view5.tilesets[0].reason);
   check("视图：A2 与其他素材的画布尺寸跟着文档（不是项目元数据）", view5.cols === 8 && view5.rows === 8);
   const listing = await G.readExportListing(p5.id, "http://127.0.0.1:9999");
-  check("readExportListing：base 与 files 都是可点的绝对 URL", listing.base === `http://127.0.0.1:9999/dsh-game-material-master/map-assets/${p5.id}/export/${expectedDir}/` && listing.files.every((url) => url.startsWith("http://127.0.0.1:9999/")), listing.base);
+  check("readExportListing：base 与 files 都是可点的绝对 URL", listing.base === `http://127.0.0.1:9999/dsh-inkbox/map-assets/${p5.id}/export/${expectedDir}/` && listing.files.every((url) => url.startsWith("http://127.0.0.1:9999/")), listing.base);
   const listingRelative = await G.mapSnapshot(await G.readMapProject(p5.id), "http://127.0.0.1:9999");
   check("mapSnapshot：绝对 URL 与预览/导出清单齐", listingRelative.previewUrls.every((url) => url.includes("/preview/")) && listingRelative.exportBaseUrl.includes("/export/") && listingRelative.exportFiles.length === view5.exportFiles.length, listingRelative.exportFiles.join(" "));
   check("mapSnapshot：带上导出目录的本机绝对路径（模型要能直接报给用户）", listingRelative.exportPath === exportDir, listingRelative.exportPath);

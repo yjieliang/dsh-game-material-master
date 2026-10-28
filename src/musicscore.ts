@@ -544,7 +544,7 @@ export async function detectScoreDeps(config: ScoreDepsConfig = {}, options: { f
     const warnings: string[] = [];
     let blocker: string | null = null;
     if (!python.ok) {
-      blocker = "找不到可用的 Python 3。请安装 Python 3，或在「设置 → 游戏素材大师 → 谱曲模式」里指定 python3 的绝对路径。";
+      blocker = "找不到可用的 Python 3。请安装 Python 3，或在「设置 → 墨盒 → 谱曲模式」里指定 python3 的绝对路径。";
     } else if (!scoremill.ok) {
       const pythonLabel = [python.path ?? "python3", ...(python.args ?? [])].join(" ");
       blocker = `Python 可用（${pythonLabel}），但没有安装 scoremill。请运行：${pythonLabel} -m pip install scoremill`;

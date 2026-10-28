@@ -1,5 +1,5 @@
 /**
- * 模块① 八方向图生成（sprite）—— 浏览器半区第一块 feature 切片。
+ * 模块① 动画帧工具盒（sprite）—— 浏览器半区第一块 feature 切片。
  *
  * 从 src/client.ts 里整块搬出来：阶段①生图 / 阶段②视频 / 阶段③抽帧 / 阶段④合图，
  * 以及 ⑤ 行走预览。行为与拆分前一致（P3a：纯搬运），P3b 再把轮询换成
@@ -160,27 +160,33 @@ export function createSprite(deps: FeatureDeps) {
       const mode = studioStore.use((state) => imageModeOf(state.project));
       const projectId = studioStore.use((state) => state.project?.id ?? null);
       return h(
-        "div",
-        { className: "SPR_modeBar" },
-        h("span", { className: "SPR_modeBarLabel" }, T("生成方式")),
-        IMAGE_MODES.map((entry) =>
-          h(
-            "button",
-            {
-              key: entry.key,
-              type: "button",
-              className: "SPR_mode",
-              "data-active": mode === entry.key ? "true" : "false",
-              title: entry.hint,
-              "data-testid": `image-mode-${entry.key}`,
-              onClick: () =>
-                void start(() => api.setImageMode({ projectId, mode: entry.key }), { reload: true })
-            },
-            h("span", { className: "SPR_modeTitle" }, entry.title),
-            entry.key === "turn" ? h("span", { className: "SPR_modeTag" }, T("默认")) : null
+        React.Fragment,
+        null,
+        // 设计稿：分段控件单独一行（浅色轨道 + 白色选中块）。
+        h(
+          "div",
+          { className: "SPR_modeBar" },
+          h("span", { className: "SPR_modeBarLabel" }, T("生成方式")),
+          IMAGE_MODES.map((entry) =>
+            h(
+              "button",
+              {
+                key: entry.key,
+                type: "button",
+                className: "SPR_mode",
+                "data-active": mode === entry.key ? "true" : "false",
+                title: entry.hint,
+                "data-testid": `image-mode-${entry.key}`,
+                onClick: () =>
+                  void start(() => api.setImageMode({ projectId, mode: entry.key }), { reload: true })
+              },
+              h("span", { className: "SPR_modeTitle" }, entry.title),
+              entry.key === "turn" ? h("span", { className: "SPR_modeTag" }, T("默认")) : null
+            )
           )
         ),
-        h("span", { className: "SPR_modeBarHint" }, (IMAGE_MODES.find((entry) => entry.key === mode) ?? IMAGE_MODES[0]).hint)
+        // 说明文字另起一行（不塞在控件同一行里）。
+        h("p", { className: "SPR_hint", style: { marginTop: 8 } }, (IMAGE_MODES.find((entry) => entry.key === mode) ?? IMAGE_MODES[0]).hint)
       );
     }
 
@@ -327,7 +333,8 @@ export function createSprite(deps: FeatureDeps) {
       const duration = Number(frames.duration ?? 0);
       const picks = frames.picks ?? {};
       const [promptDraft, setPromptDraft] = React.useState(project.prompts?.turn ?? "");
-      const [countDraft, setCountDraft] = React.useState(null);
+      // 自动保存的「正在写回」标记（设计稿底注「默认提示词 · 已自动保存」的状态来源）。
+      const [promptSaving, setPromptSaving] = React.useState(false);
       React.useEffect(() => {
         setPromptDraft(project.prompts?.turn ?? "");
       }, [project.prompts?.turn]);
@@ -340,7 +347,19 @@ export function createSprite(deps: FeatureDeps) {
       const cutting = frames.status === "running" || tasks.has(KEY_TURN_FRAMES) || hostFrames !== undefined;
       const cutLabel = tasks.label(KEY_TURN_FRAMES) ?? (frames.status === "running" ? T("正在抽取候选帧…") : T("正在抽取候选帧并切出八个方向…"));
       const promptDirty = promptDraft !== (project.prompts?.turn ?? "");
-      const frameCount = Number(countDraft ?? project.settings?.turnFrameCount ?? 32);
+      /**
+       * 离开输入框时自动保存（设计稿底注「默认提示词 · 已自动保存」要真的成立才写）。
+       * 走面板既有的 savePrompts：它会 reload，草稿和宿主值重新对齐。
+       */
+      const saveTurnPrompt = async () => {
+        if (!promptDirty) return;
+        setPromptSaving(true);
+        try {
+          await savePrompts({ turn: promptDraft });
+        } finally {
+          setPromptSaving(false);
+        }
+      };
       const allApproved = DIRECTION_KEYS.every((key) => project.images?.[key]?.approved);
       const readyImages = DIRECTION_KEYS.filter((key) => project.images?.[key]?.file !== undefined).length;
       const stale = frames.stale === true;
@@ -348,145 +367,83 @@ export function createSprite(deps: FeatureDeps) {
       return h(
         React.Fragment,
         null,
-        h(
-          "p",
-          { className: "SPR_hint" },
-          T("先生成一段「角色原地匀速转一整圈」的视频（绿幕、保持原图风格、除旋转外不做任何动作），再按时间截出八个方向的帧。八个方向出自同一段视频，一致性比逐方向生图好得多；下面时间轴上的八个圆圈就是各自的截帧位置，随便拖。") +
-            T("手上已经有这样一段视频（自己电脑上的文件）时，点「选择本地视频」直接用它即可，不必走远程生成。")
-        ),
-        h("textarea", {
-          className: "SPR_area",
-          value: promptDraft,
-          "data-testid": "turn-prompt",
-          onChange: (event) => setPromptDraft(event.target.value)
-        }),
+        // 设计稿：标题在左；输入框左侧带一条「默认提示词 · 已自动保存」的底注，离开输入框自动写回。
+        h("h4", { className: "SPR_turnHeadTitle" }, T("转圈视频提示词")),
         h(
           "div",
-          { className: "SPR_toolbar" },
-          h(Btn, { disabled: !promptDirty, onClick: () => void savePrompts({ turn: promptDraft }) }, promptDirty ? T("保存转圈提示词") : T("转圈提示词已保存")),
+          { className: "SPR_promptBox" },
+          h("textarea", {
+            className: "SPR_promptArea",
+            value: promptDraft,
+            "data-testid": "turn-prompt",
+            onChange: (event) => setPromptDraft(event.target.value),
+            onBlur: () => void saveTurnPrompt()
+          }),
           h(
-            Btn,
-            {
-              onClick: () =>
-                void start(() => api.savePrompts({ projectId: project.id, resetTurnToDefault: true }), {
-                  reload: true,
-                  notice: T("转圈提示词已重置为默认模板"),
-                  noticeKind: "ok"
-                })
-            },
-            T("重置为默认")
+            "div",
+            { className: "SPR_promptFoot" },
+            h(
+              "span",
+              { className: "SPR_promptState", "data-dirty": promptDirty ? "true" : "false" },
+              promptDirty ? (promptSaving ? T("正在自动保存…") : T("有未保存的改动")) : T("默认提示词 · 已自动保存")
+            ),
+            h(
+              "button",
+              {
+                type: "button",
+                className: "SPR_promptReset",
+                onClick: () =>
+                  void start(() => api.savePrompts({ projectId: project.id, resetTurnToDefault: true }), {
+                    reload: true,
+                    notice: T("转圈提示词已重置为默认模板"),
+                    noticeKind: "ok"
+                  })
+              },
+              T("重置为默认")
+            )
           )
         ),
+        // 设计稿：说明在左、两个动作右对齐。生成前先把还脏的提示词写回（否则视频会用旧提示词）。
         h(
           "div",
-          { className: "SPR_toolbar" },
+          { className: "SPR_turnFoot" },
+          h("span", { className: "SPR_turnFootNote" }, T("预计 1 次视频调用 · 约 1–6 分钟")),
           h(
-            BusyBtn,
-            {
-              primary: video.file === undefined,
-              busy: tasks.has(KEY_TURN_VIDEO),
-              busyText: T("正在提交…"),
-              disabled: project.source === null || videoRunning,
-              onClick: () =>
-                void start(() => api.runTurnVideo({ projectId: project.id }), { reload: true }, {
-                  key: KEY_TURN_VIDEO,
-                  label: T("正在提交转圈视频任务…")
-                })
-            },
-            video.file === undefined
-              ? T("生成转圈视频（计费一次）")
-              : videoRunning
-                ? T("转圈视频生成中…")
-                : T("重新生成转圈视频（计费一次）")
-          ),
-          // 和远程生成**并列**的一条路：手上已经有一段原地转圈的绿幕视频时，
-          // 直接选它就行——不用花那一次视频调用，导入后同样自动抽帧、切八个方向。
-          h(LocalVideoPick, {
-            label: T("选择本地视频"),
-            title: T("用自己电脑上的一段原地转圈视频（绿幕）顶替远程生成；导入后会自动抽候选帧并切出八个方向"),
-            disabled: videoRunning,
-            testId: "turn-local-video",
-            onFile: (file) => pickLocalVideo({ start, setNotice, api, project, key: "turn", file })
-          }),
-          h(
-            BusyBtn,
-            {
-              busy: tasks.has(KEY_TURN_FRAMES),
-              busyText: T("正在抽帧…"),
-              disabled: video.file === undefined || cutting,
-              onClick: () =>
-                void start(() => api.runTurnFrames({ projectId: project.id }), { reload: true }, {
-                  key: KEY_TURN_FRAMES,
-                  label: T("正在抽取候选帧并切出八个方向…")
-                })
-            },
-            total > 0 ? T("重新抽帧（当前 {n0} 张）", { n0: total }) : T("抽取候选帧")
-          ),
-          h(NumField, {
-            label: T("候选帧数（8~512）"),
-            value: frameCount,
-            min: TURN_FRAME_MIN,
-            max: TURN_FRAME_MAX,
-            onChange: (value) => setCountDraft(value)
-          }),
-          h(
-            BusyBtn,
-            {
-              busy: tasks.has(KEY_TURN_FRAMES),
-              busyText: T("正在抽帧…"),
-              disabled: video.file === undefined || cutting || countDraft === null || countDraft === project.settings?.turnFrameCount,
-              onClick: () =>
-                void start(() => api.runTurnFrames({ projectId: project.id, count: frameCount }), { reload: true, notice: T("已按 {n0} 张重抽候选帧", { n0: frameCount }), noticeKind: "ok" }, {
-                  key: KEY_TURN_FRAMES,
-                  label: T("正在按 {n0} 张重抽候选帧…", { n0: frameCount })
-                })
-            },
-            T("应用帧数")
-          ),
-          h("span", { className: "SPR_refRow" }, project.settings?.turnFrameCount === frameCount ? T("当前 {n0} 张", { n0: project.settings?.turnFrameCount ?? "—" }) : T("未应用（当前 {n0} 张）", { n0: project.settings?.turnFrameCount ?? "—" }))
-        ),
-        h(
-          "div",
-          { className: "SPR_toolbar" },
-          h(
-            Btn,
-            {
-              disabled: total === 0 || cutting,
-              onClick: () =>
-                void start(() => api.resetTurnPicks({ projectId: project.id }), { reload: true, notice: T("八个圆圈已回到默认等分位置"), noticeKind: "ok" })
-            },
-            T("重置八个圆圈")
-          ),
-          // 条带本身就是「整圈候选帧」那张中间图，值得能单独存下来（对着它挑帧/发给别人看）。
-          h(SaveLink, {
-            url: frames.strip === undefined ? undefined : assetUrl(project, frames.strip, frames.updatedAt),
-            name: `${project.name}-turn-strip.png`,
-            label: T("保存条带")
-          }),
-          h(
-            Btn,
-            {
-              disabled: total === 0 || cutting,
-              title: T("转圈方向决定默认位置怎么排；拖动过的圆圈以你的位置为准"),
-              onClick: () =>
-                void start(() => api.resetTurnPicks({ projectId: project.id, direction: project.turn?.direction === "ccw" ? "cw" : "ccw" }), {
-                  reload: true,
-                  notice: project.turn?.direction === "ccw" ? T("已改为顺时针并重排八个圆圈") : T("已改为逆时针并重排八个圆圈"),
-                  noticeKind: "ok"
-                })
-            },
-            project.turn?.direction === "ccw" ? T("转圈方向：逆时针（点一下换向）") : T("转圈方向：顺时针（点一下换向）")
-          ),
-          h(
-            Btn,
-            {
-              on: allApproved,
-              disabled: readyImages === 0,
-              onClick: () => void start(() => api.setApproved({ projectId: project.id, stage: "images", approved: !allApproved }), { reload: true })
-            },
-            allApproved ? T("取消全部通过") : T("全部标记通过")
-          ),
-          h(BusyBadge, { show: videoRunning || cutting, text: videoRunning ? videoLabel : cutLabel })
+            "div",
+            { className: "SPR_turnFootActions" },
+            // 和远程生成**并列**的一条路：手上已经有一段原地转圈的绿幕视频时，
+            // 直接选它就行——不用花那一次视频调用，导入后同样自动抽帧、切八个方向。
+            h(LocalVideoPick, {
+              label: T("选择本地视频"),
+              title: T("用自己电脑上的一段原地转圈视频（绿幕）顶替远程生成；导入后会自动抽候选帧并切出八个方向"),
+              disabled: videoRunning,
+              testId: "turn-local-video",
+              onFile: (file) => pickLocalVideo({ start, setNotice, api, project, key: "turn", file })
+            }),
+            h(
+              BusyBtn,
+              {
+                primary: true,
+                busy: tasks.has(KEY_TURN_VIDEO),
+                busyText: T("正在提交…"),
+                disabled: project.source === null || videoRunning,
+                onClick: () =>
+                  void start(
+                    async () => {
+                      await saveTurnPrompt();
+                      return api.runTurnVideo({ projectId: project.id });
+                    },
+                    { reload: true },
+                    { key: KEY_TURN_VIDEO, label: T("正在提交转圈视频任务…") }
+                  )
+              },
+              video.file === undefined
+                ? T("生成转圈视频（计费一次）")
+                : videoRunning
+                  ? T("转圈视频生成中…")
+                  : T("重新生成转圈视频（计费一次）")
+            )
+          )
         ),
         video.file !== undefined
           ? h(
@@ -529,6 +486,53 @@ export function createSprite(deps: FeatureDeps) {
                 name: `${project.name}-turn.mp4`,
                 label: T("保存视频")
               })
+            )
+          : null,
+        // 视频到手之后才有意义的二级操作：重抽候选帧 / 重排八个圆圈 / 保存条带 / 批量通过。
+        // 设计稿的首屏（还没视频）不显示这一排；换向按钮已经搬到右列「本步设置」的第二行。
+        video.file !== undefined || total > 0
+          ? h(
+              "div",
+              { className: "SPR_toolbar", style: { marginTop: 12 } },
+              h(
+                BusyBtn,
+                {
+                  busy: tasks.has(KEY_TURN_FRAMES),
+                  busyText: T("正在抽帧…"),
+                  disabled: video.file === undefined || cutting,
+                  onClick: () =>
+                    void start(() => api.runTurnFrames({ projectId: project.id }), { reload: true }, {
+                      key: KEY_TURN_FRAMES,
+                      label: T("正在抽取候选帧并切出八个方向…")
+                    })
+                },
+                total > 0 ? T("重新抽帧（当前 {n0} 张）", { n0: total }) : T("抽取候选帧")
+              ),
+              h(
+                Btn,
+                {
+                  disabled: total === 0 || cutting,
+                  onClick: () =>
+                    void start(() => api.resetTurnPicks({ projectId: project.id }), { reload: true, notice: T("八个圆圈已回到默认等分位置"), noticeKind: "ok" })
+                },
+                T("重置八个圆圈")
+              ),
+              // 条带本身就是「整圈候选帧」那张中间图，值得能单独存下来（对着它挑帧 / 发给别人看）。
+              h(SaveLink, {
+                url: frames.strip === undefined ? undefined : assetUrl(project, frames.strip, frames.updatedAt),
+                name: `${project.name}-turn-strip.png`,
+                label: T("保存条带")
+              }),
+              h(
+                Btn,
+                {
+                  on: allApproved,
+                  disabled: readyImages === 0,
+                  onClick: () => void start(() => api.setApproved({ projectId: project.id, stage: "images", approved: !allApproved }), { reload: true })
+                },
+                allApproved ? T("取消全部通过") : T("全部标记通过")
+              ),
+              h(BusyBadge, { show: videoRunning || cutting, text: videoRunning ? videoLabel : cutLabel })
             )
           : null,
         total > 0

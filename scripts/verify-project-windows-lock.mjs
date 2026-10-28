@@ -13,7 +13,7 @@ const store=await import(pathToFileURL(repo+'/lib/store.js'));
 let child;
 try{
  const project=await store.createProject('before transient file lock');
- const target=join(temp,'game-material-master/projects',project.id,'project.json');
+ const target=join(temp,'inkbox/projects',project.id,'project.json');
  const source=String.raw`import ctypes,sys,time
 k=ctypes.WinDLL('kernel32',use_last_error=True)
 k.CreateFileW.argtypes=[ctypes.c_wchar_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_void_p]

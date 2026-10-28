@@ -310,7 +310,7 @@ export function createRig(deps: FeatureDeps) {
       });
     }
 
-    const EXPERIMENTAL_REPO = "https://github.com/universe-st/dsh-game-material-master";
+    const EXPERIMENTAL_REPO = "https://github.com/universe-st/dsh-inkbox";
 
     /** 模块④「骨骼动画生成」的实验性说明。 */
     function make_RIG_EXPERIMENTAL_POINTS() {

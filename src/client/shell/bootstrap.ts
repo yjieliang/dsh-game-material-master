@@ -56,7 +56,7 @@ export function createBootstrap(input: BootstrapInput): any {
   const { React, module: bundleModule } = input;
   const h = React.createElement;
 
-    const PACKAGE = "dsh-game-material-master";
+    const PACKAGE = "dsh-inkbox";
     const SERVICE = "gameStudio";
     const GAME_STUDIO_PANEL_ID = "gameStudio";
 
@@ -339,7 +339,7 @@ export function createBootstrap(input: BootstrapInput): any {
      */
 
     /**
-     * 全局模型设置。生图模型 / 视频模型都是插件级设置（设置 → 游戏素材大师），
+     * 全局模型设置。生图模型 / 视频模型都是插件级设置（设置 → 墨盒），
      * 各功能模块只跟随、不各自留一份副本——否则切换模型后旧任务会打到错误网关
      * （实测：任务里存官方 H3 + 全局已切优云智算 → cp.compshare.cn/v2/... 404）。
      */
@@ -421,7 +421,7 @@ export function createBootstrap(input: BootstrapInput): any {
     const { StudioGlyphIcon, ChevronGlyph, StudioGlyph } = chrome;
 
     /**
-     * 侧栏「游戏素材大师」入口。
+     * 侧栏「墨盒」入口。
      *
      * 宿主把这一坨渲染在**它自己的 `<button class=…panelRow>` 里面**（见
      * dsh-client-ui-sidebar 的 `PanelRow`），所以我们没法在旁边加一个平级的

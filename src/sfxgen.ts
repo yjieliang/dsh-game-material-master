@@ -4,7 +4,7 @@
  * ## 落盘
  *
  * ```
- * <DSH_HOME>/game-material-master/sfx-jobs/<f…>/
+ * <DSH_HOME>/inkbox/sfx-jobs/<f…>/
  * ├── job.json
  * ├── refs/            参考图（1 张）/ 参考音频（≤3 条）
  * ├── takes/           每次生成的音频（一次请求 = 一条，永不覆盖）
@@ -747,7 +747,7 @@ export async function setSfxApproved(id: string, stage: SfxStageKey | undefined,
 }
 
 function sfxAssetBase(id: string): string {
-  return assetBasePath(`/dsh-game-material-master/sfx-assets/${id}/`);
+  return assetBasePath(`/dsh-inkbox/sfx-assets/${id}/`);
 }
 
 function absUrl(origin: string, assetBase: string, relative?: string): string | undefined {

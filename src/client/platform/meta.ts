@@ -70,7 +70,7 @@ export function createMeta(deps: any) {
     /** 六个功能模块。插件是「大师」，每个模块管一类素材。 */
     function make_MODULES() {
       return [
-      { key: "sprite", title: T("八方向图生成"), hint: T("一张设定图 → 8 方向 × 8 帧精灵图") },
+      { key: "sprite", title: T("动画帧工具盒"), hint: T("一张设定图 → 8 方向 × 8 帧精灵图") },
       { key: "image", title: T("图片生成"), hint: T("按提示词出图，可带参考图，支持抠绿幕导出 PNG") },
       { key: "sequence", title: T("序列帧生成"), hint: T("图/视频参考生成视频 → 抽帧 → 抠像 → 合成与播放预览") },
       { key: "rig", title: T("骨骼动画生成"), hint: T("拆件 → 装配定位 → 推骨骼与动画 → 打包 Spine 图集"), experimental: true },

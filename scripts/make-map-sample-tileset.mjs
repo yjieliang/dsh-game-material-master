@@ -391,7 +391,7 @@ if (!yes) {
       "用法：",
       "  node scripts/make-map-sample-tileset.mjs --ark --yes",
       "",
-      "前置条件：先在 DSH 的「设置 → 游戏素材大师」里填好火山方舟 API Key",
+      "前置条件：先在 DSH 的「设置 → 墨盒」里填好火山方舟 API Key",
       "（也可以直接写数据目录里的 config.json 的 arkApiKey 字段），",
       "并且已经跑过 `npm run build`。"
     ].join("\n")
@@ -408,7 +408,7 @@ if (config.arkApiKey.trim() === "") {
     [
       "没有读到火山方舟 API Key（arkApiKey 为空）。",
       "",
-      "怎么配：打开 DSH → 「设置 → 游戏素材大师」→ 填「火山方舟 API Key」并保存；",
+      "怎么配：打开 DSH → 「设置 → 墨盒」→ 填「火山方舟 API Key」并保存；",
       "或者直接编辑数据目录里的 config.json 的 `arkApiKey` 字段。",
       "",
       "这个脚本**不会静默降级**去用程序化纹理 —— 那样你会以为覆盖表已经生成好了。"

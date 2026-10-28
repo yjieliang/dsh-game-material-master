@@ -302,7 +302,7 @@ console.log(`  · 用「在访达中打开项目目录」看 ${mapgen.mapProject
 console.log(`  · 界面上「导出」卡片勾好内容点一下，主下载按钮给的就是 ${zipName ?? "那个 zip"}（一次拿走全部）`);
 console.log(`  · export/${exportNames[0] ?? "<地图名>"}/map.png 是成品；map.json 是存档（带 legend，引擎可读）`);
 console.log(`  · preview/ 里的渲染图用来肉眼看自动连接的接缝与环绕是否自然`);
-console.log(`  · 界面上：侧栏「游戏素材大师」→ 地图编辑器 → 选这个项目`);
+console.log(`  · 界面上：侧栏「墨盒」→ 地图编辑器 → 选这个项目`);
 
 if (failures > 0) {
   console.log(`\n端到端有 ${failures} 条硬断言失败。`);

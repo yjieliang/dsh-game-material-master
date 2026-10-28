@@ -47,3 +47,8 @@ __pycache__/
 
 # WorkBuddy / agent 的本地工作数据（记忆、会话缓存），不入库
 .workbuddy/
+
+# UI 重设计的本地预览产物（脚本生成，不入库）
+.preview/
+# 设计稿解码的中间产物（PDF 光栅图 / 几何 dump）
+.tmp-design/

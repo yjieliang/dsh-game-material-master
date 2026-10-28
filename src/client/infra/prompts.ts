@@ -93,7 +93,7 @@ export function createPrompts(deps: any) {
             ? T("⚠️ 用户要的是**会动的**素材（帧数 > 1 或选了视频模型）：如果你判断成「整格」，请**改用「拼块」**（拼块靠变体动画，同样能自动连接），并在回答里说清为什么没用整格。整格只有 16 种接法、做不出动画。")
             : null;
       const lines = [
-        T("【游戏素材大师 · AI 生成素材】"),
+        T("【墨盒 · AI 生成素材】"),
         T("这是「俯视地图编辑器 → 素材 → AI 生成素材」自动发起的一次任务：参数已经全部确定，不要调用 game_material({action:'intake'}) 追问、不要停下来问用户，直接做完。"),
         guideFirstLine("ai-asset"),
         T("目标地图项目：{n0}（projectId={n1}，地图网格 {n2} 像素，素材按这个格子输出）", { n0: input.projectName, n1: input.projectId, n2: cell }),
@@ -254,7 +254,7 @@ export function createPrompts(deps: any) {
       };
       const kindLabel = (value: string) => value === "ground" ? T("地面") : value === "object" ? T("物件") : T("自动判断");
       const lines = [
-        T("【游戏素材大师 · 45° 地图编辑器 AI 生成素材】"),
+        T("【墨盒 · 45° 地图编辑器 AI 生成素材】"),
         T("这是「45°地图编辑器 → 素材 → AI 生成素材」自动发起的一次任务：参数已经全部确定，不要调用 game_material({action:'intake'}) 追问、不要停下来问用户，直接做完。"),
         guideFirstLine("iso-ai-asset"),
         T("目标 45° 地图项目：{n0}（projectId={n1}，格子 {n2} 像素）", { n0: input.projectName, n1: input.projectId, n2: cell }),
@@ -338,7 +338,7 @@ export function createPrompts(deps: any) {
       const text = lyricsMode ? input.lyrics : input.prompt;
       const engine = MUSIC_ENGINES.find((entry) => entry.id === input.preferredEngine);
       const lines = [
-        T("【游戏素材大师 · 音乐生成编辑】"),
+        T("【墨盒 · 音乐生成编辑】"),
         T("这是「音乐生成编辑」自动发起的一次任务：用户在界面上已经填好下面的内容，任务已经建好（jobId 见下），不要调用 game_material({action:'intake'}) 追问、不要停下来等确认，直接做完。"),
         guideFirstLine("music"),
         T("目标音乐任务：{n0}（jobId={n1}）", { n0: input.jobName, n1: input.jobId }),
@@ -408,7 +408,7 @@ export function createPrompts(deps: any) {
         `试听 ${status.renderer === "fluidsynth" ? "FluidSynth + SoundFont" : "内置简易音源"}`
       ].join(" / ");
       const lines = [
-        T("【游戏素材大师 · 谱曲模式（本地 MIDI）】"),
+        T("【墨盒 · 谱曲模式（本地 MIDI）】"),
         T("这是「音乐生成编辑 → 谱曲模式」自动发起的一次任务：任务已经建好（jobId 见下），不要调用 game_material({action:'intake'}) 追问、不要重复建任务、不要问参数，直接按下面的步骤做。"),
         guideFirstLine("music"),
         T("目标音乐任务：{n0}（jobId={n1}）", { n0: input.jobName, n1: input.jobId }),

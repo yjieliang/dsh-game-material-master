@@ -331,7 +331,7 @@ function SfxModule(props) {
   };
 
   if (loading) return h("div", { className: "SPR_body" }, h("p", { className: "SPR_empty" }, T("正在读取音效任务…")));
-  if (api === undefined) return h("div", { className: "SPR_body" }, h("p", { className: "SPR_empty" }, T("正在挂载游戏素材大师…")));
+  if (api === undefined) return h("div", { className: "SPR_body" }, h("p", { className: "SPR_empty" }, T("正在挂载墨盒…")));
 
   const formats = (config?.sfxFormats ?? [{ id: "wav" }, { id: "mp3" }, { id: "ogg_opus" }]).map((format) => ({ id: format.id, label: sfxFormatLabel(format.id) }));
   const sampleRates = config?.sfxSampleRates ?? [16000, 24000, 44100, 48000];
@@ -496,7 +496,7 @@ function SfxModule(props) {
 
   return h(
     "div",
-    { className: "SPR_body SPR_musicBody" },
+    { className: "SPR_body SPR_musicBody SPR_pageBody" },
     h(
       "div",
       { className: "SPR_side" },

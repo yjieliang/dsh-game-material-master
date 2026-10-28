@@ -314,7 +314,7 @@ function makeProject(overrides = {}) {
   return {
     id: "p1",
     name: "角色",
-    assetBase: "/dsh-game-material-master/assets/p1/",
+    assetBase: "/dsh-inkbox/assets/p1/",
     updatedAt: 1,
     source: { file: "source/hero.png", name: "hero.png" },
     images,
@@ -936,7 +936,7 @@ function makeImageJob(overrides = {}) {
   return {
     id: "i1",
     name: "图片任务",
-    assetBase: "/dsh-game-material-master/image-assets/i1/",
+    assetBase: "/dsh-inkbox/image-assets/i1/",
     updatedAt: 2,
     prompt: "一只猫",
     suffix: "",
@@ -957,7 +957,7 @@ function makeSequenceJob(overrides = {}) {
   return {
     id: "s1",
     name: "序列帧任务",
-    assetBase: "/dsh-game-material-master/sequence-assets/s1/",
+    assetBase: "/dsh-inkbox/sequence-assets/s1/",
     updatedAt: 3,
     mode: "frames",
     prompt: "走路",
@@ -1225,16 +1225,19 @@ section("功能管理（隐藏模块）");
     JSON.stringify(normalizeHiddenKeys(["nope", "iso", "sprite"]))
   );
 
-  const tabs = (tree) => byClass(tree, "SPR_module").map((node) => node.props?.["data-module"]);
+  // v2 外壳：模块页签宫格搬进了左侧栏导航（类名 SPR_navItem，data-module 保持不变）。
+  const tabs = (tree) => byClass(tree, "SPR_navItem").map((node) => node.props?.["data-module"]);
   const all = renderStage(makeProject(), "images", makeTasks());
   check(`默认 ${MODULE_COUNT} 个页签都在`, tabs(all.tree).length === MODULE_COUNT, tabs(all.tree).join("、"));
-  check("默认没有「已隐藏」提示", byClass(all.tree, "SPR_modulesHiddenNote").length === 0);
+  check("默认没有「已隐藏」提示", !JSON.stringify(byClass(all.tree, "SPR_navHint").map(textOf)).includes("已隐藏"));
 
   const some = renderStage(makeProject(), "images", makeTasks(), ["rig", "iso"]);
   check("隐藏后对应页签不再渲染", !tabs(some.tree).includes("rig") && !tabs(some.tree).includes("iso"), tabs(some.tree).join("、"));
   const visibleKeys = MODULE_KEYS.filter((key) => key !== "rig" && key !== "iso");
   check(`其余页签保留（${visibleKeys.length} 个）`, tabs(some.tree).join("、") === visibleKeys.join("、"), tabs(some.tree).join("、"));
-  check("出现「已隐藏 N 个功能」提示", byClass(some.tree, "SPR_modulesHiddenNote").length === 1);
+  // 侧栏副标题与「已隐藏」提示同一个类名，按文本筛（textOf 只走本层，组件子树要靠 byClass）。
+  const navTexts = (tree) => byClass(tree, "SPR_navHint").map(textOf);
+  check("出现「已隐藏 N 个功能」提示", navTexts(some.tree).some((text) => text.includes("已隐藏")), navTexts(some.tree).slice(-1).join(""));
 
   // 当前选中的模块被隐藏时，界面必须落到第一个可见模块，而不是渲染一个被隐藏的模块。
   const fallback = renderStage(makeProject(), "images", makeTasks(), ["sprite"]);
@@ -1243,7 +1246,7 @@ section("功能管理（隐藏模块）");
     tabs(fallback.tree).join("、") === MODULE_KEYS.filter((key) => key !== "sprite").join("、"),
     tabs(fallback.tree).join("、")
   );
-  check("被隐藏模块的界面不再渲染", byClass(fallback.tree, "SPR_moduleTitle").map(textOf).includes("图片生成"));
+  check("被隐藏模块的界面不再渲染", byClass(fallback.tree, "SPR_navTitle").map(textOf).includes("图片生成"));
 
   const none = renderStage(makeProject(), "images", makeTasks(), MODULE_KEYS);
   check("全隐藏时一个页签都没有", tabs(none.tree).length === 0, tabs(none.tree).join("、"));
@@ -1330,7 +1333,7 @@ section("功能管理（隐藏模块）");
       customApiKeyHint: "",
       customProtocols: [],
       imageProviderSummary: "火山方舟 · doubao-seedream-5-0-flash-260915",
-      imageProviderBlocker: "尚未配置火山方舟 API Key（设置 → 游戏素材大师 → 生图后端 → 火山方舟）",
+      imageProviderBlocker: "尚未配置火山方舟 API Key（设置 → 墨盒 → 生图后端 → 火山方舟）",
       customImageBlocker: null,
       arkApiKeySet: false,
       minimaxApiKeySet: false,
@@ -1637,17 +1640,17 @@ section("语言切换：8 个模块页签标题 / 副标题跟着变（req_5d9a0
   lang = "en";
   for (const listener of [...listeners]) listener();
   const tree = renderStage(makeProject(), "images", makeTasks()).tree;
-  const titles = byClass(tree, "SPR_moduleTitle").map(textOf);
-  const hints = byClass(tree, "SPR_moduleHint").map(textOf);
-  const enTable = dicts.get("dsh-game-material-master")?.en ?? {};
+  const titles = byClass(tree, "SPR_navTitle").map(textOf);
+  const hints = byClass(tree, "SPR_navHint").map(textOf);
+  const enTable = dicts.get("dsh-inkbox")?.en ?? {};
   check(
-    "切 English 后 8 个页签标题 / 副标题都变英文（真渲染 .SPR_moduleTitle / .SPR_moduleHint）",
+    "切 English 后 8 个页签标题 / 副标题都变英文（真渲染 .SPR_navTitle / .SPR_navHint）",
     installed === true &&
       titles.length === MODULE_COUNT &&
       titles.every((title) => /[A-Za-z]/u.test(title) && !/[\u4e00-\u9fff]/u.test(title)) &&
       hints.length === MODULE_COUNT &&
       hints.every((hint) => /[A-Za-z]/u.test(hint) && !/[\u4e00-\u9fff]/u.test(hint)) &&
-      titles[0] === enTable["八方向图生成"],
+      titles[0] === enTable["动画帧工具盒"],
     `installed=${String(installed)} 标题=${titles.join(" / ")}`
   );
   // 收尾：切回中文，别把全局 T 留在英文态（脚本要能重复跑）。

@@ -1,6 +1,6 @@
 /**
  * 通过宿主的 HMR SSE 通道拿到真实的客户端模块图，再按图里的 URL 取回
- * dsh-game-material-master 的浏览器束，验证运行中的宿主**确实**在提供这份新代码。
+ * dsh-inkbox 的浏览器束，验证运行中的宿主**确实**在提供这份新代码。
  *
  * 为什么要这么绕：浏览器束是按 graph 里的带 rev 的 URL 提供的，
  * 自己拼 `/plugins/<id>/client.js` 一定会 404。
@@ -9,7 +9,7 @@ import http from "node:http";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.DSH_VERIFY_PORT ?? 43120);
-const TARGET = "dsh-game-material-master";
+const TARGET = "dsh-inkbox";
 
 /** 取回完整响应体（等 `end`，不提前断开——断开会把束截断）。 */
 function get(path) {

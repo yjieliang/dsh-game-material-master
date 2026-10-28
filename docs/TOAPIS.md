@@ -35,7 +35,7 @@ Initial video scope: text or **one first-frame image**, MP4, audio off, configur
 
 ## Paid submission safety / 付费提交安全
 
-There are no automatic paid POST retries or paid-provider fallbacks. Receipts under `<DSH_HOME>/game-material-master/toapis-receipts/` contain request fingerprints, task IDs and delivery state, not API keys, prompts or reference bytes. If submission is ambiguous or a task ID is missing, the receipt blocks a duplicate submission. Check the account/task history and contact the provider before manually archiving the receipt to retry. A cancelled local wait does **not** cancel the remote paid task.
+There are no automatic paid POST retries or paid-provider fallbacks. Receipts under `<DSH_HOME>/inkbox/toapis-receipts/` contain request fingerprints, task IDs and delivery state, not API keys, prompts or reference bytes. If submission is ambiguous or a task ID is missing, the receipt blocks a duplicate submission. Check the account/task history and contact the provider before manually archiving the receipt to retry. A cancelled local wait does **not** cancel the remote paid task.
 
 Repeat the same image operation after an interrupted wait to recover its task instead of buying another generation; the stable fingerprint uses the original reference input, not changing upload URLs. After successful delivery a deliberate regeneration can submit a new task. A failed/expired task requires reconciliation before retry. Videos persist task ID and backend before the host polling path; completed results are downloaded without authorization headers, checked for media signature and bounded to 32 MiB/image or 100 MiB/video. For image errors, inspect the local receipt path shown in the message; do not publicly post receipts or keys.
 
@@ -49,11 +49,11 @@ These automated tests are **mock transport / local integration checks**. They re
 
 ## Quick reuse / 快速复用
 
-1. Install a release containing these changes with `dsh plugin --profile web add dsh-game-material-master`, restart DSH and refresh the browser. If the follow-up is still under review, use the reviewed source checkout with `dsh plugin --profile web add link:/absolute/path/to/checkout`; do not assume npm already contains the new settings.
-2. Settings → 游戏素材大师 / Game Material Master → Image backend: **ToAPIs**. Select the matching site below and enter your own API Key in the password field. Save; never paste keys into prompts, Issues or screenshots.
+1. Install a release containing these changes with `dsh plugin --profile web add dsh-inkbox`, restart DSH and refresh the browser. If the follow-up is still under review, use the reviewed source checkout with `dsh plugin --profile web add link:/absolute/path/to/checkout`; do not assume npm already contains the new settings.
+2. Settings → 墨盒 / Inkbox → Image backend: **ToAPIs**. Select the matching site below and enter your own API Key in the password field. Save; never paste keys into prompts, Issues or screenshots.
 3. Image: `gpt-image-2-vip`, `1K`, `low`, background **transparent**. Native transparent PNGs can be downloaded unchanged with “下载原图”; keep chroma removal off for that original.
 4. Enable **Use ToAPIs for video**. Choose `seedance-2-mini`, **4s / 480p / 1:1**, audio off. Transparent source PNGs are explicitly composited on white for the video's JPEG first frame. MP4 has no alpha: video-derived frames still need background segmentation.
-5. In 八方向图生成, upload the source. Use 逐方向生图 for the eight reviewed native-alpha views, or 转圈截帧 for one turntable clip and manually review the eight pick positions. Keep fixed camera, full body and margins; use a pure white video background for this example.
+5. In 动画帧工具盒, upload the source. Use 逐方向生图 for the eight reviewed native-alpha views, or 转圈截帧 for one turntable clip and manually review the eight pick positions. Keep fixed camera, full body and margins; use a pure white video background for this example.
 6. Generate/review eight walking videos → extract **8 frames per video** at working edge **512** → cell **128×128**, pixel block **1**, segmentation tolerance **55**, green low/high **255/255**, despill **0**, erosion **0**, fit **0.94**, bottom padding **2**. These are this robot's white-background settings, not universal defaults.
 7. Compose and download `1024×1024` PNG. Rows: **N, NE, E, SE, S, SW, W, NW**; columns: eight frames. Open stage⑤ to preview. Recompose locally when changing cleanup parameters; do not regenerate paid videos just to adjust cropping.
 

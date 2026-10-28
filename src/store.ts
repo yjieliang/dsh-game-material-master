@@ -1,7 +1,7 @@
 /**
  * 项目持久化。
  *
- * 每个项目一个目录：`${DSH_HOME}/game-material-master/projects/<id>/`
+ * 每个项目一个目录：`${DSH_HOME}/inkbox/projects/<id>/`
  *
  *   project.json          项目状态（本文件的 Project 结构）
  *   source/               用户上传的源图

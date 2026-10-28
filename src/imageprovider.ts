@@ -78,7 +78,7 @@ export function imageTimeoutOf(config: Config): number {
 /** 自定义后端自己的必填项检查（不看 `imageProvider`，供「测试连接」按钮用）。 */
 export function customImageBlocker(config: Config): string | undefined {
   if (config.customBaseUrl.trim() === "") {
-    return "尚未配置自定义生图服务的地址（设置 → 游戏素材大师 → 生图后端 → 自定义生图模型）";
+    return "尚未配置自定义生图服务的地址（设置 → 墨盒 → 生图后端 → 自定义生图模型）";
   }
   if (config.customProtocol === "comfyui" && config.customWorkflow.trim() === "") {
     return "选了 ComfyUI 协议，但还没填工作流 JSON（在 ComfyUI 里「导出（API）」拿到那份 JSON，整段粘贴）";
@@ -99,7 +99,7 @@ export function imageProviderBlocker(config: Config): string | undefined {
   if (config.imageProvider === "toapis") {try {assertToapisReady(config);return undefined;} catch(error) {return String((error as Error).message);}}
   if (!isCustomProvider(config)) {
     if (config.arkApiKey.trim() === "") {
-      return "尚未配置火山方舟 API Key（设置 → 游戏素材大师 → 生图后端 → 火山方舟）";
+      return "尚未配置火山方舟 API Key（设置 → 墨盒 → 生图后端 → 火山方舟）";
     }
     if (config.arkModel.trim() === "") return "尚未配置火山方舟的生图模型 ID";
     return undefined;

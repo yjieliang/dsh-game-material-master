@@ -1001,7 +1001,7 @@ function makeProjectFixture() {
     reviewMode: "auto",
     log: [{ at: 1, level: "info", text: "已创建项目" }],
     jobs: [{ key: "images:all", label: "批量生成八方向绿幕图", startedAt: 2 }],
-    assetBase: "/dsh-game-material-master/assets/p1/"
+    assetBase: "/dsh-inkbox/assets/p1/"
   };
 }
 

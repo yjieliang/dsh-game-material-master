@@ -96,7 +96,7 @@ export function normalizeMusicBaseUrl(value: unknown): string {
 export function musicBlocker(config: { musicApiKey?: string; musicApiKeySet?: boolean } | undefined): string | undefined {
   const hasKey = config?.musicApiKeySet === true || (typeof config?.musicApiKey === "string" && config.musicApiKey.trim() !== "");
   if (!hasKey) {
-    return "还没配置谱乐 AI API Key：设置 → 游戏素材大师 → 音乐生成（谱乐 AI），配好点「测试连接」。";
+    return "还没配置谱乐 AI API Key：设置 → 墨盒 → 音乐生成（谱乐 AI），配好点「测试连接」。";
   }
   return undefined;
 }
@@ -107,7 +107,7 @@ function apiBase(config: MusicApiConfig): string {
 
 function authHeaders(config: MusicApiConfig): Record<string, string> {
   if (config.apiKey.trim() === "") {
-    throw new MusicApiError("尚未配置谱乐 AI API Key（设置 → 游戏素材大师 → 音乐生成）");
+    throw new MusicApiError("尚未配置谱乐 AI API Key（设置 → 墨盒 → 音乐生成）");
   }
   return {
     Authorization: `Bearer ${config.apiKey.trim()}`,

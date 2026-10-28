@@ -3477,7 +3477,7 @@ try {
       check(
         "回链：取的就是项目资源路由下那张图（assetBase + 相对路径）",
         fetched.length >= 1 &&
-          fetched.every((url) => url.endsWith(composed.file) && url.includes(`/dsh-game-material-master/map-assets/${projectId}/`)),
+          fetched.every((url) => url.endsWith(composed.file) && url.includes(`/dsh-inkbox/map-assets/${projectId}/`)),
         fetched[0] ?? "(没发请求)"
       );
 

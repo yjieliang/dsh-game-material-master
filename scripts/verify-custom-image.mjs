@@ -344,7 +344,7 @@ section("5) 错误信息（要能直接告诉用户改哪里）");
 // ══ 6. 后端分发与配置 ═══════════════════════════════════════════════════
 section("6) 后端分发：换 imageProvider 一个字段，所有生图调用点跟着走");
 {
-  await mkdir(join(HOME, "game-material-master"), { recursive: true });
+  await mkdir(join(HOME, "inkbox"), { recursive: true });
   await saveConfig({ arkApiKey: "ark-key", arkBaseUrl: `${ORIGIN}/ark`, arkModel: "ark-model" });
   received.length = 0;
   await generateImageWithProvider({ prompt: "分发测试", images: [], size: "1K", watermark: false });
@@ -368,7 +368,7 @@ section("6) 后端分发：换 imageProvider 一个字段，所有生图调用�
   check("填上工作流后放行", imageProviderBlocker(await loadConfig()) === undefined);
 
   await saveConfig({ customBaseUrl: "" });
-  check("地址为空时拦住并说明去哪里配", /设置 → 游戏素材大师/.test(customImageBlocker(await loadConfig()) ?? ""), customImageBlocker(await loadConfig()) ?? "");
+  check("地址为空时拦住并说明去哪里配", /设置 → 墨盒/.test(customImageBlocker(await loadConfig()) ?? ""), customImageBlocker(await loadConfig()) ?? "");
 
   await saveConfig({ imageProvider: "ark", arkApiKey: "" });
   check("切回 ark 且没有 Key 时，拦的是火山方舟那一句", /火山方舟/.test(imageProviderBlocker(await loadConfig()) ?? ""), imageProviderBlocker(await loadConfig()) ?? "");

@@ -166,20 +166,100 @@ function ConfigSection(props) {
     void patch(values);
   };
 
+  /**
+   * 分组标题（原生 `<details>` 的 summary）。
+   *
+   * 折叠用浏览器原生元素：不新增 Hook、不新增 addEventListener，
+   * 也就不会动 verify-arch 的监听器棘轮与 verify-feedback 的 Hook 槽位。
+   */
+  const groupHead = (title, subtitle = null, badge = null) =>
+    h(
+      "summary",
+      { className: "SPR_groupHead" },
+      h("span", { className: "SPR_groupTitle" }, title, badge ? h("span", { className: "SPR_badge" }, badge) : null),
+      subtitle ? h("span", { className: "SPR_groupSub" }, subtitle) : null
+    );
+
+  /** 顶部「检查环境」：只跑免费项；付费「测试连接」仍留在各自分组里。 */
+  const checkEnvironment = async () => {
+    if (testing !== null) return;
+    setTesting("env");
+    const lines = [];
+    let problems = 0;
+    const mark = (ok, text) => {
+      lines.push((ok ? "✓ " : "✗ ") + text);
+      if (!ok) problems += 1;
+    };
+    if (config.ffmpeg?.ok === true) mark(true, T("ffmpeg 可用：{n0}", { n0: config.ffmpeg.version }));
+    else mark(false, T("ffmpeg 不可用：{n0}", { n0: config.ffmpeg?.error ?? T("未知") }));
+    try {
+      const probe = await api.testComfy();
+      setComfyProbe(probe);
+      mark(true, T("ComfyUI 可用：{n0}", { n0: probe.version }));
+    } catch (error) {
+      setComfyProbe(null);
+      mark(false, T("ComfyUI 不可用：{n0}", { n0: msg(error) }));
+    }
+    if (config.minimaxApiKeySet === true) {
+      try { await api.testMinimax(); mark(true, T("MiniMax 连接正常")); } catch (error) { mark(false, T("MiniMax 连接失败：{n0}", { n0: msg(error) })); }
+    } else mark(false, T("MiniMax 未配置 Key"));
+    if (config.musicApiKeySet === true) {
+      try { await api.testMusic(); mark(true, T("音乐 API 连接正常")); } catch (error) { mark(false, T("音乐 API 连接失败：{n0}", { n0: msg(error) })); }
+    } else mark(false, T("音乐 API 未配置 Key"));
+    try {
+      const score = await api.testMusicScore();
+      mark(score?.ok === true, score?.ok === true ? T("谱曲依赖已就绪") : score?.blocker ?? T("谱曲依赖缺失"));
+    } catch (error) {
+      mark(false, T("谱曲依赖检测失败：{n0}", { n0: msg(error) }));
+    }
+    lines.push(T("付费项目（方舟 / 自定义 / ToAPIs / 音效）请在各自分组里点「测试连接」。"));
+    setNotice({ kind: problems === 0 ? "ok" : "error", text: lines.join("\n") });
+    setTesting(null);
+  };
+
   return h(
     "section",
     { className: "SPR_settings" },
-    h("h2", { style: { margin: 0, fontSize: 15 } }, T("游戏素材大师")),
-    h("p", { className: "SPR_hint" }, T("配置生图 / 生视频的模型与整条流水线的默认参数。Key 只保存在本机 DSH 数据目录下的 game-material-master/config.json（真实路径见文末「数据位置」），界面里始终脱敏显示。")),
+    h("h2", { style: { margin: 0, fontSize: 15 } }, T("墨盒")),
+    h("p", { className: "SPR_hint" }, T("配置生图 / 生视频的模型与整条流水线的默认参数。Key 只保存在本机 DSH 数据目录下的 inkbox/config.json（真实路径见文末「数据位置」），界面里始终脱敏显示。")),
+
+    /**
+     * 顶部状态条：当前生效的后端与能否开跑，一眼可见；环境检查集中在这里，
+     * 不再把 ffmpeg 这类全局警告塞进某一张卡片里。
+     */
+    h(
+      "div",
+      { className: "SPR_statusBar", "data-testid": "cfg-status-bar" },
+      h(
+        "div",
+        { className: "SPR_statusMain" },
+        h("span", { className: "SPR_statusTitle" }, T("当前生图后端")),
+        h("span", { className: "SPR_statusValue" }, config.imageProviderSummary ?? ""),
+        h(
+          "span",
+          { className: "SPR_statusRow" },
+          config.imageProviderBlocker
+            ? h("span", { className: "SPR_statusTag", "data-kind": "bad" }, T("还不能开跑"))
+            : h("span", { className: "SPR_statusTag", "data-kind": "ok" }, T("后端已就绪")),
+          h("span", { className: "SPR_statusHint" }, config.ffmpeg?.ok === true ? T("ffmpeg 可用：{n0}", { n0: config.ffmpeg.version }) : T("ffmpeg 不可用：{n0}", { n0: config.ffmpeg?.error ?? T("未知") }))
+        ),
+        config.imageProviderBlocker ? h("span", { className: "SPR_statusHint", "data-kind": "bad" }, config.imageProviderBlocker) : null
+      ),
+      h(
+        BusyBtn,
+        { busy: testing === "env", busyText: T("正在检查…"), disabled: testing !== null, onClick: () => void checkEnvironment() },
+        T("检查环境")
+      )
+    ),
 
     notice !== null
       ? h("div", { className: "SPR_note", "data-kind": notice.kind }, notice.text)
       : null,
 
     h(
-      "div",
-      { className: "SPR_settingsGroup" },
-      h("h3", null, T("生图后端")),
+      "details",
+      { className: "SPR_settingsGroup", open: true },
+      groupHead(T("生图后端"), config.imageProviderBlocker ? T("未就绪") : T("就绪")),
       h("p", null, T("八方向图、图片生成、骨骼动画的生图都走这里选的后端；图生视频（MiniMax）不受影响。")),
       h(
         "div",
@@ -202,17 +282,13 @@ function ConfigSection(props) {
           )
         )
       ),
-      h("p", { className: "SPR_hint" }, T("当前生效：{n0}", { n0: config.imageProviderSummary ?? "" })),
-      config.imageProviderBlocker
-        ? h("div", { className: "SPR_note", "data-kind": "error" }, T("还不能开跑：{n0}", { n0: config.imageProviderBlocker }))
-        : h("div", { className: "SPR_note", "data-kind": "ok" }, T("后端已就绪，可以开跑。"))
+      h("p", { className: "SPR_hint" }, T("当前生效：{n0}", { n0: config.imageProviderSummary ?? "" }))
     ),
 
     h(
-      "div",
-      { className: "SPR_settingsGroup" },
-      h("h3", null, T("火山方舟（生图）"), imageProvider === "ark" ? h("span", { className: "SPR_badge" }, T("当前使用")) : null),
-      h("p", null, config.ffmpeg?.ok === true ? T("ffmpeg 可用：{n0}", { n0: config.ffmpeg.version }) : T("ffmpeg 不可用：{n0}", { n0: config.ffmpeg?.error ?? T("未知") })),
+      "details",
+      { className: "SPR_settingsGroup", open: imageProvider === "ark" },
+      groupHead(T("火山方舟（生图）"), config.arkApiKeySet ? T("Key 已配置") : T("Key 未配置"), imageProvider === "ark" ? T("当前使用") : null),
       h(
         "div",
         { className: "SPR_keyRow" },
@@ -320,8 +396,8 @@ function ConfigSection(props) {
     ),
 
 
-    h("div", {className:"SPR_settingsGroup", "data-testid":"cfg-toapis"},
-      h("h3",null,"ToAPIs"),
+    h("details", {className:"SPR_settingsGroup", "data-testid":"cfg-toapis", open: imageProvider === "toapis"},
+      groupHead("ToAPIs", config.toapisApiKeySet ? T("Key 已配置") : T("Key 未配置"), imageProvider === "toapis" ? T("当前使用") : null),
       h("p",null,T("ToAPIs：图片和视频使用独立的异步协议；每次生成会计费。")),
       ...[ ["toapisBaseUrl","Base URL"], ["toapisImageModel",T("ToAPIs 图片模型")],
            ["toapisImageSize",T("ToAPIs 图片尺寸")], ["toapisImageQuality",T("ToAPIs 图片质量")],
@@ -350,9 +426,9 @@ function ConfigSection(props) {
      * 反而不知道哪些是共通的。
      */
     h(
-      "div",
-      { className: "SPR_settingsGroup" },
-      h("h3", null, T("自定义生图模型"), imageProvider === "custom" ? h("span", { className: "SPR_badge" }, T("当前使用")) : null),
+      "details",
+      { className: "SPR_settingsGroup", open: imageProvider === "custom" },
+      groupHead(T("自定义生图模型"), protocolInfo?.label ?? "", imageProvider === "custom" ? T("当前使用") : null),
       h("p", null, T("填「主机根地址」即可，具体端点由插件按协议拼；本地服务通常不需要 API Key。")),
       h(
         "div",
@@ -574,9 +650,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("MiniMax（图生视频）")),
+      groupHead(T("MiniMax（图生视频）"), config.minimaxApiKeySet ? T("Key 已配置") : T("Key 未配置")),
       h("p", null, T("视频阶段使用图生视频（I2V）。建议用 MiniMax-Hailuo-02，镜头稳定性最好。")),
       h(
         "div",
@@ -707,9 +783,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("本地 ComfyUI（图生视频）")),
+      groupHead(T("本地 ComfyUI（图生视频）"), config.comfyVideo === true ? T("已启用") : T("未启用")),
       h("p", null, T("勾选后，视频阶段改由本机 ComfyUI 生成，不再调用 MiniMax。工作流贴「导出（API 格式）」的那份 JSON；插件只负责把提示词、首帧图、尺寸、时长、种子注入进去，其余节点原样提交。")),
       h(
         "label",
@@ -860,9 +936,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("新建项目的默认参数")),
+      groupHead(T("新建项目的默认参数"), T("新项目初始值")),
       h("p", null, T("这些值会成为每个新项目的初始设置，之后可在项目里单独调整。")),
       h(
         "div",
@@ -964,9 +1040,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("音乐生成（谱乐 AI）")),
+      groupHead(T("音乐生成（谱乐 AI）"), config.musicApiKeySet ? T("Key 已配置") : T("Key 未配置")),
       h("p", null, T("「音乐生成编辑」用谱乐 AI 的开放 API。Key 只保存在本机配置文件里，界面始终脱敏显示；生成按平台积分计费，插件不代收。目前只支持谱乐 AI（YourMusic）。")),
       config.musicBlocker !== null && config.musicBlocker !== undefined
         ? h("div", { className: "SPR_note", "data-kind": "error" }, config.musicBlocker)
@@ -1045,9 +1121,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("谱曲模式（本地 MIDI）")),
+      groupHead(T("谱曲模式（本地 MIDI）"), config.musicScoreStatus?.blocker ? T("依赖缺失") : T("依赖已就绪")),
       h("p", null, T("谱曲模式在对话里先分析想法、给出方案，再用 scoremill 把方案写成 MIDI；宿主在本机渲染试听。谱曲、试听、导出全部免费；只有最后「交给 Suno」会消耗谱乐 AI 积分。")),
       h("p", null, T("依赖：Python 3 + scoremill（写 MIDI）、FluidSynth + SoundFont（更好的试听，可选）、ffmpeg（转 MP3/导出）。没有 FluidSynth 时插件会退回内置简易音源；没有 scoremill 时无法谱曲。")),
       config.musicScoreStatus === undefined || config.musicScoreStatus === null
@@ -1130,9 +1206,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("音效生成（火山引擎 Seed-Audio）")),
+      groupHead(T("音效生成（火山引擎 Seed-Audio）"), config.sfxApiKeySet ? T("Key 已配置") : T("Key 未配置")),
       h("p", null, T("用豆包语音的生成式音频模型做游戏音效：撞击 / 环境音 / UI 声 / 生物吼叫 / 角色配音。单次最长 120 秒。Key 是语音控制台的 API Key（请求头 X-Api-Key），不是火山方舟的 ARK_API_KEY；模型需要在语音控制台开通。")),
       config.sfxBlocker !== null && config.sfxBlocker !== undefined
         ? h("div", { className: "SPR_note", "data-kind": "error" }, config.sfxBlocker)
@@ -1235,9 +1311,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("功能管理")),
+      groupHead(T("功能管理"), hiddenNow.length === 0 ? T("全部可见") : T("{n0} 项已隐藏", { n0: hiddenNow.length })),
       h("p", null, T("隐藏不用的功能。隐藏后界面里不再出现它的页签与侧栏菜单项，对话里的 AI 也无法调用它（工具会直接报错）。随时可以再打开，已有的项目数据不会被删除。")),
       h(
         "div",
@@ -1287,9 +1363,9 @@ function ConfigSection(props) {
     ),
 
     h(
-      "div",
+      "details",
       { className: "SPR_settingsGroup" },
-      h("h3", null, T("数据位置")),
+      groupHead(T("数据位置"), T("数据目录")),
       h(
         "p",
         null,

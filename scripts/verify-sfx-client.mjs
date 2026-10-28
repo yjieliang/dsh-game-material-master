@@ -176,7 +176,7 @@ const job = {
   module: "sfx",
   id: "f1",
   name: "测试音效",
-  assetBase: "/dsh-game-material-master/sfx-assets/f1/",
+  assetBase: "/dsh-inkbox/sfx-assets/f1/",
   busy: false,
   status: "ready",
   reviewMode: "auto",
@@ -184,8 +184,8 @@ const job = {
   prompt: "金属撞击，短促，约 1 秒",
   settings: { format: "wav", sampleRate: 24000, speechRate: 0, loudnessRate: 0, pitchRate: 0, watermark: false },
   refs: {
-    image: { file: "refs/image.png", name: "角色.png", bytes: 72, ext: "png", url: "http://localhost/dsh-game-material-master/sfx-assets/f1/refs/image.png" },
-    audios: [{ file: "refs/a.wav", name: "a.wav", bytes: 144, ext: "wav", duration: 3, url: "http://localhost/dsh-game-material-master/sfx-assets/f1/refs/a.wav" }]
+    image: { file: "refs/image.png", name: "角色.png", bytes: 72, ext: "png", url: "http://localhost/dsh-inkbox/sfx-assets/f1/refs/image.png" },
+    audios: [{ file: "refs/a.wav", name: "a.wav", bytes: 144, ext: "wav", duration: 3, url: "http://localhost/dsh-inkbox/sfx-assets/f1/refs/a.wav" }]
   },
   takes: [{
     id: "k1",
@@ -197,7 +197,7 @@ const job = {
     prompt: "金属撞击，短促，约 1 秒",
     settings: { format: "wav", sampleRate: 24000 },
     createdAt: 1,
-    url: "http://localhost/dsh-game-material-master/sfx-assets/f1/takes/k1.wav"
+    url: "http://localhost/dsh-inkbox/sfx-assets/f1/takes/k1.wav"
   }],
   stages: { generate: { status: "done", approved: false }, export: { status: "idle", approved: false } },
   exports: [],

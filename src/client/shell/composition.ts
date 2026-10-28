@@ -20,6 +20,7 @@ import { createRig } from "../features/rig/index.js";
 import { createConfigSection } from "../config-section.js";
 import { createModuleIcon } from "../module-icon.js";
 import { createStudioPanel } from "../studio-panel.js";
+import { createTheme } from "../platform/theme.js";
 import type { CompositionDeps } from "../platform/deps.js";
 
 export function createComposition(deps: CompositionDeps) {
@@ -534,6 +535,18 @@ export function createComposition(deps: CompositionDeps) {
 
     const ModuleIcon = createModuleIcon({ h });
 
+    // ── 宿主明暗探测（platform/theme）：插件自带设计令牌，深浅色要跟着宿主走 ──
+    const theme = createTheme({
+      window: typeof window === "undefined" ? null : window,
+      document: typeof document === "undefined" ? null : document
+    });
+    // 立即同步一次并把 data-gmm-theme 写到 <html>；之后宿主换肤由 MutationObserver 跟进。
+    try {
+      theme.start();
+    } catch {
+      /* 主题探测失败按浅色渲染 */
+    }
+
     // StudioPanel 引用所有面板模块的 const —— 必须等它们都初始化完再构造。
     // （以前 `function StudioPanel` 靠函数提升，读的是调用期的值，所以放前面也没事。）
     // ── 错误隔离：每个功能模块套一层边界 ────────────────────────────────
@@ -576,18 +589,23 @@ export function createComposition(deps: CompositionDeps) {
     });
     let IMAGE_MODES = sprite.IMAGE_MODES();
     const { renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage } = sprite;
-    const StudioPanel = createStudioPanel({ React, h, T, store, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon , scheduler: gmmScheduler });
+    const StudioPanel = createStudioPanel({ React, h, T, store, useLocaleTick, DIRECTION_KEYS, STAGES, useHiddenModules, visibleModulesOf, useStudioIntent, msg, mergeDrafts, askNewName, Btn, assetUrl, usePendingTasks, BusyBtn, ReviewModeBar, stageHint, stageDone, KEY_EXPORT_IMAGES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, fileLabel, CopyIdButton, MapModule, MusicModule, SfxModule, IsoModule, ImageModule, SequenceModule, renderLog, RigModule, ModuleIcon, StudioGlyphIcon, scheduler: gmmScheduler });
+
+    /**
+     * 宿主明暗订阅层：Hook 只在包装组件里调，StudioPanel 本身的 Hook 槽位保持不变
+     * （verify-feedback 按「每个组件的 Hook 数量与顺序」喂桩数据，槽位一变整片断言就错位）。
+     */
 
   // 启动自检：面板的模块表顺序必须和 feature registry 一致（两处清单不许漂移）。
   try {
     const expected = featureKeys().join(",");
     const actual = (MODULES ?? []).map((module: any) => module.key).join(",");
-    if (expected !== actual) console.warn("[game-material-master] MODULES 与 features/registry 顺序不一致：" + actual + " ≠ " + expected);
+    if (expected !== actual) console.warn("[inkbox] MODULES 与 features/registry 顺序不一致：" + actual + " ≠ " + expected);
   } catch {
     /* 自检失败不影响界面 */
   }
 
   return {
-    map, MapModule, MAP_PLAN_LIST, MAP_wrapIndex, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, MapModuleRaw, sequence, SequenceModule, RefRow, SequencePlayer, JobLogPanel, renderLog, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, SequenceModuleRaw, music, MusicModule, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, MusicModuleRaw, sfx, SfxModule, sfxFormatLabel, SfxModuleRaw, image, ImageModule, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, ImageModuleRaw, iso, IsoModule, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, ISO_addPreviewScene, IsoModuleRaw, rig, RigModule, RigSemanticsPanel, ConfigSection, inject, ModuleIcon, wrapFeature, sprite, IMAGE_MODES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage, StudioPanel
+    map, MapModule, MAP_PLAN_LIST, MAP_wrapIndex, MAP_pointToCell, MAP_cellAnchor, MAP_cellTopLeft, MAP_lineCells, MAP_GUIDE_ART, MapToolIcon, MapModuleRaw, sequence, SequenceModule, RefRow, SequencePlayer, JobLogPanel, renderLog, K_SEQ_VIDEO, K_SEQ_FRAMES, K_SEQ_KEY, K_SEQ_COMPOSE, K_SEQ_UPLOAD, K_SEQ_CREATE, K_SEQ_POLL, SequenceModuleRaw, music, MusicModule, musicFmtTime, musicAssetUrl, musicDownloadUrl, makeMusicOps, musicOpsText, musicStatusChip, MusicWave, MusicModuleRaw, sfx, SfxModule, sfxFormatLabel, SfxModuleRaw, image, ImageModule, K_IMG_JOB, K_IMG_ITEM, K_IMG_KEY, K_IMG_UPLOAD, K_IMG_CREATE, ImageModuleRaw, iso, IsoModule, ISO_OBJECT_SCALE_MIN, ISO_OBJECT_SCALE_MAX, ISO_pointToCell, ISO_cellCenter, ISO_cellTopLeft, ISO_lineCells, ISO_addPreviewScene, IsoModuleRaw, rig, RigModule, RigSemanticsPanel, ConfigSection, inject, ModuleIcon, theme, wrapFeature, sprite, IMAGE_MODES, renderImageStage, renderVideoStage, renderFrameStage, renderSheetStage, WalkPreview, KEY_EXPORT_IMAGES, ImageModeBar, TurnAxis, TurnImageStage, FramePickAxis, FramePickPanel, FrameStage, StudioPanel
   };
 }

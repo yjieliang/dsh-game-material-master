@@ -244,7 +244,7 @@ export function createUiKit({ React, h, T }: any) {
         { className: "SPR_field" },
         h("span", { className: "SPR_fieldLabel" }, label),
         h("input", { className: "SPR_input", value: value ?? "", readOnly: true, disabled: true }),
-        h("span", { className: "SPR_fieldLabel" }, T("跟随即「设置 → 游戏素材大师」"))
+        h("span", { className: "SPR_fieldLabel" }, T("跟随即「设置 → 墨盒」"))
       );
     }
 

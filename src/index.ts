@@ -1,6 +1,6 @@
 import {assertVideoBackendReady,videoBackendOf} from "./videogen.js";
 /**
-* dsh-8dir-sprites —— 宿主半区。
+* 墨盒（dsh-inkbox）—— 宿主半区。
 *
 * 一个 Typert 远程服务（"spriteStudio"）承担整条流水线的控制面：
 * 配置读写、项目 CRUD、生图 / 视频 / 抽帧 / 合成四个阶段的启动与状态查询、
@@ -26,7 +26,7 @@ import {
 } from "./receipts.js";
 import { ROUTE_PREFIX, handleAsset } from "./assets.js";
 import { buildConfigPatch } from "./configpatch.js";
-import { ARK_MODEL_PRESETS, CUSTOM_PROTOCOLS, CUSTOM_PROTOCOL_DEFAULTS, DEFAULT_CONFIG, ROW_ORDER_VERSION, MINIMAX_HOST_PRESETS, MINIMAX_MODEL_PRESETS, loadConfig, maskConfig, migrateLegacyDataRoot, projectsRoot, saveConfig } from "./config.js";
+import { ARK_MODEL_PRESETS, CUSTOM_PROTOCOLS, CUSTOM_PROTOCOL_DEFAULTS, DEFAULT_CONFIG, ROW_ORDER_VERSION, MINIMAX_HOST_PRESETS, MINIMAX_MODEL_PRESETS, loadConfig, maskConfig, migrateLegacyDataRootSync, projectsRoot, saveConfig } from "./config.js";
 import {
   DEFAULT_ROW_ORDER,
   DIRECTION_KEYS,
@@ -103,15 +103,15 @@ import { MANIFEST, METHODS, SERVICE_NAME } from "./wire.js";
 import { assetBasePath, originForLinks, rememberClientOrigin } from "./links.js";
 import { registerStudioTools } from "./tools.js";
 /**
- * 游戏素材大师 —— 宿主半区。
+ * 墨盒 —— 宿主半区。
  *
  * 一个 Typert 远程服务（"gameStudio"）承载八个功能模块的控制面：
- *   ① 八方向图生成  ② 图片生成  ③ 序列帧生成  ④ 骨骼动画生成  ⑤ 地图地块生成
+ *   ① 动画帧工具盒  ② 图片生成  ③ 序列帧生成  ④ 骨骼动画生成  ⑤ 地图地块生成
  * 八者共用同一套配置（各平台的 API Key / 模型 / 抠像默认值），但各自独立存项目 / 任务。
  *
  * 另外用 `ctx.webServer` 注册一条 prefix 路由，把各模块的产物直接发给浏览器。
  */
-export const name = "dsh-game-material-master";
+export const name = "dsh-inkbox";
 /**
 * `webServer` 必须声明成硬依赖：它要等真正 listen 成功之后才可用，
 * 而本插件的 `apply` 与它几乎同时发生——只用 `ctx.get()` 探测的话，
@@ -124,7 +124,7 @@ export const inject = ["typert", "webServer"];
  *
  * 关键在「被 import 时」：宿主半区是进程启动时冻结的模块图，改了 `lib/*.js` 之后
  * 如果没有真正重新 import，这里的数值就还是旧的。于是 `GET
- * /dsh-game-material-master/_health` 变成一条**廉价且确定**的探针——
+ * /dsh-inkbox/_health` 变成一条**廉价且确定**的探针——
  * 用来回答「运行中的宿主到底吃到了哪一版代码」，而不用去猜。
  *
  * ⚠️ 别只看 `moduleMtimeMs`：`tsc` 对**内容没变**的输出文件不重写，所以只改
@@ -1625,7 +1625,7 @@ export class GameStudioGateway extends TypertRemoteService {
     if (input.settings !== undefined) {
       const raw = asRecord(input.settings);
       const current = await loadConfig();
-      // 生图模型是全局设置（设置 → 游戏素材大师 → 生图后端），任务里不保留可覆盖的副本。
+      // 生图模型是全局设置（设置 → 墨盒 → 生图后端），任务里不保留可覆盖的副本。
       job.settings.model = imageModelOf(current);
       // 自定义后端的尺寸也是全局参数；火山方舟下才保留任务级覆盖。
       job.settings.size = imageUsesConfiguredSize(current) ? imageSizeOf(current) : asString(raw.size, job.settings.size);
@@ -2796,6 +2796,13 @@ export function paidPoolsFor(config: { concurrency: number }): { paid: number; l
 }
 
 export function apply(ctx) {
+  // 改名迁移必须**第一件**做、而且同步做完：下面马上 `void loadConfig()`，异步迁移会和它赛跑，
+  // loadConfig 若先读到「inkbox/config.json 不存在」就会把默认配置永久缓存下来（API Key 看着全丢）。
+  // 也不能放模块顶层 await —— 那样任何 `import lib/index.js`（自检脚本、开发工具）都会动真实数据目录。
+  const migratedLegacyRoot = migrateLegacyDataRootSync();
+  if (migratedLegacyRoot !== null) {
+    process.stderr.write(`[inkbox] 已把旧数据目录 ${migratedLegacyRoot} 迁移到 inkbox\n`);
+  }
   // 插件被重载时，模块缓存会把上一次的 disposed 标记原样留下来，于是所有生成类调用都
   // 静默变成「任务已在进行中」——每次 apply 都要把后台任务表复位（P8 起收口在 jobs.ts）。
   activateJobs();
@@ -2821,16 +2828,11 @@ export function apply(ctx) {
     })
     .catch(() => undefined);
 
-  // 旧版本的数据目录叫 8dir-sprites，插件改名后搬一次，已有项目无缝接上。
-  void migrateLegacyDataRoot()
-    .then((moved) => {
-      if (moved) process.stderr.write("[game-material-master] 已把旧数据目录 8dir-sprites 迁移到 game-material-master\n");
-    })
-    .catch(() => undefined);
+  // 旧数据目录的迁移已在模块顶层 await 完成（见文件头部），这里不再重复调用。
 
   const gateway = new GameStudioGateway(ctx);
   gateway.assertSurface();
-  ctx.effect(() => ctx.typert.register(MANIFEST), "dsh-8dir-sprites: typert manifest");
+  ctx.effect(() => ctx.typert.register(MANIFEST), "dsh-inkbox: typert manifest");
   /**
    * 对话调用面：把网关的全部方法 + 多步流程编排注册成模型工具，
    * 并加一段系统提示词说明「怎么推进、怎么把验收链接贴给用户」。
@@ -2846,15 +2848,15 @@ export function apply(ctx) {
     return () => {
       for (const dispose of disposers) dispose();
     };
-  }, "dsh-game-material-master: 对话调用面");
+  }, "dsh-inkbox: 对话调用面");
   const webServer = ctx.get("webServer");
   if (webServer !== undefined) {
-    ctx.effect(() => webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: (req, res) => handleAsset(req, res, BOOT_INFO) }), "dsh-8dir-sprites: asset route");
+    ctx.effect(() => webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler: (req, res) => handleAsset(req, res, BOOT_INFO) }), "dsh-inkbox: asset route");
   }
   else {
     // inject 已声明 webServer，正常路径下走不到这里；留一条 stderr 诊断，
     // 因为 ctx.logger 的输出不会出现在启动日志里。
-    process.stderr.write("[dsh-8dir-sprites] webServer 服务不可用，图片预览路由未注册\n");
+    process.stderr.write("[dsh-inkbox] webServer 服务不可用，图片预览路由未注册\n");
   }
   // 进程重启后，把上次没跑完的视频轮询接上。
   void (async () => {
@@ -2883,5 +2885,5 @@ export function apply(ctx) {
     musicgen.disposeMusic();
     sfxgen.disposeSfx();
     disposeJobs();
-  }, "dsh-game-material-master: pipeline cleanup");
+  }, "dsh-inkbox: pipeline cleanup");
 }

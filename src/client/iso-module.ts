@@ -944,11 +944,11 @@ function IsoModule(props) {
       rows: Math.max(1, Math.min(64, Math.round(Number(draft.footprint.rows) || 1)))
     };
     if (hiddenModules.includes("image")) {
-      setNotice({ kind: "error", text: T("「图片生成」被隐藏了，去「设置 → 游戏素材大师 → 功能管理」打开再试。") });
+      setNotice({ kind: "error", text: T("「图片生成」被隐藏了，去「设置 → 墨盒 → 功能管理」打开再试。") });
       return;
     }
     if (mode === "video" && hiddenModules.includes("sequence")) {
-      setNotice({ kind: "error", text: T("「序列帧生成」被隐藏了，去「设置 → 游戏素材大师 → 功能管理」打开再试。") });
+      setNotice({ kind: "error", text: T("「序列帧生成」被隐藏了，去「设置 → 墨盒 → 功能管理」打开再试。") });
       return;
     }
     setAiBusy(true);
@@ -1453,7 +1453,7 @@ function IsoModule(props) {
     )
   );
 
-  const shell = (inner) => h("div", { className: "SPR_moduleBody", "data-module": "iso" }, inner, nameDialog, addDialog, aiDialog, tsDialog);
+  const shell = (inner) => h("div", { className: "SPR_moduleBody SPR_fill", "data-module": "iso" }, inner, nameDialog, addDialog, aiDialog, tsDialog);
 
   if (view === null || layout === null) {
     return shell(h("div", { className: "SPR_isoRoot" },
